@@ -4,7 +4,7 @@
 export type MappedUserError = {
   status: number;
   message: string;
-  field?: "email" | "password";
+  field?: "email" | "password" | "role";
 };
 
 export function mapUserRpcError(rawMessage: string | undefined | null): MappedUserError {
@@ -43,6 +43,11 @@ export function mapUserRpcError(rawMessage: string | undefined | null): MappedUs
   }
   if (message.includes("USER_NOT_FOUND")) {
     return { status: 404, message: "Usuário não encontrado." };
+  }
+  // A tela só oferece papéis válidos; chega aqui quem chama a rota direto ou
+  // uma tela desatualizada depois de um papel sair do banco.
+  if (message.includes("INVALID_ROLE")) {
+    return { status: 400, message: "Papel inválido.", field: "role" };
   }
   if (message.includes("INVALID_INPUT")) {
     return { status: 400, message: "Revise os campos destacados." };

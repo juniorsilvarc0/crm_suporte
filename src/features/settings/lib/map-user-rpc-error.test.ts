@@ -22,6 +22,14 @@ describe("mapUserRpcError", () => {
     expect(mapUserRpcError("LAST_ACTIVE_USER").status).toBe(409);
   });
 
+  it("mapeia INVALID_ROLE para 400 no campo role", () => {
+    expect(mapUserRpcError("INVALID_ROLE")).toEqual({
+      status: 400,
+      message: "Papel inválido.",
+      field: "role",
+    });
+  });
+
   it("mapeia USER_NOT_FOUND para 404", () => {
     expect(mapUserRpcError("USER_NOT_FOUND").status).toBe(404);
   });
