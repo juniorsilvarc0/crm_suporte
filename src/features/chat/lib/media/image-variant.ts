@@ -27,8 +27,9 @@ export const CHAT_THUMB_WIDTH = 640;
  * Endereço da miniatura a exibir na bolha, na ordem de preferência.
  *
  * 1. `metadata.thumbUrl` — a miniatura **de verdade**, gerada na entrada. É o
- *    caminho de toda mídia nova: o R2 não tem transformação sob demanda, então
- *    o arquivo pequeno é gravado junto com o cheio.
+ *    caminho de toda mídia nova: com o bucket privado ela é a rota do app
+ *    (`/api/chat/media/<id>?variant=thumb`), que redireciona para a URL
+ *    assinada.
  * 2. O transformador do Supabase, para o que já estava lá antes da migração.
  * 3. A própria `src`, quando nenhum dos dois se aplica.
  *
@@ -40,7 +41,9 @@ export function chatThumbSrc(
   metadata: Record<string, unknown> | null | undefined
 ): string {
   const stored = metadata?.thumbUrl;
-  if (typeof stored === "string" && stored.startsWith("http")) return stored;
+  if (typeof stored === "string" && (stored.startsWith("http") || stored.startsWith("/api/chat/media/"))) {
+    return stored;
+  }
   return chatImageThumbUrl(src);
 }
 
