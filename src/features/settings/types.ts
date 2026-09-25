@@ -1,4 +1,4 @@
-export const APP_USER_ROLES = ["admin", "member", "paid_traffic"] as const;
+export const APP_USER_ROLES = ["admin", "member"] as const;
 
 export type AppUserRole = (typeof APP_USER_ROLES)[number];
 
@@ -24,7 +24,6 @@ export type AppUser = {
 export const appUserRoleLabel: Record<AppUserRole, string> = {
   admin: "Administrador",
   member: "Membro",
-  paid_traffic: "Tráfego pago",
 };
 
 export const appUserRoleOptions: ReadonlyArray<{
@@ -32,7 +31,6 @@ export const appUserRoleOptions: ReadonlyArray<{
   label: string;
 }> = [
   { value: "member", label: "Membro — acessa a operação do CRM" },
-  { value: "paid_traffic", label: "Tráfego pago — acessa somente Rastreamento" },
   { value: "admin", label: "Administrador — gerencia toda a equipe" },
 ];
 

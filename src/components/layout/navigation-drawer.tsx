@@ -14,7 +14,6 @@ import {
 import { LogoMark } from "@/components/ui/logo-mark";
 import { navGroupOrder, type NavItem } from "@/config/navigation";
 import { siteConfig } from "@/config/site";
-import type { AppUserRole } from "@/features/settings/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,13 +34,11 @@ export function NavigationDrawer({
   open,
   onOpenChange,
   items,
-  role,
   isActive,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: NavItem[];
-  role: AppUserRole;
   isActive: (href: string) => boolean;
 }) {
   const groups = navGroupOrder
@@ -97,18 +94,14 @@ export function NavigationDrawer({
           ))}
         </nav>
 
-        {/* Tráfego pago não tem perfil próprio: essa role só enxerga
-            Rastreamento, e oferecer "Meu perfil" levaria a um 307. */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border/70 px-2 py-2">
-          {role !== "paid_traffic" ? (
-            <DrawerItem
-              href="/app/perfil"
-              icon={UserRoundIcon}
-              title="Meu perfil"
-              active={isActive("/app/perfil")}
-              onNavigate={() => onOpenChange(false)}
-            />
-          ) : null}
+          <DrawerItem
+            href="/app/perfil"
+            icon={UserRoundIcon}
+            title="Meu perfil"
+            active={isActive("/app/perfil")}
+            onNavigate={() => onOpenChange(false)}
+          />
           {/* `variant="menu"` renderiza um `DropdownMenuItem` e exige o contexto
               do menu do Base UI — aqui não existe. `full` é o botão solto. */}
           <LogoutButton variant="full" />

@@ -30,10 +30,11 @@ describe("JWT de sessão", () => {
     expect(await verifySessionToken(token)).toEqual(user);
   });
 
-  it("preserva o papel de tráfego pago", async () => {
-    const trafficUser = { ...user, role: "paid_traffic" as const };
+  it("rejeita o papel de tráfego pago, que deixou de existir", async () => {
+    // Cookie emitido antes da remoção do papel não pode virar sessão válida.
+    const trafficUser = { ...user, role: "paid_traffic" } as unknown as SessionUser;
     const token = await createSessionToken(trafficUser);
-    expect(await verifySessionToken(token)).toEqual(trafficUser);
+    expect(await verifySessionToken(token)).toBeNull();
   });
 
   it("rejeita papel desconhecido", async () => {

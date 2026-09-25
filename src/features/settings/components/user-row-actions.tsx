@@ -257,7 +257,6 @@ export function UserRowActions({ user, isCurrent }: { user: AppUser; isCurrent: 
                 </p>
               ) : null}
             </div>
-            {role !== "paid_traffic" ? <>
             <div className="grid gap-1.5">
               <Label htmlFor={`edit-apelido-${user.id}`}>
                 Apelido para atendimento{" "}
@@ -289,7 +288,6 @@ export function UserRowActions({ user, isCurrent }: { user: AppUser; isCurrent: 
                 </span>
               </span>
             </label>
-            </> : null}
           </div>
         </ModalShell>
       </Dialog>

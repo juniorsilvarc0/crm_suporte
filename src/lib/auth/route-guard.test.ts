@@ -5,13 +5,10 @@ import { decideRouteAccess, isPublicApiRoute } from "@/lib/auth/route-guard";
 describe("decideRouteAccess", () => {
   describe("rotas internas de /api", () => {
     it("bloqueia com 401 quando não há sessão", () => {
-      expect(decideRouteAccess("/api/leads/search", false)).toEqual({
+      expect(decideRouteAccess("/api/leads/manual", false)).toEqual({
         type: "unauthorized",
       });
-      expect(decideRouteAccess("/api/financeiro/sales", false)).toEqual({
-        type: "unauthorized",
-      });
-      expect(decideRouteAccess("/api/appointments/123", false)).toEqual({
+      expect(decideRouteAccess("/api/tags", false)).toEqual({
         type: "unauthorized",
       });
       expect(decideRouteAccess("/api/chat/conversations/1/send", false)).toEqual(
@@ -20,27 +17,12 @@ describe("decideRouteAccess", () => {
     });
 
     it("libera quando há sessão válida", () => {
-      expect(decideRouteAccess("/api/leads/search", true)).toEqual({
+      expect(decideRouteAccess("/api/leads/manual", true)).toEqual({
         type: "allow",
       });
       expect(decideRouteAccess("/api/chat/conversations", true)).toEqual({
         type: "allow",
       });
-    });
-
-    it("limita tráfego pago às APIs do rastreamento", () => {
-      expect(
-        decideRouteAccess("/api/meta/tracking/export", true, "paid_traffic")
-      ).toEqual({ type: "allow" });
-      expect(
-        decideRouteAccess("/api/meta/tracking/export/", true, "paid_traffic")
-      ).toEqual({ type: "allow" });
-      expect(decideRouteAccess("/api/leads/search", true, "paid_traffic")).toEqual({
-        type: "forbidden",
-      });
-      expect(
-        decideRouteAccess("/api/chat/conversations", true, "paid_traffic")
-      ).toEqual({ type: "forbidden" });
     });
   });
 
@@ -49,18 +31,9 @@ describe("decideRouteAccess", () => {
       expect(decideRouteAccess("/api/webhooks/n8n/lead", false)).toEqual({
         type: "allow",
       });
-      expect(decideRouteAccess("/api/webhooks/n8n/appointment", false)).toEqual({
-        type: "allow",
-      });
     });
 
-    it("libera webhooks de chat mesmo sem sessão", () => {
-      expect(decideRouteAccess("/api/chat/webhook/evolution", false)).toEqual({
-        type: "allow",
-      });
-      expect(decideRouteAccess("/api/chat/webhook/meta", false)).toEqual({
-        type: "allow",
-      });
+    it("libera o webhook da uazapi mesmo sem sessão", () => {
       expect(decideRouteAccess("/api/chat/webhook/uazapi", false)).toEqual({
         type: "allow",
       });
@@ -79,29 +52,25 @@ describe("decideRouteAccess", () => {
       expect(decideRouteAccess("/api/integracao/leads", false)).toEqual({
         type: "allow",
       });
-      expect(decideRouteAccess("/api/integracao/board", false)).toEqual({
-        type: "allow",
-      });
     });
 
-    it("libera o worker Meta, que valida segredo próprio", () => {
+    it("não libera mais as rotas do rastreamento Meta, que saíram", () => {
+      // Prefixo público que sobrasse sem rota viraria porta aberta para a
+      // próxima rota criada ali.
       expect(decideRouteAccess("/api/internal/meta/dispatch", false)).toEqual({
-        type: "allow",
-      });
-      expect(decideRouteAccess("/api/internal/meta/health", false)).toEqual({
-        type: "allow",
+        type: "unauthorized",
       });
       expect(decideRouteAccess("/api/meta/conversions/123/retry", false)).toEqual({
-        type: "allow",
+        type: "unauthorized",
       });
     });
   });
 
   describe("páginas protegidas", () => {
     it("redireciona para o login sem sessão, preservando o destino", () => {
-      expect(decideRouteAccess("/app/leads", false)).toEqual({
+      expect(decideRouteAccess("/app/chat", false)).toEqual({
         type: "redirect-login",
-        redirectTo: "/app/leads",
+        redirectTo: "/app/chat",
       });
       expect(decideRouteAccess("/admin", false)).toEqual({
         type: "redirect-login",
@@ -110,7 +79,7 @@ describe("decideRouteAccess", () => {
     });
 
     it("libera com sessão válida", () => {
-      expect(decideRouteAccess("/app/leads", true)).toEqual({ type: "allow" });
+      expect(decideRouteAccess("/app/chat", true)).toEqual({ type: "allow" });
     });
   });
 
@@ -122,21 +91,10 @@ describe("decideRouteAccess", () => {
     it("libera o login sem sessão", () => {
       expect(decideRouteAccess("/login", false)).toEqual({ type: "allow" });
     });
-
-    it("leva tráfego pago diretamente ao rastreamento", () => {
-      expect(decideRouteAccess("/login", true, "paid_traffic")).toEqual({
-        type: "redirect-tracking",
-      });
-    });
   });
 
   describe("páginas administrativas", () => {
-    const adminPages = [
-      "/app/rastreamento",
-      "/app/conexao",
-      "/app/equipe",
-      "/app/configuracoes",
-    ];
+    const adminPages = ["/app/conexao", "/app/equipe", "/app/configuracoes"];
 
     it.each(adminPages)("libera %s para admin", (page) => {
       expect(decideRouteAccess(page, true, "admin")).toEqual({ type: "allow" });
@@ -153,7 +111,7 @@ describe("decideRouteAccess", () => {
     });
 
     it("não confunde uma página não-administrativa", () => {
-      expect(decideRouteAccess("/app/leads", true, "member")).toEqual({ type: "allow" });
+      expect(decideRouteAccess("/app/chat", true, "member")).toEqual({ type: "allow" });
     });
 
     it("sem sessão em página admin vai para login (não depende do papel)", () => {
@@ -164,58 +122,18 @@ describe("decideRouteAccess", () => {
     });
   });
 
-  describe("papel de tráfego pago", () => {
-    it("libera apenas o rastreamento", () => {
-      expect(
-        decideRouteAccess("/app/rastreamento", true, "paid_traffic")
-      ).toEqual({ type: "allow" });
-      expect(
-        decideRouteAccess("/app/rastreamento/detalhe", true, "paid_traffic")
-      ).toEqual({ type: "allow" });
-    });
-
-    it.each([
-      "/app",
-      "/app/leads",
-      "/app/funil",
-      "/app/agendamentos",
-      "/app/chat",
-      "/app/follow-ups",
-      "/app/perfil",
-      "/app/conexao",
-      "/app/equipe",
-      "/app/configuracoes",
-      "/admin",
-    ])(
-      "redireciona %s para Rastreamento",
-      (page) => {
-        expect(decideRouteAccess(page, true, "paid_traffic")).toEqual({
-          type: "redirect-tracking",
-        });
-      }
-    );
-
-    it("permite concluir o primeiro acesso", () => {
-      expect(decideRouteAccess("/definir-senha", true, "paid_traffic")).toEqual({
-        type: "allow",
-      });
-    });
-  });
-
   describe("isPublicApiRoute", () => {
     it("reconhece rotas públicas", () => {
       expect(isPublicApiRoute("/api/webhooks/n8n/lead")).toBe(true);
       expect(isPublicApiRoute("/api/chat/webhook/uazapi")).toBe(true);
       expect(isPublicApiRoute("/api/integracao/leads")).toBe(true);
       expect(isPublicApiRoute("/api/auth/login")).toBe(true);
-      expect(isPublicApiRoute("/api/internal/meta/dispatch")).toBe(true);
-      expect(isPublicApiRoute("/api/meta/conversions/123/retry")).toBe(true);
     });
 
     it("reconhece rotas internas como não-públicas", () => {
-      expect(isPublicApiRoute("/api/leads/search")).toBe(false);
+      expect(isPublicApiRoute("/api/leads/manual")).toBe(false);
       expect(isPublicApiRoute("/api/tags")).toBe(false);
-      expect(isPublicApiRoute("/api/financeiro/payments")).toBe(false);
+      expect(isPublicApiRoute("/api/internal/meta/dispatch")).toBe(false);
     });
   });
 });

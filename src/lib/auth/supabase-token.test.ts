@@ -31,7 +31,7 @@ describe("createSupabaseAccessToken", () => {
   it("carrega o papel do app no claim — é o que a RLS usa para separar quem opera o chat", async () => {
     process.env.SUPABASE_JWT_SECRET = SECRET;
 
-    for (const papel of ["admin", "member", "paid_traffic"] as const) {
+    for (const papel of ["admin", "member"] as const) {
       const { token } = await createSupabaseAccessToken("user-1", papel);
       expect(decodeJwt(token).app_role).toBe(papel);
     }

@@ -6,6 +6,7 @@ import {
   AUTH_COOKIE_MAX_AGE,
   createSessionToken,
 } from "@/lib/auth/session";
+import { isAppUserRole } from "@/features/settings/types";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { clientKeyFromRequest, rateLimit } from "@/lib/security/rate-limit";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -81,6 +82,15 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, message: "Email ou senha incorretos." },
       { status: 401 }
+    );
+  }
+
+  // Papel que o app não conhece (ex.: um `paid_traffic` que sobrou no banco)
+  // não ganha sessão: falhar fechado é não herdar o acesso de ninguém.
+  if (!isAppUserRole(user.role)) {
+    return NextResponse.json(
+      { ok: false, message: "Seu perfil não tem acesso a este sistema." },
+      { status: 403 }
     );
   }
 

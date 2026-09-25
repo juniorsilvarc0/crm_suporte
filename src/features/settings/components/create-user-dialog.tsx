@@ -197,7 +197,6 @@ export function CreateUserDialog() {
               </span>
             </label>
 
-            {role !== "paid_traffic" ? <>
             <div className="grid gap-1.5">
               <Label htmlFor="new-user-apelido">
                 Apelido para atendimento{" "}
@@ -242,7 +241,6 @@ export function CreateUserDialog() {
                 </span>
               </span>
             </label>
-            </> : null}
           </div>
         </ModalShell>
       </Dialog>
