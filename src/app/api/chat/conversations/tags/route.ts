@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,9 @@ const EMPTY = { tags: [], pairs: [] };
  * continua inteira e utilizável, e derrubá-la por causa do enfeite seria pior.
  */
 export async function GET() {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const supabase = createSupabaseAdminClient();
 

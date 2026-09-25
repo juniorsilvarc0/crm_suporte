@@ -27,6 +27,47 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Sessão confirmada no banco em toda rota /api e login sem open redirect
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Fazer um usuário desativado, ou com papel que o app não conhece, perder o acesso às rotas `/api` na hora, e não só quando o cookie de 7 dias vence. Fazer o login redirecionar só para a própria origem.
+**Arquivos alterados:**
+- **Rotas com guard novo (13):** chat (`conversations/[id]` GET, `contact`, `search`, `send-audio`, `send-file`, `[id]/tags`, `conversations/tags`, `transcribe`), `connection/state`, `tags`, `tags/[id]`, `settings/automation` GET, `settings/bot-signature` GET.
+- **Rotas de lead:** `leads/[id]` e `leads/manual`.
+- **Guard:** `require-dashboard-session.ts` (sai `hasDashboardSession`).
+- **Login:** `login-form.tsx`.
+- **Novos:** `src/features/auth/lib/safe-redirect.ts` (+ teste) e `src/app/api/api-guards.test.ts`.
+- **Testes ajustados:** `leads/manual` e `transcribe`.
+
+**O que foi feito:**
+- **Guard de banco na primeira linha**, antes de ler o corpo (upload de até 64 MB em `send-file`):
+  - `requireDashboardUser()` nas rotas de chat e etiquetas;
+  - `requireDashboardAdmin()` em `connection/state` e nos dois `GET` de configuração, que só as telas de admin usam.
+- **Rotas de lead:** trocaram `hasDashboardSession` (só confere o cookie) por `requireDashboardUser`. O `hasDashboardSession` saiu, porque sem uso ele só convidaria o mesmo erro.
+- **Teste de contrato:** varre todo `route.ts`, decide o que é público pela mesma lista do guard (`isPublicApiRoute`) e falha se um handler não chamar guard de banco, direto ou por função local. Foi validado com uma rota-sonda sem guard, que ele reprovou.
+- **Login:** `safeRedirectPath` resolve o `?redirect=` contra a origem do app e só aceita a mesma origem. Os testes cobrem `https://`, `//`, `/\`, tab, `javascript:` e `data:`.
+
+**Decisões tomadas:**
+- **Guard em cada handler, e não consulta ao banco no proxy.** No proxy pesaria em toda requisição, inclusive páginas e assets; nos handlers, o custo é uma leitura de `app_users` por chamada de API.
+- **`connection/state` e os `GET` de configuração ficam só para admin**, porque os únicos chamadores são telas de admin.
+
+**Verificação** (com `pnpm@10.33.0`):
+
+| Check | Resultado |
+|---|---|
+| typecheck | ✓ 0 erros |
+| lint | ✓ 0 erros; 9 avisos que já existiam |
+| test | ✓ 72 arquivos, 669 testes |
+| build | ✓ |
+
+**Pendências / próximos passos:** o webhook da uazapi sem segredo configurado segue aberto e é tratado na Fase 2.
+
+**Armadilhas descobertas:**
+- **Teste de rota que não mocka o guard quebra com "`cookies` was called outside a request scope"**, porque o guard lê o cookie. Mocke `@/lib/auth/require-dashboard-session`.
+- **Varredura de guard por handler dá falso negativo quando o guard vive num helper local** (caso do avatar). O teste de contrato aceita helper do mesmo arquivo que chama o guard.
+
+---
+
 ## [2026-09-25] Reescrita do commit inicial público (dados da origem)
 
 **Agente/Modelo:** Claude Opus 5.5

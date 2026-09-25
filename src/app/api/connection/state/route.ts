@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
 import { getUazapiStatus } from "@/features/chat/lib/connection/uazapi";
+import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
 
 // Estado da conexão (leve). Pode ser consultado com frequência SEM disparar
 // /instance/connect. Ao detectar "conectado", grava o telefone dono (owner) em
@@ -25,6 +26,9 @@ type StatePayload = {
 };
 
 export async function GET() {
+  const auth = await requireDashboardAdmin();
+  if ("error" in auth) return auth.error;
+
   const supabase = createSupabaseAdminClient();
   const integration = await getUazapiIntegration(supabase);
 

@@ -47,7 +47,7 @@ Confundir os modelos é o erro mais caro deste repositório. A API v1 para integ
 
 | Família de rota | Autenticação | Onde |
 |---|---|---|
-| `/app/*` e a maioria de `/api/*` | Cookie `crm-suporte-session` (JWT HS256) | `src/proxy.ts` + `src/lib/auth/route-guard.ts` |
+| `/app/*` e a maioria de `/api/*` | Cookie `crm-suporte-session` (JWT HS256) **e**, em todo handler `/api`, confirmação no banco (`requireDashboardUser`/`requireDashboardAdmin`) | `src/proxy.ts` + `src/lib/auth/route-guard.ts` + `src/lib/auth/require-dashboard-session.ts`; `src/app/api/api-guards.test.ts` garante |
 | `/api/chat/webhook/uazapi` | Segredo em query string (`?s=`), próprio da uazapi | `src/app/api/chat/webhook/uazapi/route.ts` |
 | *(Fase 5)* `/api/v1/*` | Token de API com escopo (hash em `api_tokens`), base em `verifyWebhookAuth` | `src/lib/security/api-token.ts`, `src/lib/security/verify-webhook.ts` |
 

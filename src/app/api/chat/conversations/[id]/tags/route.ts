@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,9 @@ function guard(id: string) {
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
   const blocked = guard(id);
   if (blocked) return blocked;
@@ -63,6 +67,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
   const blocked = guard(id);
   if (blocked) return blocked;

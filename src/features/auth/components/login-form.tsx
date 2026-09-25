@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/kibo-ui/spinner";
 import { cn } from "@/lib/utils";
+import { safeRedirectPath } from "@/features/auth/lib/safe-redirect";
 
 type Status = "idle" | "pending" | "success" | "error";
 
@@ -60,7 +61,7 @@ export function LoginForm() {
       }
 
       setStatus("success");
-      const redirectTo = searchParams.get("redirect") ?? "/app";
+      const redirectTo = safeRedirectPath(searchParams.get("redirect"), window.location.origin);
       setTimeout(() => {
         router.replace(redirectTo);
         router.refresh();

@@ -5,10 +5,14 @@ import { putMedia } from "@/lib/storage/put-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const { audioBase64, mimeType, seconds, quotedMessageId } = (await request.json()) as {
