@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
@@ -8,10 +10,17 @@ import {
   registerUazapiWebhook,
 } from "@/features/chat/lib/connection/uazapi";
 import { safeBaseUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import {
+  getChatIntegrationSecret,
+  setChatIntegrationSecret,
+} from "@/features/chat/lib/connection/integration";
 
 // Persiste as credenciais da instância uazapi (chat_integrations) e registra o
 // webhook de entrada. É o que "acopla" a conexão ao chat: sem esta linha, envio
 // e webhook não têm como resolver a integração.
+//
+// Nenhum segredo em tabela nem em env: `config` guarda só a `apiUrl`; o token
+// da instância e o segredo do webhook (`?s=`) vão para o Vault.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -59,56 +68,78 @@ export async function POST(request: Request) {
   const now = new Date().toISOString();
   const supabase = createSupabaseAdminClient();
 
-  // Upsert manual (não há unique em provider): 1 instância uazapi (single-tenant).
-  const { data: existing } = await supabase
-    .from("chat_integrations")
-    .select("id")
-    .eq("provider", "uazapi")
-    .limit(1)
-    .maybeSingle();
+  const findExisting = () =>
+    supabase.from("chat_integrations").select("id").eq("provider", "uazapi").maybeSingle();
 
+  // Upsert manual: 1 instância uazapi (single-tenant). O `unique (provider)`
+  // do banco barra o segundo INSERT de dois cliques simultâneos (23505); aí
+  // a linha que venceu é relida e atualizada.
   let integrationId: string;
-  if (existing) {
-    const { error } = await supabase
-      .from("chat_integrations")
-      .update({
-        config: { apiUrl: base, token },
-        is_active: true,
-        updated_at: now,
-      })
-      .eq("id", existing.id);
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  try {
+    let { data: existing, error: findError } = await findExisting();
+    if (findError) throw findError;
+
+    if (!existing) {
+      const { data, error } = await supabase
+        .from("chat_integrations")
+        .insert({
+          name: "WhatsApp (uazapi)",
+          provider: "uazapi",
+          config: { apiUrl: base },
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      if (error?.code === "23505") {
+        ({ data: existing, error: findError } = await findExisting());
+        if (findError) throw findError;
+      } else if (error || !data) {
+        throw error ?? new Error("insert_failed");
+      } else {
+        existing = data;
+      }
     }
+    if (!existing) throw new Error("integration_not_found");
     integrationId = existing.id;
-  } else {
-    const { data, error } = await supabase
+
+    const { error: updateError } = await supabase
       .from("chat_integrations")
-      .insert({
-        name: "WhatsApp (uazapi)",
-        provider: "uazapi",
-        config: { apiUrl: base, token },
-        is_active: true,
-      })
-      .select("id")
-      .single();
-    if (error || !data) {
-      return NextResponse.json(
-        { ok: false, error: error?.message ?? "Falha ao salvar." },
-        { status: 500 }
-      );
+      .update({ config: { apiUrl: base }, is_active: true, updated_at: now })
+      .eq("id", integrationId);
+    if (updateError) throw updateError;
+
+    await setChatIntegrationSecret(supabase, integrationId, "token", token);
+  } catch (error) {
+    console.error("[connection/persist] gravar integração falhou:", error);
+    return NextResponse.json(
+      { ok: false, error: "Não foi possível salvar as credenciais." },
+      { status: 500 }
+    );
+  }
+
+  // Segredo do webhook: gerado na primeira conexão e mantido nas seguintes,
+  // para reconectar não invalidar um webhook já registrado. Trocar o segredo
+  // é rotação, decisão explícita (menu Conexão, Fase 5).
+  let secret: string;
+  try {
+    const current = await getChatIntegrationSecret(supabase, integrationId, "webhook_secret");
+    secret = current ?? randomBytes(32).toString("hex");
+    if (!current) {
+      await setChatIntegrationSecret(supabase, integrationId, "webhook_secret", secret);
     }
-    integrationId = data.id;
+  } catch (error) {
+    console.error("[connection/persist] segredo do webhook falhou:", error);
+    return NextResponse.json(
+      { ok: false, error: "Credenciais salvas, mas o segredo do webhook não foi gerado." },
+      { status: 500 }
+    );
   }
 
   // Registra o webhook apontando para a nossa rota de entrada (com o secret).
-  const secret = process.env.UAZAPI_WEBHOOK_SECRET;
   const publicBase = (
     process.env.APP_PUBLIC_URL || new URL(request.url).origin
   ).replace(/\/+$/, "");
-  const webhookUrl = `${publicBase}/api/chat/webhook/uazapi${
-    secret ? `?s=${encodeURIComponent(secret)}` : ""
-  }`;
+  const webhookUrl = `${publicBase}/api/chat/webhook/uazapi?s=${encodeURIComponent(secret)}`;
 
   let webhookRegistered = false;
   let webhookError: string | null = null;

@@ -11,6 +11,7 @@ import {
 import { sendUazapiMedia, sendUazapiText } from "@/features/chat/lib/senders/uazapi";
 import type { ChatMessage } from "@/features/chat/types";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 
 // Encaminhar mensagens desta conversa para outras.
 //
@@ -231,18 +232,11 @@ async function loadIntegrations(
 ): Promise<Map<string, Credentials>> {
   const ids = [...new Set(targets.map((t) => t.integration_id).filter(Boolean))] as string[];
   const map = new Map<string, Credentials>();
-  if (ids.length === 0) return map;
 
-  const { data } = await supabase
-    .from("chat_integrations")
-    .select("id, provider, config")
-    .in("id", ids);
-
-  for (const row of data ?? []) {
-    // Encaminhar depende de `forward` no /send/*, que só existe na uazapi.
-    if (row.provider !== "uazapi") continue;
-    const { apiUrl, token } = row.config as Record<string, string>;
-    if (apiUrl && token) map.set(row.id, { apiUrl, token });
+  // Uma integração na v1 (unique por provedor): o laço roda uma vez.
+  for (const id of ids) {
+    const integration = await getIntegrationCredentials(supabase, id);
+    if (integration) map.set(id, { apiUrl: integration.apiUrl, token: integration.token });
   }
   return map;
 }

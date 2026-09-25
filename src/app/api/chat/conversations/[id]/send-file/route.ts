@@ -7,6 +7,7 @@ import { compressVideo } from "@/features/chat/lib/media/compress-video";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import type { MessageType } from "@/features/chat/types";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 // Node runtime obrigatório: usa child_process (ffmpeg) + fs.
@@ -64,21 +65,9 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "No phone on conversation" }, { status: 400 });
     }
 
-    const { data: integration } = conv.integration_id
-      ? await supabase
-          .from("chat_integrations")
-          .select("provider, config")
-          .eq("id", conv.integration_id)
-          .single()
-      : { data: null };
+    const integration = await getIntegrationCredentials(supabase, conv.integration_id);
     if (!integration) {
       return NextResponse.json({ error: "No integration" }, { status: 400 });
-    }
-    if (integration.provider !== "uazapi") {
-      return NextResponse.json(
-        { error: "Envio de anexo disponível apenas para uazapi." },
-        { status: 400 }
-      );
     }
 
     if (file.size > MAX_BYTES) {
@@ -168,8 +157,7 @@ export async function POST(request: Request, { params }: Params) {
 
     // 3) Envia via uazapi (file = URL pública).
     try {
-      const { apiUrl, token } = integration.config as Record<string, string>;
-      const result = await sendUazapiMedia(apiUrl, token, phone, {
+      const result = await sendUazapiMedia(integration.apiUrl, integration.token, phone, {
         type: uazapiType,
         file: publicUrl,
         trackId: msg.id,

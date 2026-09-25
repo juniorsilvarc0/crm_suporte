@@ -5,6 +5,7 @@ import { putMedia } from "@/lib/storage/put-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 type Params = { params: Promise<{ id: string }> };
@@ -43,19 +44,11 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "No phone on conversation" }, { status: 400 });
     }
 
-    const { data: integration } = conv.integration_id
-      ? await supabase
-          .from("chat_integrations")
-          .select("provider, config")
-          .eq("id", conv.integration_id)
-          .single()
-      : { data: null };
-
+    const integration = await getIntegrationCredentials(supabase, conv.integration_id);
     if (!integration) {
       return NextResponse.json({ error: "No integration" }, { status: 400 });
     }
 
-    const intConfig = integration.config as Record<string, string>;
     const mime = mimeType || "audio/webm";
     const bytes = Buffer.from(audioBase64, "base64");
 
@@ -95,22 +88,22 @@ export async function POST(request: Request, { params }: Params) {
 
     // 3) Envia pelo provedor.
     try {
-      if (integration.provider === "uazapi") {
-        const { apiUrl, token } = intConfig;
-        const result = await sendUazapiAudio(apiUrl, token, phone, audioBase64, msg.id, replyExternalId);
-        const { error: idErr } = await supabase
-          .from("chat_messages")
-          .update({
-            external_id: result.messageid,
-            metadata: { seconds: seconds ?? 0, uazapiId: result.id },
-          })
-          .eq("id", msg.id);
-        if (idErr) console.error("[send-audio] gravar external_id falhou:", idErr, msg.id);
-      } else {
-        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
-        // enviada sem ter saído para lugar nenhum.
-        throw new Error(`provedor não suportado: ${integration.provider}`);
-      }
+      const result = await sendUazapiAudio(
+        integration.apiUrl,
+        integration.token,
+        phone,
+        audioBase64,
+        msg.id,
+        replyExternalId
+      );
+      const { error: idErr } = await supabase
+        .from("chat_messages")
+        .update({
+          external_id: result.messageid,
+          metadata: { seconds: seconds ?? 0, uazapiId: result.id },
+        })
+        .eq("id", msg.id);
+      if (idErr) console.error("[send-audio] gravar external_id falhou:", idErr, msg.id);
       // delivery_status → 'sent' monótono (não regride delivered/read de corrida).
       const { error: stErr } = await supabase
         .from("chat_messages")

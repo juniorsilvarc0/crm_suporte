@@ -12,11 +12,15 @@ import {
 } from "@/features/chat/lib/normalizers/uazapi";
 import { upsertMessage } from "@/features/chat/lib/upsert-message";
 import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
-import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
+import {
+  getChatIntegrationSecret,
+  getUazapiIntegration,
+} from "@/features/chat/lib/connection/integration";
 import { downloadUazapiMedia } from "@/features/chat/lib/connection/uazapi";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { getRelayUrl } from "@/features/settings/lib/get-relay-url";
+import { safeEqual } from "@/lib/security/safe-equal";
 import type { StoredMedia } from "@/lib/storage/put-media";
 import type { Json } from "@/lib/supabase/types";
 
@@ -50,32 +54,25 @@ const MEDIA_TYPES = ["image", "audio", "video", "document", "sticker"];
 
 export async function POST(request: Request) {
   try {
-    // 1) Autenticação do webhook via query param (?s=).
-    const url = new URL(request.url);
-    const secret = process.env.UAZAPI_WEBHOOK_SECRET;
-    if (secret && url.searchParams.get("s") !== secret) {
+    // 1) Autenticação via query param (?s=): a uazapi não manda header
+    //    próprio. O segredo é da integração, gerado ao conectar e guardado no
+    //    Vault. Falha fechada: sem integração ou sem segredo, ninguém entra —
+    //    e a resposta é a mesma 401, para não contar a quem não se autenticou
+    //    se existe instância configurada.
+    const supabase = createSupabaseAdminClient();
+    const integration = await getUazapiIntegration(supabase);
+    const expected = integration
+      ? await getChatIntegrationSecret(supabase, integration.id, "webhook_secret")
+      : null;
+    const received = new URL(request.url).searchParams.get("s") ?? "";
+    if (!integration || !expected || !safeEqual(received, expected)) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 });
     }
 
     const payload = (await request.json()) as UazapiEnvelope;
-    const supabase = createSupabaseAdminClient();
-
-    const integration = await getUazapiIntegration(supabase);
-    if (!integration) {
-      return NextResponse.json({ ok: false, reason: "no_integration" });
-    }
 
     const event = uazapiEventType(payload);
     const message = getUazapiMessage(payload);
-
-    // DEBUG temporário: loga só os objetos message/event (sem o `chat` gigante)
-    // para confirmar/afinar os nomes de campo contra a instância real.
-    if (message) {
-      console.info("[uazapi-dbg] msg:", JSON.stringify(message).slice(0, 1600));
-    }
-    if (payload.event) {
-      console.info("[uazapi-dbg] evt:", JSON.stringify(payload.event).slice(0, 1200));
-    }
 
     // 2) messages_update → apagada, mídia baixada (FileDownloaded) OU status.
     if (event === "messages_update") {
@@ -230,10 +227,12 @@ export async function POST(request: Request) {
     //    pelo chatid (o contraparte) — ver normalizer.
     const normalized = normalizeUazapiWebhook(payload);
     if (!normalized) {
-      console.info(
-        "[webhook/uazapi] não reconhecido:",
-        JSON.stringify(payload).slice(0, 500)
-      );
+      // Só a forma do evento: o envelope traz o `token` da instância e o texto
+      // da conversa, e nenhum dos dois pode ir para o log.
+      console.info("[webhook/uazapi] não reconhecido:", {
+        eventType: payload.EventType ?? null,
+        messageType: message?.messageType ?? null,
+      });
       return NextResponse.json({ ok: true, reason: "skipped" });
     }
 

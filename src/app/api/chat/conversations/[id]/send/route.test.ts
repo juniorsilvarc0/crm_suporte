@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sessionMock, adminClientMock, sendTextMock } = vi.hoisted(() => ({
+const { sessionMock, adminClientMock, sendTextMock, credentialsMock } = vi.hoisted(() => ({
   sessionMock: vi.fn(),
   adminClientMock: vi.fn(),
   sendTextMock: vi.fn(),
+  credentialsMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
@@ -14,6 +15,9 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 vi.mock("@/features/chat/lib/senders/uazapi", () => ({
   sendUazapiText: sendTextMock,
+}));
+vi.mock("@/features/chat/lib/connection/integration", () => ({
+  getIntegrationCredentials: credentialsMock,
 }));
 
 import { POST } from "@/app/api/chat/conversations/[id]/send/route";
@@ -58,7 +62,7 @@ function request(body: unknown) {
   });
 }
 
-/** As duas leituras que abrem qualquer envio: a conversa e a integração. */
+/** A leitura que abre qualquer envio (a credencial vem do Vault, mockada). */
 function queueConversation() {
   queue("chat_conversations", {
     data: {
@@ -66,13 +70,6 @@ function queueConversation() {
       external_id: "5511999999999",
       contact_phone: "5511999999999",
       integration_id: "integration-1",
-    },
-    error: null,
-  });
-  queue("chat_integrations", {
-    data: {
-      provider: "uazapi",
-      config: { apiUrl: "https://api.uazapi.test", token: "token" },
     },
     error: null,
   });
@@ -102,6 +99,12 @@ beforeEach(() => {
     },
   });
   sendTextMock.mockResolvedValue({ id: "uazapi-1", messageid: "provider-1" });
+  credentialsMock.mockResolvedValue({
+    id: "integration-1",
+    apiUrl: "https://api.uazapi.test",
+    token: "token",
+    phone_number: null,
+  });
 });
 
 describe("POST /send — sessão", () => {
@@ -303,5 +306,18 @@ describe("POST /send — idempotência por clientId", () => {
           call.payload === "delivery_status"
       )
     ).toBe(true);
+  });
+
+  it("sem token no Vault não envia nem grava mensagem", async () => {
+    queueConversation();
+    queue("chat_messages", { data: null, error: null });
+    credentialsMock.mockResolvedValue(null);
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(400);
+    expect(credentialsMock).toHaveBeenCalledWith(expect.anything(), "integration-1");
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
   });
 });

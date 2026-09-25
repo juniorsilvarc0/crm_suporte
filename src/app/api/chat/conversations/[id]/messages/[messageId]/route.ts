@@ -15,6 +15,7 @@ import {
   isNoteMessage,
 } from "@/features/chat/lib/note-actions";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 import type { ChatMessage } from "@/features/chat/types";
 import type { Json } from "@/lib/supabase/types";
 
@@ -93,30 +94,16 @@ async function loadContext(
   if (base instanceof NextResponse) return base;
   const { supabase, message, conv } = base;
 
-  const { data: integration } = conv.integration_id
-    ? await supabase
-        .from("chat_integrations")
-        .select("provider, config")
-        .eq("id", conv.integration_id)
-        .maybeSingle()
-    : { data: null };
-
+  const integration = await getIntegrationCredentials(supabase, conv.integration_id);
   if (!integration) {
     return NextResponse.json({ error: "Conversa sem integração." }, { status: 400 });
   }
-  if (integration.provider !== "uazapi") {
-    return NextResponse.json(
-      { error: "Editar e apagar estão disponíveis apenas para uazapi." },
-      { status: 400 }
-    );
-  }
 
-  const { apiUrl, token } = integration.config as Record<string, string>;
   return {
     supabase,
     message,
-    apiUrl,
-    token,
+    apiUrl: integration.apiUrl,
+    token: integration.token,
     lastMessageAt: conv.last_message_at,
   };
 }

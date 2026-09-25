@@ -8,6 +8,7 @@ import { resolveSignature, signMessage } from "@/features/chat/lib/signature";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { buildMessageLinkPreview } from "@/features/chat/lib/message-content";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -82,19 +83,10 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "No phone on conversation" }, { status: 400 });
     }
 
-    const { data: integration } = conv.integration_id
-      ? await supabase
-          .from("chat_integrations")
-          .select("provider, config")
-          .eq("id", conv.integration_id)
-          .single()
-      : { data: null };
-
+    const integration = await getIntegrationCredentials(supabase, conv.integration_id);
     if (!integration) {
       return NextResponse.json({ error: "No integration" }, { status: 400 });
     }
-
-    const intConfig = integration.config as Record<string, string>;
 
     /**
      * O mesmo `clientId` nunca vira duas mensagens.
@@ -187,33 +179,29 @@ export async function POST(request: Request, { params }: Params) {
 
     // 2) Envia pelo provedor.
     try {
-      if (integration.provider === "uazapi") {
-        const { apiUrl, token } = intConfig;
-        const result = await sendUazapiText(apiUrl, token, phone, outboundContent, {
-          trackId: msg.id,
-          replyId: replyExternalId,
-        });
-        // external_id/metadata: sempre (p/ casar status e deduplicar o echo).
-        const providerPreview = result.linkPreview ?? linkPreview;
-        const { error: idErr } = await supabase
-          .from("chat_messages")
-          .update({
-            external_id: result.messageid,
-            metadata: {
-              // O `clientId` sobrevive à sobrescrita do metadata: é ele que liga
-              // esta linha à bolha da tela e ao reenvio.
-              ...(clientId ? { clientId } : {}),
-              uazapiId: result.id,
-              ...(providerPreview ? { linkPreview: providerPreview } : {}),
-            },
-          })
-          .eq("id", msg.id);
-        if (idErr) console.error("[send] gravar external_id falhou:", idErr, msg.id);
-      } else {
-        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
-        // enviada sem ter saído para lugar nenhum.
-        throw new Error(`provedor não suportado: ${integration.provider}`);
-      }
+      const result = await sendUazapiText(
+        integration.apiUrl,
+        integration.token,
+        phone,
+        outboundContent,
+        { trackId: msg.id, replyId: replyExternalId }
+      );
+      // external_id/metadata: sempre (p/ casar status e deduplicar o echo).
+      const providerPreview = result.linkPreview ?? linkPreview;
+      const { error: idErr } = await supabase
+        .from("chat_messages")
+        .update({
+          external_id: result.messageid,
+          metadata: {
+            // O `clientId` sobrevive à sobrescrita do metadata: é ele que liga
+            // esta linha à bolha da tela e ao reenvio.
+            ...(clientId ? { clientId } : {}),
+            uazapiId: result.id,
+            ...(providerPreview ? { linkPreview: providerPreview } : {}),
+          },
+        })
+        .eq("id", msg.id);
+      if (idErr) console.error("[send] gravar external_id falhou:", idErr, msg.id);
       // delivery_status → 'sent' de forma MONÓTONA: não regride um delivered/read
       // que um messages_update pode ter gravado durante o await do envio.
       const { error: stErr } = await supabase
