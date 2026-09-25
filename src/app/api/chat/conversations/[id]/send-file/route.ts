@@ -7,6 +7,7 @@ import { compressVideo } from "@/features/chat/lib/media/compress-video";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import type { MessageType } from "@/features/chat/types";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 // Node runtime obrigatório: usa child_process (ffmpeg) + fs.
 export const runtime = "nodejs";
@@ -28,6 +29,9 @@ function classify(mime: string): { uazapiType: UazapiMediaType; msgType: Message
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
 

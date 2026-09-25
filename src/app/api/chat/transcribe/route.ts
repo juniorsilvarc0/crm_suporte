@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOpenAiTranscriptionConfig } from "@/features/settings/lib/get-runtime-environment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 type Body = { messageId: string };
 
@@ -11,6 +12,9 @@ type Body = { messageId: string };
  *  - a public/accessible media URL (UazAPI, our own storage)
  */
 export async function POST(request: Request) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { messageId } = (await request.json()) as Body;
     if (!messageId) {

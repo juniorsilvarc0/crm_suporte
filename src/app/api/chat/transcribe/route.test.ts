@@ -7,6 +7,7 @@ const {
   updateMock,
   updateEqMock,
   fetchMock,
+  userGuardMock,
 } = vi.hoisted(() => ({
   getConfigMock: vi.fn(),
   adminClientMock: vi.fn(),
@@ -14,6 +15,11 @@ const {
   updateMock: vi.fn(),
   updateEqMock: vi.fn(),
   fetchMock: vi.fn(),
+  userGuardMock: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/require-dashboard-session", () => ({
+  requireDashboardUser: userGuardMock,
 }));
 
 vi.mock("@/features/settings/lib/get-runtime-environment", () => ({
@@ -37,6 +43,7 @@ function request() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("fetch", fetchMock);
+  userGuardMock.mockResolvedValue({ viewer: { id: "user-1" } });
   getConfigMock.mockResolvedValue({
     apiKey: "openai-key",
     model: "gpt-4o-mini-transcribe",
@@ -71,6 +78,20 @@ beforeEach(() => {
 });
 
 describe("POST /api/chat/transcribe", () => {
+  it("recusa usuário inativo sem ler a mensagem nem chamar a OpenAI", async () => {
+    // Transcrever custa dinheiro: cookie válido de alguém desativado não pode
+    // disparar a chamada.
+    userGuardMock.mockResolvedValue({
+      error: Response.json({ ok: false, message: "Sessão inválida." }, { status: 401 }),
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(401);
+    expect(adminClientMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("usa chave e modelo resolvidos pela configuração segura", async () => {
     const response = await POST(request());
     const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];

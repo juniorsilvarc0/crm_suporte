@@ -17,6 +17,9 @@ export const runtime = "nodejs";
 // pública. O agente recebe a config por push a cada save (a leitura por GET
 // volta na API v1, Fase 5).
 export async function GET() {
+  const auth = await requireDashboardAdmin();
+  if ("error" in auth) return auth.error;
+
   const config = await getBotSignatureConfig();
   return NextResponse.json({ ok: true, ...config });
 }
