@@ -175,7 +175,7 @@ export function ChatShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedConversationId]);
 
-  // Deep-link vindo de leads (?phone=...) ou de um Number Check (?conversation=...).
+  // Deep-link por telefone (?phone=...) ou de um Number Check (?conversation=...).
   // Seleciona a conversa indicada diretamente ou, após o carregamento, a que
   // casa com o telefone. O ref evita re-selecionar em re-renders e não briga
   // com a seleção manual do usuário depois.
@@ -207,7 +207,7 @@ export function ChatShell() {
       selectConversation(target.id);
       markAsRead(target.id);
     } else {
-      toast.info("Nenhuma conversa encontrada para este lead ainda.");
+      toast.info("Nenhuma conversa encontrada para este contato ainda.");
     }
   }, [
     conversationParam,

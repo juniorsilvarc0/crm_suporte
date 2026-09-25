@@ -34,7 +34,7 @@ function conversation(
   return {
     id,
     integration_id: "int-1",
-    lead_id: `lead-${id}`,
+    contact_id: `contato-${id}`,
     external_id: `55119999${id}`,
     contact_name: id,
     contact_phone: `55119999${id}`,

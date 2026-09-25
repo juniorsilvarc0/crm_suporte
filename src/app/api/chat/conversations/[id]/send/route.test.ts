@@ -1,19 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { viewerMock, adminClientMock, sendTextMock } = vi.hoisted(() => ({
-  viewerMock: vi.fn(),
+const { sessionMock, adminClientMock, sendTextMock, credentialsMock } = vi.hoisted(() => ({
+  sessionMock: vi.fn(),
   adminClientMock: vi.fn(),
   sendTextMock: vi.fn(),
+  credentialsMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
-  getDashboardViewer: viewerMock,
+  requireDashboardUser: sessionMock,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: adminClientMock,
 }));
 vi.mock("@/features/chat/lib/senders/uazapi", () => ({
   sendUazapiText: sendTextMock,
+}));
+vi.mock("@/features/chat/lib/connection/integration", () => ({
+  getIntegrationCredentials: credentialsMock,
 }));
 
 import { POST } from "@/app/api/chat/conversations/[id]/send/route";
@@ -58,7 +62,7 @@ function request(body: unknown) {
   });
 }
 
-/** As duas leituras que abrem qualquer envio: a conversa e a integração. */
+/** A leitura que abre qualquer envio (a credencial vem do Vault, mockada). */
 function queueConversation() {
   queue("chat_conversations", {
     data: {
@@ -66,13 +70,6 @@ function queueConversation() {
       external_id: "5511999999999",
       contact_phone: "5511999999999",
       integration_id: "integration-1",
-    },
-    error: null,
-  });
-  queue("chat_integrations", {
-    data: {
-      provider: "uazapi",
-      config: { apiUrl: "https://api.uazapi.test", token: "token" },
     },
     error: null,
   });
@@ -86,11 +83,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   queues.clear();
-  viewerMock.mockResolvedValue({
-    id: "user-1",
-    name: "Ana Souza",
-    apelido_atendimento: null,
-    assinar_mensagens: true,
+  sessionMock.mockResolvedValue({
+    viewer: {
+      id: "user-1",
+      name: "Ana Souza",
+      apelido_atendimento: null,
+      assinar_mensagens: true,
+    },
   });
   adminClientMock.mockReturnValue({
     from: (table: string) => {
@@ -100,6 +99,43 @@ beforeEach(() => {
     },
   });
   sendTextMock.mockResolvedValue({ id: "uazapi-1", messageid: "provider-1" });
+  credentialsMock.mockResolvedValue({
+    id: "integration-1",
+    apiUrl: "https://api.uazapi.test",
+    token: "token",
+    phone_number: null,
+  });
+});
+
+describe("POST /send — sessão", () => {
+  it("recusa usuário desativado antes de tocar no banco ou no WhatsApp", async () => {
+    sessionMock.mockResolvedValue({
+      error: Response.json({ ok: false, message: "Sessão inválida." }, { status: 401 }),
+    });
+
+    const response = await POST(request({ content: "oi" }), params);
+
+    expect(response.status).toBe(401);
+    expect(adminClientMock).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it("grava a nota interna como do analista que escreveu", async () => {
+    queue("chat_conversations", {
+      data: { id: "conversation-1", external_id: "5511999999999" },
+      error: null,
+    });
+    queue("chat_messages", { data: { id: "note-1" }, error: null });
+
+    const response = await POST(request({ content: "ligar amanhã", kind: "note" }), params);
+
+    expect(response.status).toBe(200);
+    expect(calls.find((call) => call.method === "insert")?.payload).toMatchObject({
+      type: "note",
+      sender_type: "agent",
+      sent_by_user_id: "user-1",
+    });
+  });
 });
 
 describe("POST /send — idempotência por clientId", () => {
@@ -136,6 +172,8 @@ describe("POST /send — idempotência por clientId", () => {
     expect(insert?.payload).toMatchObject({
       metadata: { clientId: "abc-123" },
       delivery_status: "pending",
+      sender_type: "agent",
+      sent_by_user_id: "user-1",
       // A assinatura do operador é aplicada uma vez, aqui.
       content: "*Ana:*\nbom dia",
     });
@@ -218,5 +256,68 @@ describe("POST /send — idempotência por clientId", () => {
           (call.payload as { delivery_status?: string })?.delivery_status === "pending"
       )
     ).toBe(true);
+  });
+
+  it("clique duplo simultâneo: o INSERT barrado devolve a linha da outra requisição", async () => {
+    queueConversation();
+    const winner = { id: "message-1", delivery_status: "pending", metadata: { clientId: "abc-123" } };
+    queue(
+      "chat_messages",
+      { data: null, error: null }, // as duas passaram pelo SELECT
+      { data: null, error: { code: "23505" } }, // o índice único barrou esta
+      { data: winner, error: null } // relê a linha da outra
+    );
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: winner });
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it("dois reenvios simultâneos: só quem virou a linha para pendente manda", async () => {
+    queueConversation();
+    const failed = {
+      id: "message-1",
+      delivery_status: "failed",
+      content: "*Ana:*\nbom dia",
+      quoted_message_id: null,
+      metadata: { clientId: "abc-123" },
+    };
+    const pending = { ...failed, delivery_status: "pending" };
+    queue(
+      "chat_messages",
+      { data: failed, error: null },
+      { data: null, error: null }, // a outra requisição já tirou de `failed`
+      { data: pending, error: null }
+    );
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: pending });
+    expect(sendTextMock).not.toHaveBeenCalled();
+    // O UPDATE para `pending` só casa linha que ainda está `failed`.
+    expect(
+      calls.some(
+        (call) =>
+          call.table === "chat_messages" &&
+          call.method === "eq" &&
+          call.payload === "delivery_status"
+      )
+    ).toBe(true);
+  });
+
+  it("sem token no Vault não envia nem grava mensagem", async () => {
+    queueConversation();
+    queue("chat_messages", { data: null, error: null });
+    credentialsMock.mockResolvedValue(null);
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(400);
+    expect(credentialsMock).toHaveBeenCalledWith(expect.anything(), "integration-1");
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
   });
 });

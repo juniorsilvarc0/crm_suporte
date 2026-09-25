@@ -6,12 +6,12 @@ import type { ChatConversation } from "@/features/chat/types";
  * A referência visual (WhatsApp) mostra dados de **perfil comercial** — horário,
  * categoria, descrição, site, endereço. Nada disso existe neste banco: medido em
  * 2026-08-08, `chat_conversations.metadata` só carrega `avatar_key`. O que existe
- * e vale a tela é o **lead**: 391 das 424 conversas (92%) casam com um por
- * telefone normalizado. Por isso o formato é o do iOS e o conteúdo é o do CRM.
+ * e vale a tela é o **cadastro do contato**. Por isso o formato é o do iOS e o
+ * conteúdo é o do CRM.
  */
 
-/** Lead correspondente à conversa, resolvido pelo telefone normalizado. */
-export type ContactLead = {
+/** Contato dono da conversa (`chat_conversations.contact_id`). */
+export type ContactRecord = {
   id: string;
   email: string | null;
   notes: string | null;
@@ -19,7 +19,7 @@ export type ContactLead = {
 };
 
 export type ContactInfo = {
-  lead: ContactLead | null;
+  contact: ContactRecord | null;
 };
 
 /**
@@ -58,16 +58,16 @@ export function contactTelHref(phone: string | null | undefined): string | null 
  *
  * Compara aparado dos dois lados: espaço no fim não é alteração, e `null` no
  * banco e campo vazio na tela são o mesmo estado — sem isso o botão de salvar
- * nasceria habilitado em todo lead sem notas.
+ * nasceria habilitado em todo contato sem notas.
  */
 export function notesAreDirty(draft: string, saved: string | null | undefined): boolean {
   return draft.trim() !== (saved ?? "").trim();
 }
 
 /**
- * O que vai para o `PATCH` do lead: texto aparado, ou `null` para limpar.
+ * O que vai para o `PATCH` do contato: texto aparado, ou `null` para limpar.
  *
- * `notes` é `nullableText` na rota (`/api/leads/[id]`), que já converte string
+ * `notes` é `nullableText` na rota (`/api/contacts/[id]`), que já converte string
  * vazia em `null`. Mandar `null` explícito deixa a intenção legível no fio.
  */
 export function notesPatchValue(draft: string): string | null {

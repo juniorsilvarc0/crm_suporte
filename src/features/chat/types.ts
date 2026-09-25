@@ -20,7 +20,9 @@ export type MessageDeliveryStatus =
 export type ChatIntegration = {
   id: string;
   name: string;
-  provider: "evolution" | "uazapi" | "meta";
+  /** Só uazapi (check no banco). */
+  provider: "uazapi";
+  /** Só o que não é segredo (`apiUrl`). Token e segredo do webhook ficam no Vault. */
   config: Record<string, string>;
   phone_number: string | null;
   is_active: boolean;
@@ -30,7 +32,7 @@ export type ChatIntegration = {
 export type ChatConversation = {
   id: string;
   integration_id: string | null;
-  lead_id: string;
+  contact_id: string;
   external_id: string;
   contact_name: string | null;
   contact_phone: string | null;

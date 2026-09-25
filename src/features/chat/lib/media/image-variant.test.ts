@@ -56,6 +56,18 @@ describe("chatThumbSrc", () => {
     ).toBe("https://media.example.com/chat/2026/08/abc.thumb.webp");
   });
 
+  // Bucket privado: a miniatura é a rota do app, não uma URL absoluta.
+  it("aceita a miniatura servida pela rota de mídia do app", () => {
+    expect(
+      chatThumbSrc("/api/chat/media/m-1", { thumbUrl: "/api/chat/media/m-1?variant=thumb" })
+    ).toBe("/api/chat/media/m-1?variant=thumb");
+  });
+
+  it("recusa caminho relativo fora da rota de mídia", () => {
+    expect(chatThumbSrc(R2, { thumbUrl: "/app/perfil" })).toBe(R2);
+    expect(chatThumbSrc(R2, { thumbUrl: "//evil.example/x.webp" })).toBe(R2);
+  });
+
   // Acervo antigo: continua no Supabase, e lá o transformador existe.
   it("sem miniatura gravada, cai no transformador do Supabase", () => {
     expect(chatThumbSrc(PUBLIC, null)).toContain("/render/image/public/");

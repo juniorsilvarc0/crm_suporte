@@ -6,8 +6,9 @@ Windows (via WSL2).
 O que você terá no fim:
 
 - App em **http://localhost:3000**
-- Postgres local com a API que o app consome: gateway na porta **54321** e banco
-  na **54322** (psql direto)
+- Postgres local com o que o app consome, atrás de um gateway na porta **54321**:
+  PostgREST (`/rest/v1`), Realtime (`/realtime/v1`, chat ao vivo) e Storage
+  (`/storage/v1`, mídia privada do chat). Banco na **54322** (psql direto).
 
 > Você **não precisa editar credenciais** para rodar local: o `.env.local.example`
 > já vem com as chaves públicas de demonstração do Supabase. Só copie e suba.
@@ -37,29 +38,38 @@ git clone https://github.com/juniorsilvarc0/crm_suporte.git
 cd crm_suporte
 
 cp .env.local.example .env.local
-docker compose up -d --build        # crm-suporte-db + rest + gateway + web
+docker compose up -d --build --wait # db + rest + realtime + storage + gateway + web
 ./scripts/db-local-apply.sh         # aplica migrations + seed
+./scripts/db-local-test.sh          # opcional: testes de SQL do baseline
 # http://localhost:3000 — login: admin@local / 123456
 ```
 
-> ⚠️ **O `supabase/seed.sql` herdado está quebrado.** Desde a migration de funis
-> personalizáveis (`20260818180000`), ele insere etapas sem `pipeline_id` e com
-> `on conflict (key)`. O `db-local-apply.sh` para no seed, e o `admin@local` **não é
-> criado**. O seed novo vem na Fase 2 de [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md).
-
-> ⚠️ O `db-local-apply.sh` reaplica **todas** as migrations a cada execução (ainda não
-> tem livro-razão). Use só contra o banco local.
-
-Limitações do stack local hoje: **sem Realtime** (o chat não atualiza ao vivo) e
-**sem Storage** (upload de mídia não funciona). Os dois entram na Fase 2.
+- O `db-local-apply.sh` tem **livro-razão** (`supabase_migrations.schema_migrations`):
+  cada migration roda uma vez, numa transação só; rodar de novo aplica só o que é
+  novo. O seed é idempotente. Ele **recusa rodar** antes de o `storage` estar
+  healthy, porque as migrations gravam os buckets. Use só contra o banco local.
+- **Credenciais de integração não vão no `.env.local`.** Token e segredo do
+  webhook da uazapi são gravados pela tela **Conexão**; a chave da OpenAI
+  (transcrição), pela tela **Configurações** (cofre). Tudo fica no Vault do banco.
+- A **1ª conexão ao Realtime** depois de subir o stack pode falhar (`Tenant
+  realtime-dev is initializing` no log); recarregue a tela.
+- WhatsApp **real** em localhost exige túnel HTTPS (a uazapi precisa alcançar o
+  webhook). Sem túnel, teste com payloads de fixture postados no webhook local.
 
 ---
 
 ## 3. Depois de um `git pull`
 
 ```bash
-./scripts/db-local-apply.sh          # migrations novas
+./scripts/db-local-apply.sh          # migrations novas (só as que faltam)
 docker compose up -d --build web     # rebuilda o app, se o código mudou
+```
+
+Mudou uma migration? Aplique e **regenere os tipos** do banco
+(`src/lib/supabase/database.types.ts` é gerado; não edite à mão):
+
+```bash
+./scripts/db-local-apply.sh && npx -y pnpm@10.33.0 db:types
 ```
 
 ---
@@ -101,7 +111,14 @@ docker exec crm-suporte-web pnpm test
 - **Porta 3000 / 54321 / 54322 ocupada** → derrube o que está usando ou ajuste as
   portas em `docker-compose.yml`.
 
-- **O app abre mas o login falha** → é o seed quebrado (seção 2).
+- **O app abre mas o login falha** → rode `./scripts/db-local-apply.sh` (cria o
+  `admin@local`). Se ele recusar por falta de `storage.buckets`, espere o
+  `crm-suporte-storage` ficar healthy (`docker compose up -d --wait`).
+
+- **O chat não atualiza ao vivo** → confira as assinaturas no banco:
+  `docker exec crm-suporte-db psql -U postgres -c "select claims_role from realtime.subscription"`.
+  Deve aparecer `authenticated`; `anon` quer dizer que o canal foi assinado antes
+  do token (use sempre `subscribeAuthenticated`).
 
 - **`pnpm` falha com "packages field missing or empty"** → o `pnpm` global é antigo
   para este `pnpm-workspace.yaml`. Use `npx -y pnpm@10.33.0 <script>`.

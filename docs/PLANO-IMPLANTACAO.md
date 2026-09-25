@@ -276,6 +276,12 @@ Para receber WhatsApp **real** em localhost, a uazapi precisa alcançar o webhoo
 - backup contando `tickets`/`contacts`, com a chave raiz do Vault no backup;
 - cópia fora da VPS como requisito de go-live.
 
+Descoberto na Fase 2, e obrigatório no primeiro deploy:
+- **Nunca rodar `supabase/seed.sql` em produção**: ele cria `admin@local` com senha `123456`. O 1º admin nasce por `select public.create_app_user(<email>, <nome>, <senha forte>, 'admin', 'slate', true)` via `psql` no servidor (o último `true` força a troca de senha no 1º login).
+- **Fechar os default privileges do `supabase_admin`** antes das migrations, como `docker/db-init.sql` faz no local (`alter default privileges for role supabase_admin in schema public revoke all on tables|sequences|functions from anon, authenticated, service_role`). Sem isso, objeto criado por ele nasce aberto, e o `assert_security_baseline()` reprova a migration seguinte.
+- **`NEXT_PUBLIC_SUPABASE_URL` tem de ser alcançável pelo navegador E pela uazapi**: as URLs assinadas de mídia são reescritas para essa origem (`signStorageObject`). `SUPABASE_JWT_SECRET` do app tem de ser o mesmo do tenant do Realtime, senão o chat não recebe nada ao vivo.
+- **`FILE_SIZE_LIMIT` do storage-api = 50 MB**, o mesmo teto do bucket `chat-media`; o efetivo é o menor dos dois.
+
 ## H. Riscos e fora da v1
 
 | Risco | Mitigação |

@@ -28,8 +28,8 @@ vi.mock("@/features/chat/lib/senders/uazapi", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: adminClientMock,
 }));
-vi.mock("@/features/leads/queries/resolve-lead-identity", () => ({
-  resolveLeadIdentity: resolveIdentityMock,
+vi.mock("@/features/contacts/queries/resolve-contact-identity", () => ({
+  resolveContactIdentity: resolveIdentityMock,
 }));
 
 import { POST } from "@/app/api/chat/conversations/start/route";
@@ -52,10 +52,9 @@ beforeEach(() => {
   });
   adminClientMock.mockReturnValue({ from: fromMock });
   resolveIdentityMock.mockResolvedValue({
-    leadId: "lead-1",
+    contactId: "contato-1",
     normalizedPhone: "11990000001",
     created: false,
-    initialDealId: null,
   });
 });
 
@@ -115,7 +114,7 @@ describe("POST /api/chat/conversations/start", () => {
         external_id: "5511990000001",
         contact_phone: "5511990000001",
         contact_name: "Abner",
-        lead_id: "lead-1",
+        contact_id: "contato-1",
         status: "human",
       })
     );

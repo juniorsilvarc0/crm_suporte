@@ -117,7 +117,9 @@ docker compose up -d --build        # banco + API + app em http://localhost:3000
 
 O stack local é 100% `docker compose` (sem o CLI da Supabase) — detalhes no
 cabeçalho do próprio `docker-compose.yml`. Migration nova? Rode
-`./scripts/db-local-apply.sh` de novo (idempotente).
+`./scripts/db-local-apply.sh` de novo (livro-razão: aplica só o que falta),
+`./scripts/db-local-test.sh` (testes de SQL) e `pnpm db:types` (regenera
+`src/lib/supabase/database.types.ts`; o CI falha se ficar diferente do banco).
 
 Para rodar os testes:
 

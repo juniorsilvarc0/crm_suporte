@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import {
   MAX_FORWARD_TARGETS,
@@ -11,6 +13,9 @@ import {
 import { sendUazapiMedia, sendUazapiText } from "@/features/chat/lib/senders/uazapi";
 import type { ChatMessage } from "@/features/chat/types";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
+import { chatMediaPath, signStorageObject } from "@/lib/storage/chat-media";
+import type { Json } from "@/lib/supabase/types";
 
 // Encaminhar mensagens desta conversa para outras.
 //
@@ -27,6 +32,12 @@ export const maxDuration = 120;
 
 type Params = { params: Promise<{ id: string }> };
 
+/** A linha inteira (`select *`), com as colunas da mídia privada. */
+type SourceMessage = ChatMessage & {
+  media_bucket: string | null;
+  media_key: string | null;
+};
+
 type Target = {
   id: string;
   external_id: string;
@@ -35,6 +46,9 @@ type Target = {
 };
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const body = (await request.json()) as {
@@ -66,7 +80,6 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const viewer = await getDashboardViewer();
 
     // Ordem cronológica: encaminhar 3 mensagens tem de reproduzir a sequência
     // original no destino, não a ordem em que o operador foi clicando.
@@ -77,7 +90,7 @@ export async function POST(request: Request, { params }: Params) {
       .in("id", messageIds)
       .order("created_at", { ascending: true });
 
-    const messages = (rows ?? []) as ChatMessage[];
+    const messages = (rows ?? []) as SourceMessage[];
     if (messages.length === 0) {
       return NextResponse.json({ error: "Mensagens não encontradas." }, { status: 404 });
     }
@@ -120,8 +133,9 @@ export async function POST(request: Request, { params }: Params) {
           target: target.id,
           phone,
           payload,
+          source: message,
           credentials,
-          viewerId: viewer?.id ?? null,
+          viewerId: auth.viewer.id,
         });
         if (ok) sent += 1;
         else failed += 1;
@@ -143,12 +157,17 @@ type Credentials = { apiUrl: string; token: string };
  * Segue o mesmo roteiro das rotas de envio: insere `pending` (o id vira o
  * `track_id`), envia, grava `external_id` + `sent`; no erro, marca `failed` e
  * devolve false. A falha de um par não pode abortar o lote.
+ *
+ * Mídia no bucket privado: a cópia aponta para o MESMO objeto (sem novo
+ * upload), com `media_url` na rota do próprio id; a uazapi recebe uma URL
+ * assinada só para baixar.
  */
 async function forwardOne({
   supabase,
   target,
   phone,
   payload,
+  source,
   credentials,
   viewerId,
 }: {
@@ -156,25 +175,50 @@ async function forwardOne({
   target: string;
   phone: string;
   payload: ForwardPayload;
+  source: SourceMessage;
   credentials: Credentials;
-  viewerId: string | null;
+  viewerId: string;
 }): Promise<boolean> {
   const now = new Date().toISOString();
   const isText = payload.kind === "text";
+  const copyId = randomUUID();
+
+  const privateMedia =
+    payload.kind === "media" && source.media_bucket && source.media_key
+      ? { bucket: source.media_bucket, key: source.media_key }
+      : null;
+  const providerFile = privateMedia
+    ? await signStorageObject(supabase, privateMedia.bucket, privateMedia.key, 600)
+    : payload.kind === "media"
+      ? payload.file
+      : null;
+  if (payload.kind === "media" && !providerFile) return false;
+
+  const metadata: Record<string, Json> = {
+    forwarded: true,
+    ...(payload.kind === "media" && payload.docName ? { fileName: payload.docName } : {}),
+    ...(privateMedia ? copiedMediaMetadata(copyId, source.metadata) : {}),
+  };
 
   const { data: copy, error: insErr } = await supabase
     .from("chat_messages")
     .insert({
+      id: copyId,
       conversation_id: target,
       direction: "outbound",
+      sender_type: "agent",
       type: isText ? "text" : messageTypeOf(payload),
       // A assinatura do operador NÃO entra: encaminhar reproduz o que foi
       // escrito, e assinar mudaria o texto que o paciente original mandou.
       content: isText ? payload.text : payload.caption ?? null,
-      ...(payload.kind === "media" && payload.docName
-        ? { metadata: { fileName: payload.docName, forwarded: true } }
-        : { metadata: { forwarded: true } }),
-      media_url: payload.kind === "media" ? payload.file : null,
+      metadata,
+      ...(privateMedia
+        ? {
+            media_bucket: privateMedia.bucket,
+            media_key: privateMedia.key,
+            media_url: chatMediaPath(copyId),
+          }
+        : { media_url: payload.kind === "media" ? payload.file : null }),
       media_mime_type: payload.kind === "media" ? payload.mimeType ?? null : null,
       delivery_status: "pending",
       sent_by_user_id: viewerId,
@@ -196,7 +240,7 @@ async function forwardOne({
         })
       : await sendUazapiMedia(credentials.apiUrl, credentials.token, phone, {
           type: payload.type,
-          file: payload.file,
+          file: providerFile ?? payload.file,
           ...(payload.caption ? { text: payload.caption } : {}),
           ...(payload.docName ? { docName: payload.docName } : {}),
           trackId: copy.id,
@@ -228,20 +272,33 @@ async function loadIntegrations(
 ): Promise<Map<string, Credentials>> {
   const ids = [...new Set(targets.map((t) => t.integration_id).filter(Boolean))] as string[];
   const map = new Map<string, Credentials>();
-  if (ids.length === 0) return map;
 
-  const { data } = await supabase
-    .from("chat_integrations")
-    .select("id, provider, config")
-    .in("id", ids);
-
-  for (const row of data ?? []) {
-    // Encaminhar depende de `forward` no /send/*, que só existe na uazapi.
-    if (row.provider !== "uazapi") continue;
-    const { apiUrl, token } = row.config as Record<string, string>;
-    if (apiUrl && token) map.set(row.id, { apiUrl, token });
+  // Uma integração na v1 (unique por provedor): o laço roda uma vez.
+  for (const id of ids) {
+    const integration = await getIntegrationCredentials(supabase, id);
+    if (integration) map.set(id, { apiUrl: integration.apiUrl, token: integration.token });
   }
   return map;
+}
+
+/**
+ * Miniatura e dimensões da origem, reapontadas para a cópia: sem elas a bolha
+ * do destino serviria a foto cheia e remediria a linha ao carregar.
+ */
+function copiedMediaMetadata(
+  copyId: string,
+  sourceMetadata: Record<string, unknown>
+): Record<string, Json> {
+  const meta: Record<string, Json> = {};
+  if (typeof sourceMetadata.thumbKey === "string") {
+    meta.thumbKey = sourceMetadata.thumbKey;
+    meta.thumbUrl = chatMediaPath(copyId, "thumb");
+  }
+  if (typeof sourceMetadata.mediaWidth === "number" && typeof sourceMetadata.mediaHeight === "number") {
+    meta.mediaWidth = sourceMetadata.mediaWidth;
+    meta.mediaHeight = sourceMetadata.mediaHeight;
+  }
+  return meta;
 }
 
 /** Tipo da nossa `chat_messages` a partir do tipo de mídia da uazapi. */

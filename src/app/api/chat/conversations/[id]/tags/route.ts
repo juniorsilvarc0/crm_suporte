@@ -53,11 +53,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const supabase = createSupabaseAdminClient();
   // `upsert` e não `insert`: etiquetar duas vezes é toque repetido, não erro —
   // devolver 409 aqui faria a interface acusar falha de um estado já correto.
+  // `ignoreDuplicates` (ON CONFLICT DO NOTHING) é obrigatório: a linha é só a
+  // chave, e o banco não dá UPDATE nesta tabela a ninguém.
   const { error } = await supabase
     .from("conversation_tags")
     .upsert(
       { conversation_id: id, tag_id: parsed.tagId },
-      { onConflict: "conversation_id,tag_id" }
+      { onConflict: "conversation_id,tag_id", ignoreDuplicates: true }
     );
 
   if (error) {

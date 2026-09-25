@@ -5,6 +5,7 @@ import {
   deleteEnvironmentVariableSchema,
   environmentVariableSchema,
 } from "@/features/settings/schemas/environment-variable";
+import { invalidateRuntimeEnvironmentCache } from "@/features/settings/lib/get-runtime-environment";
 import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import {
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
     );
   }
 
+  invalidateRuntimeEnvironmentCache();
   revalidatePath("/app/configuracoes");
   return NextResponse.json({
     ok: true,
@@ -117,6 +119,7 @@ export async function DELETE(request: Request) {
     );
   }
 
+  invalidateRuntimeEnvironmentCache();
   revalidatePath("/app/configuracoes");
   return NextResponse.json({ ok: true, message: "Variável removida." });
 }

@@ -4,13 +4,17 @@
 #   docker compose logs -f web       -> acompanha os logs
 #   docker compose down              -> derruba os containers (o volume do banco fica)
 #
-# Arquitetura local enxuta (tudo com nomes exclusivos crm-suporte-*):
+# Arquitetura local (nomes exclusivos crm-suporte-*), espelhando a produção:
 #   db       supabase/postgres (container único) — extensões, roles e vault da Supabase
 #   rest     PostgREST — a API que o supabase-js consome
-#   gateway  nginx na porta 54321 imitando o roteamento do Kong (/rest/v1/*)
+#   realtime Realtime da Supabase — o chat atualiza ao vivo
+#   storage  storage-api em disco local — mídia do chat (bucket privado)
+#   gateway  nginx na porta 54321 imitando o Kong (/rest/v1, /realtime/v1, /storage/v1)
 #   web      Next.js em modo dev
-# Realtime e Storage NÃO existem neste stack: chat não atualiza ao vivo em dev
-# e upload de mídia não funciona — o resto do app opera normalmente.
+#
+# ⚠️ Ordem no primeiro uso: `docker compose up -d --build`, esperar o storage
+# ficar healthy (ele cria o schema `storage`) e só então
+# `./scripts/db-local-apply.sh` — as migrations gravam em storage.buckets.
 #
 # As credenciais ficam em .env.local (gitignored). Edite o arquivo e rode
 # `docker compose restart web` para aplicar variáveis de servidor.
@@ -51,11 +55,90 @@ services:
       PGRST_DB_USE_LEGACY_GUCS: "false"
     restart: unless-stopped
 
+  realtime:
+    image: supabase/realtime:v2.102.3
+    # ⚠️ O NOME É PARTE DA CONFIGURAÇÃO: o Realtime deriva o tenant do primeiro
+    # rótulo do Host (`realtime-dev`), que o gateway repassa. Não renomeie o
+    # prefixo `realtime-dev.`.
+    container_name: realtime-dev.crm-suporte-realtime
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      # supabase_admin, não `postgres` nem `authenticator` — é o que o oficial usa.
+      DB_USER: supabase_admin
+      DB_PASSWORD: postgres
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      # Valores de DESENVOLVIMENTO (exatos 16 e ≥ 64 caracteres). Não são segredo.
+      DB_ENC_KEY: devlocalenckey16
+      API_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      METRICS_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      SECRET_KEY_BASE: dev-local-secret-key-base-com-mais-de-sessenta-e-quatro-caracteres-0123456789
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+    # ⚠️ Não use o healthcheck oficial (`/api/tenants/realtime-dev/health`):
+    # nesta versão ele responde 403 mesmo com tudo certo. Conferimos só se o
+    # processo aceita HTTP — `curl` sem `-f` falha apenas sem conexão.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:4000/ || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  storage:
+    image: supabase/storage-api:v1.60.4
+    container_name: crm-suporte-storage
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      # Chaves de DEMONSTRAÇÃO do Supabase local (as mesmas do .env.local.example).
+      ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+      SERVICE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
+      AUTH_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://supabase_storage_admin:postgres@db:5432/postgres
+      STORAGE_PUBLIC_URL: http://localhost:54321
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: crm-suporte
+      REGION: local
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      # ⚠️ `127.0.0.1`, não `localhost`: o storage-api escuta só em IPv4 e
+      # `localhost` resolve primeiro para `::1` dentro do container.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5000/status || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
   gateway:
     image: nginx:alpine
     container_name: crm-suporte-gateway
     depends_on:
       - rest
+      - realtime
+      - storage
     ports:
       # A porta que o supabase-js espera (SUPABASE_URL=…:54321 no .env.local).
       - "54321:80"
@@ -92,3 +175,4 @@ services:
 
 volumes:
   db-data:
+  storage-data:

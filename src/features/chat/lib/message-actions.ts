@@ -126,8 +126,9 @@ export type ForwardPayload =
 /**
  * O que reenviar para encaminhar esta mensagem, ou null se não dá.
  *
- * A mídia reusa a `media_url` como está: ela já foi re-hospedada no bucket
- * público `chat-media`, que é exatamente o que `/send/media` pede em `file`.
+ * A mídia reusa a `media_url` como está. Quando ela está no bucket privado
+ * (`media_url` é a rota do app), a rota de encaminhar troca `file` por uma
+ * URL assinada antes de mandar à uazapi, e a cópia aponta para o mesmo objeto.
  * Sem re-upload e sem `/message/download`.
  *
  * Devolve null para mídia ainda sem URL (a que aparece como "carregando…"):

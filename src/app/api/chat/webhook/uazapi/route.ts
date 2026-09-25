@@ -11,72 +11,49 @@ import {
   type UazapiEnvelope,
 } from "@/features/chat/lib/normalizers/uazapi";
 import { upsertMessage } from "@/features/chat/lib/upsert-message";
-import { upsertLeadFromInbound } from "@/features/chat/lib/upsert-lead";
-import { resolveLeadIdentity } from "@/features/leads/queries/resolve-lead-identity";
-import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
+import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
+import {
+  getChatIntegrationSecret,
+  getUazapiIntegration,
+} from "@/features/chat/lib/connection/integration";
 import { downloadUazapiMedia } from "@/features/chat/lib/connection/uazapi";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
+import {
+  storedMediaColumns,
+  storedMediaMetadata,
+} from "@/features/chat/lib/media/stored-media";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { getRelayUrl } from "@/features/settings/lib/get-relay-url";
-import type { StoredMedia } from "@/lib/storage/put-media";
+import { safeEqual } from "@/lib/security/safe-equal";
 import type { Json } from "@/lib/supabase/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * O que da mídia guardada precisa virar `metadata` da mensagem.
- *
- * `thumbUrl` porque o R2 não tem transformação sob demanda — a miniatura é um
- * objeto de verdade, gerado na entrada, e a bolha precisa saber o endereço.
- * `mediaWidth`/`mediaHeight` porque sem eles a foto remede a linha ao carregar
- * e a conversa salta debaixo do dedo (o WebKit não tem scroll anchoring).
- *
- * Devolve `null` quando não há nada a acrescentar — aí o `metadata` nem é
- * tocado, e um UPDATE a menos é um UPDATE a menos no caminho do webhook.
- */
-function buildMediaMetadata(stored: StoredMedia | null): Record<string, Json> | null {
-  if (!stored) return null;
-  const meta: Record<string, Json> = {};
-  if (stored.thumbUrl) meta.thumbUrl = stored.thumbUrl;
-  if (stored.width && stored.height) {
-    meta.mediaWidth = stored.width;
-    meta.mediaHeight = stored.height;
-  }
-  return Object.keys(meta).length > 0 ? meta : null;
-}
 
 /** Tipos cuja mídia chega separada da mensagem (ver passo 4). */
 const MEDIA_TYPES = ["image", "audio", "video", "document", "sticker"];
 
 export async function POST(request: Request) {
   try {
-    // 1) Autenticação do webhook via query param (?s=).
-    const url = new URL(request.url);
-    const secret = process.env.UAZAPI_WEBHOOK_SECRET;
-    if (secret && url.searchParams.get("s") !== secret) {
+    // 1) Autenticação via query param (?s=): a uazapi não manda header
+    //    próprio. O segredo é da integração, gerado ao conectar e guardado no
+    //    Vault. Falha fechada: sem integração ou sem segredo, ninguém entra —
+    //    e a resposta é a mesma 401, para não contar a quem não se autenticou
+    //    se existe instância configurada.
+    const supabase = createSupabaseAdminClient();
+    const integration = await getUazapiIntegration(supabase);
+    const expected = integration
+      ? await getChatIntegrationSecret(supabase, integration.id, "webhook_secret")
+      : null;
+    const received = new URL(request.url).searchParams.get("s") ?? "";
+    if (!integration || !expected || !safeEqual(received, expected)) {
       return NextResponse.json({ ok: false, reason: "unauthorized" }, { status: 401 });
     }
 
     const payload = (await request.json()) as UazapiEnvelope;
-    const supabase = createSupabaseAdminClient();
-
-    const integration = await getUazapiIntegration(supabase);
-    if (!integration) {
-      return NextResponse.json({ ok: false, reason: "no_integration" });
-    }
 
     const event = uazapiEventType(payload);
     const message = getUazapiMessage(payload);
-
-    // DEBUG temporário: loga só os objetos message/event (sem o `chat` gigante)
-    // para confirmar/afinar os nomes de campo contra a instância real.
-    if (message) {
-      console.info("[uazapi-dbg] msg:", JSON.stringify(message).slice(0, 1600));
-    }
-    if (payload.event) {
-      console.info("[uazapi-dbg] evt:", JSON.stringify(payload.event).slice(0, 1200));
-    }
 
     // 2) messages_update → apagada, mídia baixada (FileDownloaded) OU status.
     if (event === "messages_update") {
@@ -106,35 +83,38 @@ export async function POST(request: Request) {
           media.mimetype,
           { token: integration.token, tokenOrigin: integration.apiUrl }
         );
-        const mediaUrl = rehosted?.url ?? media.fileUrl;
 
-        // Miniatura e dimensões entram no metadata da mensagem: é por aqui que
-        // chega a maior parte da mídia recebida, e sem isso a bolha voltaria a
-        // servir o arquivo cheio e a remedir a linha quando a foto carrega.
-        const mediaMeta = buildMediaMetadata(rehosted);
+        // Linha a linha: a unicidade do `external_id` é por conversa, e cada
+        // mensagem aponta a mídia para o PRÓPRIO id (`/api/chat/media/<id>`).
+        // Miniatura e dimensões entram no metadata: é por aqui que chega a
+        // maior parte da mídia recebida.
+        for (const externalId of media.messageIds) {
+          const { data: rows } = await supabase
+            .from("chat_messages")
+            .select("id, metadata, media_key")
+            .eq("external_id", externalId);
 
-        for (const id of media.messageIds) {
-          const patch: {
-            media_url: string;
-            media_mime_type: string | null;
-            metadata?: Record<string, Json>;
-          } = {
-            media_url: mediaUrl,
-            media_mime_type: media.mimetype,
-          };
-          if (mediaMeta) {
-            const { data: row } = await supabase
-              .from("chat_messages")
-              .select("metadata")
-              .eq("external_id", id)
-              .maybeSingle();
+          for (const row of rows ?? []) {
+            // Falhou a re-hospedagem e a mensagem já tem mídia guardada: a URL
+            // do provedor, que expira, não substitui o que já está no bucket.
+            if (!rehosted && row.media_key) continue;
+
             const current: Record<string, Json> =
-              row?.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+              row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
                 ? (row.metadata as Record<string, Json>)
                 : {};
-            patch.metadata = { ...current, ...mediaMeta };
+            const mediaMeta = rehosted ? storedMediaMetadata(row.id, rehosted) : null;
+            await supabase
+              .from("chat_messages")
+              .update({
+                ...(rehosted
+                  ? storedMediaColumns(row.id, rehosted)
+                  : { media_url: media.fileUrl }),
+                media_mime_type: media.mimetype,
+                ...(mediaMeta ? { metadata: { ...current, ...mediaMeta } } : {}),
+              })
+              .eq("id", row.id);
           }
-          await supabase.from("chat_messages").update(patch).eq("external_id", id);
         }
         return NextResponse.json({ ok: true, media: media.messageIds.length });
       }
@@ -231,10 +211,12 @@ export async function POST(request: Request) {
     //    pelo chatid (o contraparte) — ver normalizer.
     const normalized = normalizeUazapiWebhook(payload);
     if (!normalized) {
-      console.info(
-        "[webhook/uazapi] não reconhecido:",
-        JSON.stringify(payload).slice(0, 500)
-      );
+      // Só a forma do evento: o envelope traz o `token` da instância e o texto
+      // da conversa, e nenhum dos dois pode ir para o log.
+      console.info("[webhook/uazapi] não reconhecido:", {
+        eventType: payload.EventType ?? null,
+        messageType: message?.messageType ?? null,
+      });
       return NextResponse.json({ ok: true, reason: "skipped" });
     }
 
@@ -267,45 +249,28 @@ export async function POST(request: Request) {
     }
 
     // Re-hospeda a mídia no chat-media (URLs da uazapi/WhatsApp expiram). Vale
-    // para a mídia recém-baixada acima, nos dois sentidos.
-    if (normalized.media_url) {
-      const rehosted = await persistInboundMedia(
-        supabase,
-        "chat",
-        normalized.media_url,
-        normalized.media_mime_type,
-        { token: integration.token, tokenOrigin: integration.apiUrl }
-      );
-      if (rehosted) {
-        normalized.media_url = rehosted.url;
-        const mediaMeta = buildMediaMetadata(rehosted);
-        if (mediaMeta) {
-          // As dimensões medidas no arquivo GUARDADO vencem as do payload da
-          // uazapi: é este arquivo que a bolha vai exibir, já redimensionado.
-          normalized.metadata = {
-            ...((normalized.metadata ?? {}) as Record<string, Json>),
-            ...mediaMeta,
-          };
-        }
-      }
-    }
+    // para a mídia recém-baixada acima, nos dois sentidos. Falhando, a
+    // mensagem fica com a URL do provedor.
+    const stored = normalized.media_url
+      ? await persistInboundMedia(
+          supabase,
+          "chat",
+          normalized.media_url,
+          normalized.media_mime_type,
+          { token: integration.token, tokenOrigin: integration.apiUrl }
+        )
+      : null;
 
-    const identity =
-      normalized.direction === "inbound"
-        ? await upsertLeadFromInbound(supabase, {
-            phone: normalized.contact_phone,
-            name: normalized.contact_name,
-          })
-        : await resolveLeadIdentity(supabase, {
-            phone: normalized.contact_phone,
-            name: normalized.contact_name,
-            source: "whatsapp",
-            createInitialDeal: false,
-            lastInteractionAt: null,
-            reactivate: false,
-          });
+    // Sem reativar nem tocar a interação: a mensagem ainda pode ser um retry.
+    // Quem faz isso é o trigger do INSERT real da mensagem, uma vez só.
+    const identity = await resolveContactIdentity(supabase, {
+      phone: normalized.contact_phone,
+      name: normalized.contact_name,
+      source: "whatsapp",
+      reactivate: false,
+    });
 
-    const conv = await upsertMessage(integration.id, identity.leadId, normalized);
+    const conv = await upsertMessage(integration.id, identity.contactId, normalized, stored);
 
     // 5) Repassa ao agente/automação só inbound e enquanto status='bot'.
     // URL configurável na UI (Configurações), com fallback para N8N_WEBHOOK_URL.

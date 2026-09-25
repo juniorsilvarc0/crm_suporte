@@ -72,10 +72,10 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 
 ### 7.1 Entrada de mensagem pelo WhatsApp
 
-1. A uazapi entrega em `/api/chat/webhook/uazapi` (segredo próprio na query string).
-2. O payload é normalizado (`src/features/chat/lib/normalizers/uazapi.ts`).
-3. `upsertLeadFromInbound` cria ou atualiza o cadastro do contato (ainda a tabela `leads`) **deduplicando pelo telefone normalizado**.
-4. `upsertMessage` grava a mensagem e atualiza a conversa.
+1. A uazapi entrega em `/api/chat/webhook/uazapi?s=<segredo>`. O segredo é da integração, gerado ao conectar e guardado no Vault; sem ele, 401.
+2. O payload é normalizado (`src/features/chat/lib/normalizers/uazapi.ts`). A mídia é re-hospedada no bucket privado `chat-media`.
+3. `resolveContactIdentity` (RPC `resolve_contact_identity`, com lock por telefone) acha ou cria o contato **pelo telefone normalizado**.
+4. `upsertMessage` grava conversa e mensagem (`sender_type` `contact` na entrada, `device` no eco do celular da empresa); triggers atualizam não lidas e prévia.
 5. Supabase Realtime leva para a UI ao vivo.
 6. Se a conversa está em `bot`, a mensagem é repassada ao agente externo (URL configurada na tela).
 
@@ -87,26 +87,26 @@ Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avi
 
 **Projeto Supabase:** `crm-suporte` (`supabase/config.toml`) — **produção ainda não definida**; por enquanto só Docker local (ver [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md)); o banco nasce aplicando `supabase/migrations/` do zero.
 
-**Inventário do schema (herdado do template, verificado em 2026-08-06):** 23 tabelas públicas · 6 policies · 17 funções · 5 triggers.
+**Inventário do schema (baseline da Fase 2, medido no banco local em 2026-09-25):** 16 tabelas públicas · 2 policies · 33 funções · 18 triggers. As 45 migrations da clínica ficam só como referência em `supabase/legado-clinica/`.
 
 | Domínio | Tabelas |
 |---|---|
-| Lead e funil | `leads`, `deals`, `deal_stage_history`, `board_columns`, `tags`, `lead_tags` |
-| Atendimento | `chat_conversations`, `chat_messages`, `chat_integrations`, `chat_quick_replies` |
-| Agenda e retomada | `appointments`, `followups`, `feedback_requests` |
-| Financeiro | `contracts`, `payments`, `expenses`, `procedures` |
-| Rastreamento Meta | `meta_attributions`, `meta_ad_assets`, `meta_conversion_outbox` |
-| Plataforma | `app_users`, `api_tokens`, `app_settings`, `integration_logs` |
+| Contatos | `contacts`, `contact_phone_identities`, `contact_events` (append-only), `tags`, `contact_tags` |
+| Atendimento | `chat_conversations`, `chat_messages`, `chat_integrations`, `chat_quick_replies`, `conversation_tags` |
+| Plataforma | `app_users`, `api_tokens`, `app_settings`, `app_environment_variables`, `integration_logs`, `user_notes` |
+
+Tipos TypeScript do banco: **gerados** em `src/lib/supabase/database.types.ts` (`pnpm db:types`); o CI falha se divergirem do schema.
 
 ### 8.1 Segurança do banco — 🟢 fechado por padrão
 
-- **RLS habilitada nas 23 tabelas.**
-- Apenas **6 policies**; quatro são `service_role ALL`.
-- As duas exceções são `SELECT` para `anon`/`authenticated` em `chat_conversations` e `chat_messages`, **necessárias para o Realtime do chat**.
-- `anon`/`authenticated` têm grants amplos no catálogo, mas **a RLS bloqueia antes** — grant sem policy não lê nada.
+- **RLS habilitada em todas as tabelas**; default privileges fechados antes de criar qualquer objeto.
+- **`anon` não alcança nada.** `authenticated` só tem `SELECT` em `chat_conversations` e `chat_messages`, com policy que exige `app_role` `admin`/`member` no JWT curto emitido pelo app: é o Realtime do chat.
+- **`service_role` com grant mínimo**, por coluna onde importa (ex.: `contacts` sem UPDATE no telefone; `app_users` sem SELECT de `password_hash`; `contact_events` e `integration_logs` sem UPDATE/DELETE).
+- Segredos (token da uazapi, segredo do webhook, chaves do cofre) ficam no **Vault**; a tabela guarda só o id.
+- `assert_security_baseline()` roda no fim de toda migration e falha se algo disso regredir.
 - Todo acesso real usa **service role no servidor** (`src/lib/supabase/server.ts`, `admin.ts`).
 
-Consequência para quem desenvolve: **consulta nova é server-side.** Ligar Realtime numa tabela nova exige policy de `SELECT` para `anon` — isso é decisão de segurança, não detalhe de implementação.
+Consequência para quem desenvolve: **consulta nova é server-side.** Ligar Realtime numa tabela nova exige grant e policy para `authenticated` filtrando por `app_role` — decisão de segurança, não detalhe de implementação. Assinatura no navegador: sempre por `subscribeAuthenticated` (`src/lib/supabase/client.ts`).
 
 ## 9. Autenticação e autorização
 
@@ -123,8 +123,8 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 |---|---|---|
 | **uazapi** | WhatsApp — único provedor suportado | `src/features/chat/lib/{senders,normalizers,connection}/uazapi.ts` |
 | **Agente de IA externo** | Recebe o relay das mensagens em modo `bot` e o aviso de takeover | `src/features/settings/lib/get-relay-url.ts`, `src/features/chat/lib/push-takeover.ts` |
-| **OpenAI** | Transcrição de áudio no chat | `src/app/api/chat/transcribe` |
-| **Supabase Storage** | Mídia do chat e avatar | buckets `chat-media`, `profile-avatars` |
+| **OpenAI** | Transcrição de áudio no chat; chave e modelo só no cofre (Vault), nunca no env | `src/app/api/chat/transcribe`, `src/features/settings/lib/get-runtime-environment.ts` |
+| **Supabase Storage** | Mídia do chat e foto do contato no bucket **privado** `chat-media` (servidos por URL assinada via `/api/chat/media/[id]` e `/api/contacts/[id]/avatar`); avatar da equipe no público `profile-avatars` | `src/lib/storage/chat-media.ts`, `src/lib/storage/put-media.ts` |
 
 ## 11. Stack e decisões arquiteturais
 
@@ -166,16 +166,13 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 
 | Risco | Impacto | Onde |
 |---|---|---|
-| Segredos de integração ainda lidos de env (`UAZAPI_WEBHOOK_SECRET`, `TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`, `N8N_WEBHOOK_URL`) | Contraria "nenhuma credencial no código"; o cofre só é lido para `OPENAI_*` | Fases 2 e 5 do plano |
-| Webhook da uazapi aceita qualquer chamada se o segredo estiver vazio | Mensagem forjada entra no chat e vai ao agente | `src/app/api/chat/webhook/uazapi/route.ts`; Fase 2 |
+| Configuração do agente ainda lida de env (`TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`, `N8N_WEBHOOK_URL`) | Contraria "nenhuma credencial no código". O token e o segredo do webhook da uazapi e a chave da OpenAI já estão no Vault (Fase 2) | Fases 5 e 6 do plano |
 | Relay repassa o envelope cru com o token da instância | URL de relay errada vaza a credencial do WhatsApp | Fase 5 |
-| Toda mídia do chat é pública e permanente | Print com dado de cliente acessível por URL | Fase 2 |
-| Schema e `types.ts` ainda são os da clínica | Nomes de venda/clínica no banco (`tipo_ensaio`, `deals`) | Fase 2 (baseline novo) |
 | Dependência de um único provedor de WhatsApp (uazapi) | Sessão WhatsApp Web cai e o atendimento para | `SKILLS.md` §Armadilhas |
 
 ## 15. Glossário de domínio
 
-- **Contato (lead)** — a pessoa do outro lado do WhatsApp, única por telefone normalizado. No banco ainda é a tabela `leads`; a Fase 2 renomeia para `contacts`.
+- **Contato** — a pessoa do outro lado do WhatsApp, única por telefone normalizado (tabela `contacts`; o telefone é imutável). Nasce só por `resolve_contact_identity`.
 - **Conversa** — thread de WhatsApp com um contato. Status `bot` | `human` | `resolved`.
 - **Takeover** — humano assume a conversa; o relay ao agente para.
 - **Etiqueta** — marcação livre de conversa, do vocabulário único `tags`.

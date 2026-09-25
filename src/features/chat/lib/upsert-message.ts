@@ -1,6 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
+import {
+  storedMediaColumns,
+  storedMediaMetadata,
+} from "@/features/chat/lib/media/stored-media";
 import type { NormalizedMessage } from "@/features/chat/lib/normalizers/types";
+import { contactAvatarPath } from "@/lib/storage/chat-media";
+import type { StoredMedia } from "@/lib/storage/put-media";
 import type { Json } from "@/lib/supabase/types";
 
 /**
@@ -18,10 +26,17 @@ function avatarKey(url: string): string {
   }
 }
 
+/**
+ * Grava conversa + mensagem de um evento do webhook.
+ *
+ * `stored` é a mídia já re-hospedada no bucket privado; sem ela, a mensagem
+ * fica com a `media_url` do provedor (que expira).
+ */
 export async function upsertMessage(
   integrationId: string,
-  leadId: string,
-  msg: NormalizedMessage
+  contactId: string,
+  msg: NormalizedMessage,
+  stored: StoredMedia | null = null
 ) {
   const supabase = createSupabaseAdminClient();
 
@@ -40,14 +55,14 @@ export async function upsertMessage(
   // produção, parte das 238 já devolvia 403, e é isso que virava "?" na lista.
   // Re-hospedamos no chat-media, como já é feito com mídia de mensagem, e só
   // quando a foto muda de verdade (comparação por caminho, não pela URL cheia).
-  const avatar = await resolveAvatar(supabase, msg, currentConversation);
+  const avatar = await resolveAvatar(supabase, contactId, msg, currentConversation);
 
   const { data: conv, error: convErr } = await supabase
     .from("chat_conversations")
     .upsert(
       {
         integration_id: integrationId,
-        lead_id: leadId,
+        contact_id: contactId,
         external_id: msg.contact_phone,
         contact_phone: msg.contact_phone,
         updated_at: new Date().toISOString(),
@@ -56,7 +71,7 @@ export async function upsertMessage(
       },
       { onConflict: "integration_id,external_id" }
     )
-    .select("id, lead_id, status, unread_count")
+    .select("id, contact_id, status, unread_count")
     .single();
 
   if (convErr || !conv) {
@@ -80,17 +95,33 @@ export async function upsertMessage(
 
   // 3. Upsert message. O AFTER INSERT real atualiza prévia, interação,
   //    reativação e unread na mesma transação; retry não dispara o trigger.
+  //    O id nasce aqui porque a `media_url` aponta para ele. No retry, o DO
+  //    NOTHING mantém a linha (e o id) que já estava lá.
+  const messageId = randomUUID();
+  const mediaMeta = stored ? storedMediaMetadata(messageId, stored) : null;
+  // As dimensões medidas no arquivo GUARDADO vencem as do payload da uazapi:
+  // é este arquivo que a bolha vai exibir, já redimensionado.
+  const metadata =
+    msg.metadata || mediaMeta
+      ? { ...((msg.metadata ?? {}) as Record<string, Json>), ...(mediaMeta ?? {}) }
+      : null;
+
   const { error: msgErr } = await supabase.from("chat_messages").upsert(
     {
+      id: messageId,
       conversation_id: conv.id,
       external_id: msg.external_id,
       ...(quotedId ? { quoted_message_id: quotedId } : {}),
       direction: msg.direction,
+      // Mensagem nova com fromMe e sem track_id é do celular da empresa, fora
+      // do CRM (o eco do que o CRM enviou é conciliado antes, no webhook).
+      sender_type: msg.direction === "inbound" ? "contact" : "device",
       type: msg.type,
       content: msg.content,
       media_url: msg.media_url,
+      ...(stored ? storedMediaColumns(messageId, stored) : {}),
       media_mime_type: msg.media_mime_type,
-      ...(msg.metadata ? { metadata: msg.metadata } : {}),
+      ...(metadata ? { metadata } : {}),
       delivery_status:
         msg.direction === "inbound" ? "delivered" : "sent",
       created_at: msg.created_at,
@@ -111,12 +142,18 @@ type ResolvedAvatar = { url: string; metadata: JsonObject };
 /**
  * Decide o `contact_avatar_url` a gravar.
  *
+ * A foto guardada é do CONTATO (`contacts.avatar_bucket/avatar_key`, bucket
+ * privado), e a conversa aponta para a rota que a serve. Não confundir com
+ * `metadata.avatar_key` da conversa: esse é o caminho da URL do WhatsApp,
+ * usado só para saber se a foto mudou.
+ *
  * Devolve null quando não há nada a mudar — e aí o upsert nem toca na coluna,
  * preservando a foto que já está lá. Nunca lança: perder a foto não pode
  * derrubar o recebimento da mensagem.
  */
 async function resolveAvatar(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
+  contactId: string,
   msg: NormalizedMessage,
   current: {
     contact_avatar_url: string | null;
@@ -136,12 +173,29 @@ async function resolveAvatar(
     const hosted = await persistInboundMedia(supabase, "avatars", source, "image/jpeg");
     // Falhou o download? Guarda a URL original mesmo assim: expira, mas o
     // ContactAvatar cai nas iniciais quando ela morrer.
+    if (!hosted) return { url: source, metadata };
+
+    const { error } = await supabase
+      .from("contacts")
+      .update({ avatar_bucket: hosted.bucket, avatar_key: hosted.key })
+      .eq("id", contactId);
+    if (error) {
+      console.warn("[upsertMessage] gravar foto no contato falhou:", error.message);
+      return { url: source, metadata };
+    }
+
     return {
-      url: hosted?.url ?? source,
-      metadata: { ...metadata, ...(hosted ? { avatar_key: key } : {}) },
+      url: contactAvatarPath(contactId, avatarVersion(hosted.key)),
+      metadata: { ...metadata, avatar_key: key },
     };
   } catch (error) {
     console.warn("[upsertMessage] avatar ignorado:", error);
     return null;
   }
+}
+
+/** Nome do objeto (um UUID) como versão: muda a cada foto nova. */
+function avatarVersion(storageKey: string): string {
+  const name = storageKey.slice(storageKey.lastIndexOf("/") + 1);
+  return name.split(".")[0] || storageKey;
 }

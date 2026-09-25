@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { sendUazapiText } from "@/features/chat/lib/senders/uazapi";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { CLIENT_ID_PATTERN } from "@/features/chat/lib/outgoing-message";
@@ -8,10 +8,16 @@ import { resolveSignature, signMessage } from "@/features/chat/lib/signature";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { buildMessageLinkPreview } from "@/features/chat/lib/message-content";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+  // Quem está falando: define a assinatura e fica registrado na mensagem.
+  const { viewer } = auth;
+
   try {
     const { id } = await params;
     const { content, kind, quotedMessageId, clientId } = (await request.json()) as {
@@ -37,8 +43,6 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const supabase = createSupabaseAdminClient();
-    // Quem está falando: define a assinatura e fica registrado na mensagem.
-    const viewer = await getDashboardViewer();
 
     const { data: conv, error: convErr } = await supabase
       .from("chat_conversations")
@@ -60,10 +64,11 @@ export async function POST(request: Request, { params }: Params) {
         .insert({
           conversation_id: id,
           direction: "outbound",
+          sender_type: "agent",
           type: "note",
           content,
           delivery_status: "sent",
-          sent_by_user_id: viewer?.id ?? null,
+          sent_by_user_id: viewer.id,
           created_at: now,
         })
         .select()
@@ -78,19 +83,10 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "No phone on conversation" }, { status: 400 });
     }
 
-    const { data: integration } = conv.integration_id
-      ? await supabase
-          .from("chat_integrations")
-          .select("provider, config")
-          .eq("id", conv.integration_id)
-          .single()
-      : { data: null };
-
+    const integration = await getIntegrationCredentials(supabase, conv.integration_id);
     if (!integration) {
       return NextResponse.json({ error: "No integration" }, { status: 400 });
     }
-
-    const intConfig = integration.config as Record<string, string>;
 
     /**
      * O mesmo `clientId` nunca vira duas mensagens.
@@ -100,15 +96,19 @@ export async function POST(request: Request, { params }: Params) {
      * isto, o paciente receberia a mesma mensagem duas vezes. Também cobre o
      * clique duplo e o retry automático do navegador.
      */
-    const { data: existing } = clientId
-      ? await supabase
-          .from("chat_messages")
-          .select()
-          .eq("conversation_id", id)
-          .eq("metadata->>clientId", clientId)
-          .limit(1)
-          .maybeSingle()
-      : { data: null };
+    const findByClientId = async () =>
+      clientId
+        ? (
+            await supabase
+              .from("chat_messages")
+              .select()
+              .eq("conversation_id", id)
+              .eq("metadata->>clientId", clientId)
+              .limit(1)
+              .maybeSingle()
+          ).data
+        : null;
+    const existing = await findByClientId();
 
     // Já saiu (ou está saindo): devolve a mesma linha, sem reenviar nada.
     if (existing && existing.delivery_status !== "failed") {
@@ -122,8 +122,7 @@ export async function POST(request: Request, { params }: Params) {
     // No reenvio o texto vem da LINHA, não do corpo: assinar de novo o que já
     // está assinado poria a assinatura duas vezes na mensagem do paciente.
     const outboundContent =
-      existing?.content ??
-      signMessage(content, viewer ? resolveSignature(viewer) : null);
+      existing?.content ?? signMessage(content, resolveSignature(viewer));
     const quotedId = existing ? existing.quoted_message_id : quotedMessageId ?? null;
 
     // Responder: o provedor cita pelo id DELE (`external_id`), não pelo nosso.
@@ -138,18 +137,22 @@ export async function POST(request: Request, { params }: Params) {
     //    No reenvio a linha já existe e só volta para `pending`: os ticks são
     //    monótonos e `sent` não sobrescreve `failed` (ver `overridableFrom`),
     //    então sem esse passo um reenvio bem-sucedido ficaria marcado como erro.
+    //    O filtro por `failed` faz só UM de dois reenvios simultâneos virar a
+    //    linha; o outro não acha nada e devolve a mesma mensagem, sem mandar.
     const { data: msg, error: msgErr } = existing
       ? await supabase
           .from("chat_messages")
           .update({ delivery_status: "pending" })
           .eq("id", existing.id)
+          .eq("delivery_status", "failed")
           .select()
-          .single()
+          .maybeSingle()
       : await supabase
           .from("chat_messages")
           .insert({
             conversation_id: id,
             direction: "outbound",
+            sender_type: "agent",
             type: "text",
             content: outboundContent,
             quoted_message_id: quotedId,
@@ -158,42 +161,47 @@ export async function POST(request: Request, { params }: Params) {
               ...(linkPreview ? { linkPreview } : {}),
             },
             delivery_status: "pending",
-            sent_by_user_id: viewer?.id ?? null,
+            sent_by_user_id: viewer.id,
             created_at: now,
           })
           .select()
           .single();
+
+    // Clique duplo simultâneo: os dois passaram pelo SELECT acima, e o índice
+    // único de `clientId` barrou o segundo INSERT (23505). Quem envia é a
+    // primeira requisição; esta devolve a mesma linha.
+    const lostRace = existing ? !msgErr && !msg : msgErr?.code === "23505";
+    if (lostRace) {
+      const winner = await findByClientId();
+      if (winner) return NextResponse.json({ message: winner });
+    }
     if (msgErr || !msg) throw msgErr ?? new Error("insert failed");
 
     // 2) Envia pelo provedor.
     try {
-      if (integration.provider === "uazapi") {
-        const { apiUrl, token } = intConfig;
-        const result = await sendUazapiText(apiUrl, token, phone, outboundContent, {
-          trackId: msg.id,
-          replyId: replyExternalId,
-        });
-        // external_id/metadata: sempre (p/ casar status e deduplicar o echo).
-        const providerPreview = result.linkPreview ?? linkPreview;
-        const { error: idErr } = await supabase
-          .from("chat_messages")
-          .update({
-            external_id: result.messageid,
-            metadata: {
-              // O `clientId` sobrevive à sobrescrita do metadata: é ele que liga
-              // esta linha à bolha da tela e ao reenvio.
-              ...(clientId ? { clientId } : {}),
-              uazapiId: result.id,
-              ...(providerPreview ? { linkPreview: providerPreview } : {}),
-            },
-          })
-          .eq("id", msg.id);
-        if (idErr) console.error("[send] gravar external_id falhou:", idErr, msg.id);
-      } else {
-        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
-        // enviada sem ter saído para lugar nenhum.
-        throw new Error(`provedor não suportado: ${integration.provider}`);
-      }
+      const result = await sendUazapiText(
+        integration.apiUrl,
+        integration.token,
+        phone,
+        outboundContent,
+        { trackId: msg.id, replyId: replyExternalId }
+      );
+      // external_id/metadata: sempre (p/ casar status e deduplicar o echo).
+      const providerPreview = result.linkPreview ?? linkPreview;
+      const { error: idErr } = await supabase
+        .from("chat_messages")
+        .update({
+          external_id: result.messageid,
+          metadata: {
+            // O `clientId` sobrevive à sobrescrita do metadata: é ele que liga
+            // esta linha à bolha da tela e ao reenvio.
+            ...(clientId ? { clientId } : {}),
+            uazapiId: result.id,
+            ...(providerPreview ? { linkPreview: providerPreview } : {}),
+          },
+        })
+        .eq("id", msg.id);
+      if (idErr) console.error("[send] gravar external_id falhou:", idErr, msg.id);
       // delivery_status → 'sent' de forma MONÓTONA: não regride um delivered/read
       // que um messages_update pode ter gravado durante o await do envio.
       const { error: stErr } = await supabase

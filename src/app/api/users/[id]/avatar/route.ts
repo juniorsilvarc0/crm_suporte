@@ -111,7 +111,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     p_email: authorized.target.email,
     p_is_active: authorized.target.is_active,
     p_role: authorized.target.role,
-    p_avatar_url: null,
+    // `''` limpa a foto: a RPC normaliza vazio para null.
+    p_avatar_url: "",
     p_avatar_color: authorized.target.avatar_color,
   });
   if (error) return NextResponse.json({ ok: false, message: "Não foi possível remover a foto." }, { status: 500 });

@@ -15,7 +15,7 @@ function conversation(
   return {
     id,
     integration_id: "int-1",
-    lead_id: `lead-${id}`,
+    contact_id: `contato-${id}`,
     external_id: `551199999${id}`,
     contact_name: `Contato ${id}`,
     contact_phone: `551199999${id}`,
@@ -194,7 +194,7 @@ describe("mergeConversationRealtimeUpdate", () => {
     );
 
     expect(ids(next)).toEqual(["fixada", "retorno"]);
-    expect(next[1].lead_id).toBe("lead-retorno");
+    expect(next[1].contact_id).toBe("contato-retorno");
   });
 
   it("payload parcial de conversa ausente preserva a referência", () => {

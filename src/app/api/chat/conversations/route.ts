@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     let query = supabase
       .from("chat_conversations")
-      .select("*, lead:leads(name, phone)")
+      .select("*, contact:contacts(name, phone)")
       .is("removed_at", null)
       // Precisa casar com `compareByLastMessage`; divergência aqui reordena a
       // lista no primeiro evento de Realtime.
@@ -40,10 +40,10 @@ export async function GET(request: Request) {
     const { data, error } = await query;
     if (error) throw error;
 
-    const conversations = (data ?? []).map(({ lead, ...conversation }) => ({
+    const conversations = (data ?? []).map(({ contact, ...conversation }) => ({
       ...conversation,
-      contact_name: lead?.name ?? conversation.contact_name,
-      contact_phone: lead?.phone ?? conversation.contact_phone,
+      contact_name: contact?.name ?? conversation.contact_name,
+      contact_phone: contact?.phone ?? conversation.contact_phone,
     }));
 
     return NextResponse.json({ conversations });

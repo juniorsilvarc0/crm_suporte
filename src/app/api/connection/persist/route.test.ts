@@ -1,14 +1,27 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mocka as fronteiras: auth admin, validação/registro na uazapi, e o client admin.
-const { requireAdminMock, statusMock, webhookMock, adminClientMock, fromMock } =
-  vi.hoisted(() => ({
-    requireAdminMock: vi.fn(),
-    statusMock: vi.fn(),
-    webhookMock: vi.fn(async () => {}),
-    fromMock: vi.fn(),
-    adminClientMock: vi.fn(),
-  }));
+// Mocka as fronteiras: auth admin, validação/registro na uazapi, o Vault e o
+// client admin.
+const {
+  requireAdminMock,
+  statusMock,
+  webhookMock,
+  adminClientMock,
+  fromMock,
+  ensureSecretMock,
+  setSecretMock,
+} = vi.hoisted(() => ({
+  requireAdminMock: vi.fn(),
+  statusMock: vi.fn(),
+  webhookMock: vi.fn(async () => {}),
+  fromMock: vi.fn(),
+  adminClientMock: vi.fn(),
+  // Como a RPC: devolve o existente ou o candidato.
+  ensureSecretMock: vi.fn<(s: unknown, id: string, kind: string, candidate: string) => Promise<string>>(),
+  setSecretMock: vi.fn<(supabase: unknown, id: string, kind: string, value: string) => Promise<void>>(
+    async () => {}
+  ),
+}));
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
   requireDashboardAdmin: requireAdminMock,
@@ -24,6 +37,10 @@ vi.mock("@/features/chat/lib/connection/uazapi", () => ({
   getUazapiStatus: statusMock,
   registerUazapiWebhook: webhookMock,
 }));
+vi.mock("@/features/chat/lib/connection/integration", () => ({
+  ensureChatIntegrationSecret: ensureSecretMock,
+  setChatIntegrationSecret: setSecretMock,
+}));
 
 import { POST } from "@/app/api/connection/persist/route";
 
@@ -35,16 +52,32 @@ function req(body: unknown) {
   });
 }
 
+const insert = vi.fn();
+const update = vi.fn();
+let existing: { id: string } | null;
+
+beforeEach(() => {
+  existing = null;
+  requireAdminMock.mockResolvedValue({ viewer: { id: "u1" } });
+  statusMock.mockResolvedValue({ connected: false, state: "connecting", owner: null });
+  ensureSecretMock.mockImplementation(async (_s, _id, _kind, candidate) => candidate);
+
+  const maybeSingle = vi.fn(async () => ({ data: existing, error: null }));
+  const select = vi.fn(() => ({ eq: () => ({ maybeSingle }) }));
+  const single = vi.fn(async () => ({ data: { id: "int-1" }, error: null }));
+  insert.mockReturnValue({ select: () => ({ single }) });
+  update.mockReturnValue({ eq: async () => ({ error: null }) });
+  fromMock.mockReturnValue({ select, insert, update });
+  adminClientMock.mockReturnValue({ from: fromMock });
+});
+
 afterEach(() => {
   vi.clearAllMocks();
-  adminClientMock.mockReturnValue({ from: fromMock });
 });
 
 describe("POST /api/connection/persist", () => {
   it("credencial inválida (status falha) → 422 e NÃO grava nada", async () => {
-    requireAdminMock.mockResolvedValue({ viewer: { id: "u1" } });
     statusMock.mockRejectedValue(new Error("uazapi status 404: host not mapped"));
-    adminClientMock.mockReturnValue({ from: fromMock });
 
     const res = await POST(
       req({ apiUrl: "https://errada.uazapi.com", token: "token-abc-123" })
@@ -58,23 +91,62 @@ describe("POST /api/connection/persist", () => {
     expect(webhookMock).not.toHaveBeenCalled();
   });
 
-  it("credencial válida → valida, grava (insert) e retorna ok", async () => {
-    requireAdminMock.mockResolvedValue({ viewer: { id: "u1" } });
-    statusMock.mockResolvedValue({ connected: false, state: "connecting", owner: null });
-
-    const single = vi.fn(async () => ({ data: { id: "int-1" }, error: null }));
-    const insert = vi.fn(() => ({ select: () => ({ single }) }));
-    const maybeSingle = vi.fn(async () => ({ data: null, error: null })); // sem integração existente
-    const select = vi.fn(() => ({ eq: () => ({ limit: () => ({ maybeSingle }) }) }));
-    fromMock.mockReturnValue({ select, insert });
-    adminClientMock.mockReturnValue({ from: fromMock });
-
+  it("grava só a URL no config e o token no Vault", async () => {
     const res = await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
     const body = await res.json();
 
-    expect(statusMock).toHaveBeenCalledTimes(1); // validou
     expect(res.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, integrationId: "int-1" });
-    expect(insert).toHaveBeenCalledTimes(1); // gravou
+    expect(body).toMatchObject({ ok: true, integrationId: "int-1", webhookRegistered: true });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ config: { apiUrl: "https://ok.uazapi.com" } })
+    );
+    // Nenhuma escrita de tabela carrega o token.
+    for (const call of [...insert.mock.calls, ...update.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain("token-abc-123");
+    }
+    expect(setSecretMock).toHaveBeenCalledWith(expect.anything(), "int-1", "token", "token-abc-123");
+  });
+
+  it("propõe um segredo de 32 bytes e registra o que o banco devolveu", async () => {
+    await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
+
+    const [, id, kind, candidate] = ensureSecretMock.mock.calls[0];
+    expect([id, kind]).toEqual(["int-1", "webhook_secret"]);
+    expect(candidate).toMatch(/^[0-9a-f]{64}$/);
+    expect(webhookMock).toHaveBeenCalledWith(
+      "https://ok.uazapi.com",
+      "token-abc-123",
+      `http://x/api/chat/webhook/uazapi?s=${candidate}`
+    );
+  });
+
+  it("registra o segredo EFETIVO, não o candidato local (conexão simultânea ou reconexão)", async () => {
+    existing = { id: "int-1" };
+    ensureSecretMock.mockResolvedValue("segredo-que-ja-existia");
+
+    await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
+
+    expect(insert).not.toHaveBeenCalled();
+    // O segredo do webhook não é gravado por fora do "cria se ausente".
+    expect(setSecretMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "webhook_secret",
+      expect.anything()
+    );
+    expect(webhookMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "http://x/api/chat/webhook/uazapi?s=segredo-que-ja-existia"
+    );
+  });
+
+  it("falha do Vault ao gravar o token → 500 e não registra webhook", async () => {
+    setSecretMock.mockRejectedValueOnce(new Error("vault indisponível"));
+
+    const res = await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
+
+    expect(res.status).toBe(500);
+    expect(webhookMock).not.toHaveBeenCalled();
   });
 });

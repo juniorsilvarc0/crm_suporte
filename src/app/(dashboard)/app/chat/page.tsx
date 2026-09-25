@@ -11,7 +11,7 @@ export default function ChatPage() {
     // Esta altura pertence sempre à lista. No celular, a conversa aberta vira
     // um overlay fixo dentro do ChatShell e não altera a geometria da casca.
     <div className="chat-page wa-surface flex h-[calc(100dvh-var(--app-chrome-top)-var(--mobile-nav-height)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col overflow-hidden lg:h-[calc(100dvh-var(--app-chrome-top))]">
-      {/* ChatShell usa useSearchParams (deep-link ?lead & ?phone), que exige
+      {/* ChatShell usa useSearchParams (deep-link ?conversation & ?phone), que exige
           um limite de Suspense no Next 16 em páginas renderizadas estaticamente. */}
       <Suspense fallback={null}>
         <ChatShell />

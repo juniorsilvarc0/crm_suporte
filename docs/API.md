@@ -1,6 +1,6 @@
 # Referência de API — CRM Suporte
 
-> ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** A API de integração (`/api/integracao/*`), os webhooks do n8n e as rotas internas de leads, funil, agenda, follow-ups, financeiro, métricas, pacientes e rastreamento descritos aqui foram **removidos**. A API para a IA e para outros sistemas volta como `/api/v1/*`, com token com escopo, na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md), quando este documento é reescrito. As rotas internas de chat, conexão, equipe e configurações continuam valendo.
+> ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** A API de integração (`/api/integracao/*`), os webhooks do n8n e as rotas internas de leads, funil, agenda, follow-ups, financeiro, métricas, pacientes e rastreamento descritos aqui foram **removidos**. A API para a IA e para outros sistemas volta como `/api/v1/*`, com token com escopo, na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md), quando este documento é reescrito. As rotas internas de chat, conexão, equipe e configurações continuam valendo. **Fase 2 (2026-09-25):** as rotas de lead viraram `/api/contacts` (seção Contatos) e a mídia do chat passou a ser privada (`/api/chat/media/[id]`).
 
 Guia completo da API HTTP do CRM, **escrito a partir do código real** (rotas + validações Zod). Serve dois públicos:
 
@@ -243,16 +243,25 @@ Rotas internas do dashboard. Todas exigem **sessão** (cookie `crm-suporte-sessi
 ### `POST /api/auth/logout`
 - **Auth:** pública · **Body:** — · **Sucesso:** `200 { ok: true, message: "Sessão encerrada." }` (limpa o cookie)
 
-## Leads
+## Contatos (sessão)
 
-### `POST /api/leads/manual`
-- **Body:** `phone` (obrigatório, mín. 10 dígitos com DDD) · `name`, `instagram_user`, `email`, `tipo_ensaio`, `agencia_nome`, `modelo_nome`, `notes` (opcionais) · `source` (enum, default `whatsapp`) · `status` (enum, default `novo`). Faz upsert por `normalized_phone`.
-- **Sucesso:** `200 { ok: true, message: "Lead salvo." }` · **Erros:** `400` · `500`
+### `POST /api/contacts`
+- **Body:** `phone` (obrigatório, com DDD) · `name` (opcional) · `source` (`manual` \| `indicacao` \| `whatsapp`, default `manual`; `api` é reservada à API v1).
+- Cria pelo resolvedor de identidade (`resolve_contact_identity`): mesmo número = mesma pessoa, então repetir devolve o contato existente (e o reativa se estava arquivado).
+- **Sucesso:** `200 { ok: true, created, message, contact: { id, name, phone, normalized_phone } }` · **Erros:** `400` · `401` · `409` (o número já é alias de outra pessoa) · `500`
 
-### `PATCH` / `DELETE /api/leads/[id]`
-- **PATCH body:** todos opcionais (string vazia → `null`; enums vazios = "não alterar"): `name`, `phone`, `instagram_user`, `email`, `source`, `status`, `tipo_ensaio`, `agencia_nome`, `modelo_nome`, `interesse`, `valor_estimado`, `is_recorrente`, `memoria_contexto`, `notes`. → `200 { ok: true, message: "Lead atualizado." }`.
-- **DELETE:** exclui o lead. O banco cuida dos vínculos: `lead_tags` e `followups` saem em **cascata**; `appointments`, `contracts` e `payments` são **desvinculados** (`lead_id` → `NULL`, preservando agenda/financeiro). → `200 { ok: true, message: "Lead excluído." }`.
-- **Erros:** `400` (id não-UUID/validação) · `404` · `500`
+### `PATCH` / `DELETE /api/contacts/[id]`
+- **PATCH body:** `name`, `email`, `notes` (opcionais; string vazia → `null`). **`phone` responde `422`**: o telefone é imutável. Corpo sem campo → `400`.
+- **DELETE:** arquiva (`archived_at`); nunca apaga.
+- **Erros:** `400` · `401` · `404` · `422` · `500`
+
+### `GET /api/contacts/[id]/avatar`
+- Foto do contato (bucket privado): `302` para URL assinada de 10 min · `404` sem foto.
+
+### `GET /api/chat/media/[id]`
+- Mídia da mensagem `[id]` (`?variant=thumb` para a miniatura): `302` para URL assinada de 10 min, `Cache-Control: private, max-age=300` · `404` sem mídia (inclusive mensagem apagada).
+
+### Antigas rotas de lead (removidas)
 
 ### `PATCH /api/leads/[id]/status`
 - **Body:** `status` (string, obrigatório — validado contra as colunas do funil existentes)
@@ -385,11 +394,11 @@ A IA no n8n gera a resposta e **envia direto pela uazapi** (`POST {apiUrl}/send/
 
 ### Webhook de entrada (uazapi → CRM)
 
-- `POST /api/chat/webhook/uazapi?s=<UAZAPI_WEBHOOK_SECRET>` — recebe `messages` (mensagem nova) e `messages_update` (ticks de entrega + mídia baixada). Autentica pelo `?s=` na URL (a uazapi não envia headers custom). Registrado automaticamente ao conectar.
+- `POST /api/chat/webhook/uazapi?s=<segredo>` — recebe `messages` (mensagem nova) e `messages_update` (ticks de entrega + mídia baixada). Autentica pelo `?s=` na URL (a uazapi não envia headers custom), comparado em tempo constante com o segredo da integração, que é **gerado ao conectar e guardado no Vault**. Sem integração, sem segredo ou segredo errado → `401`. Registrado automaticamente ao conectar.
 
 ### Conexão (sessão)
 
-- `POST /api/connection/persist` (`{ apiUrl, token }`) — salva as credenciais da instância e registra o webhook.
+- `POST /api/connection/persist` (`{ apiUrl, token }`, só admin) — valida as credenciais na uazapi, grava a `apiUrl` na integração e o `token` no **Vault**, obtém o segredo do webhook de forma atômica (`ensure_chat_integration_secret`: o existente, ou um novo na primeira conexão) e registra o webhook com esse valor.
 - `GET /api/connection/qr` — QR / código de pareamento. · `GET /api/connection/state` — estado da conexão.
 - `POST /api/connection/disconnect` (`{ wipe?: boolean, deleteIntegration?: boolean }`) — logout da instância. Com `wipe: true`, **apaga todo o chat** (conversas + mensagens), mantendo a instância. Com `deleteIntegration: true`, **exclui a instância do CRM** (apaga o chat **e** remove as credenciais) para conectar outra. Após desconectar, a tela oferece **reconectar** (mesma instância, conversas preservadas) ou **excluir**. Leads sempre intactos.
 

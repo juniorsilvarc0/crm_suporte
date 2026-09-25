@@ -8,6 +8,7 @@ const {
   updateEqMock,
   fetchMock,
   userGuardMock,
+  downloadMock,
 } = vi.hoisted(() => ({
   getConfigMock: vi.fn(),
   adminClientMock: vi.fn(),
@@ -16,13 +17,15 @@ const {
   updateEqMock: vi.fn(),
   fetchMock: vi.fn(),
   userGuardMock: vi.fn(),
+  downloadMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
   requireDashboardUser: userGuardMock,
 }));
 
-vi.mock("@/features/settings/lib/get-runtime-environment", () => ({
+vi.mock("@/features/settings/lib/get-runtime-environment", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/settings/lib/get-runtime-environment")>()),
   getOpenAiTranscriptionConfig: getConfigMock,
 }));
 
@@ -68,6 +71,7 @@ beforeEach(() => {
       })),
       update: updateMock,
     })),
+    storage: { from: vi.fn(() => ({ download: downloadMock })) },
   });
   fetchMock.mockResolvedValue(
     new Response(JSON.stringify({ text: "Áudio transcrito" }), {
@@ -75,6 +79,42 @@ beforeEach(() => {
       headers: { "Content-Type": "application/json" },
     })
   );
+});
+
+describe("POST /api/chat/transcribe — mídia privada e cofre", () => {
+  it("baixa o áudio do bucket privado pela service role, sem buscar URL", async () => {
+    messageSingleMock.mockResolvedValue({
+      data: {
+        id: "message-1",
+        media_url: "/api/chat/media/message-1",
+        media_mime_type: "audio/mpeg",
+        media_bucket: "chat-media",
+        media_key: "chat/2026/09/a.mp3",
+        metadata: {},
+      },
+      error: null,
+    });
+    downloadMock.mockResolvedValue({ data: new Blob(["audio"]), error: null });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(downloadMock).toHaveBeenCalledWith("chat/2026/09/a.mp3");
+    // A única chamada de rede é a da OpenAI.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("api.openai.com");
+  });
+
+  it("responde 503 quando o cofre não responde", async () => {
+    const { RuntimeEnvironmentUnavailableError } = await import(
+      "@/features/settings/lib/get-runtime-environment"
+    );
+    getConfigMock.mockRejectedValue(new RuntimeEnvironmentUnavailableError("timeout"));
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+  });
 });
 
 describe("POST /api/chat/transcribe", () => {

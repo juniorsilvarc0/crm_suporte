@@ -54,7 +54,7 @@ export async function POST(
     p_actor_id: viewer.id,
     p_id: id,
     p_password: parsed.data.password,
-    p_must_change_password: parsed.data.must_change_password ?? null,
+    p_must_change_password: parsed.data.must_change_password,
   });
 
   if (error) {

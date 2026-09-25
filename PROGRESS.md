@@ -27,6 +27,138 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Fase 2 — baseline novo, contato no lugar de lead, segredos no Vault e mídia privada
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** O CRM de suporte roda inteiro no banco novo: contato no lugar de lead, nenhuma credencial de integração em tabela ou env, mídia do cliente fora do alcance público e chat ao vivo pelo Realtime.
+**Arquivos alterados:** branch `feat/fase2-baseline-contatos`, commits separados por camada (`git log 1c6e8f0..HEAD`).
+- **Banco (commit do baseline):**
+  - `supabase/migrations/202609251201{00..500}_*.sql`, 6 arquivos;
+  - `supabase/seed.sql` e `supabase/tests/baseline.sql`;
+  - as 45 migrations da clínica foram para `supabase/legado-clinica/`.
+- **Infra:**
+  - `docker-compose.yml`, com `realtime` e `storage`;
+  - `docker/db-init.sql` e `docker/dev-gateway.conf`;
+  - `scripts/db-local-apply.sh` (com livro-razão) e `scripts/db-local-test.sh`;
+  - CI com o job `banco`.
+- **Back:**
+  - `features/contacts` e `/api/contacts`, `/api/contacts/[id]`, `/api/contacts/[id]/avatar`;
+  - `/api/chat/media/[id]`;
+  - `src/lib/storage/chat-media.ts`, `put-media.ts` (o `r2.ts` saiu) e `features/chat/lib/media/stored-media.ts`;
+  - `features/chat/lib/connection/integration.ts` e `lib/security/safe-equal.ts`;
+  - webhook uazapi, rotas de envio, `persist`, transcrição, `get-runtime-environment.ts`;
+  - tipos gerados em `src/lib/supabase/database.types.ts`.
+- **Front:**
+  - tela de contato do chat e cartão de contato;
+  - `image-variant.ts`;
+  - `use-chat-realtime.ts` e `subscribeAuthenticated`, em `lib/supabase/client.ts`.
+
+**O que foi feito:**
+- **Baseline novo** (6 migrations: fundação, usuários, integração, contatos, chat, storage/realtime; mais `20260925120600`, que vem da revisão):
+  - toda migration termina em `assert_security_baseline()`;
+  - `service_role` com grant mínimo, por coluna onde importa;
+  - `chat-media` privado, com teto de 50 MB e lista de MIME;
+  - Realtime só para `authenticated` com `app_role`.
+- **Tipos do banco gerados** (`pnpm db:types`, supabase CLI 2.118.0 via `npx`). O `types.ts` escrito à mão saiu.
+- **Contatos:**
+  - `resolve_contact_identity` substitui o resolvedor de lead, sem o ramo de deal;
+  - `PATCH /api/contacts/[id]` edita só nome, e-mail e notas, e responde 422 se vier telefone;
+  - `POST /api/contacts` cria pelo resolvedor.
+- **`sender_type` em toda mensagem:**
+  - `contact` na entrada;
+  - `device` no fromMe do celular da empresa;
+  - `agent` em envio, nota, anexo, áudio e encaminhamento.
+- **uazapi no Vault:**
+  - `config` guarda só a `apiUrl`;
+  - o segredo do webhook é gerado por integração e comparado em tempo constante;
+  - sem segredo, o webhook responde 401;
+  - saíram os logs `[uazapi-dbg]` e o log do envelope cru, que trazia o `token`.
+- **Mídia privada:**
+  - `media_bucket`/`media_key` na linha;
+  - `media_url` = `/api/chat/media/<id>`, que confere a sessão e redireciona (302) para URL assinada de 10 min;
+  - foto do contato em `contacts.avatar_*`;
+  - a uazapi baixa por URL assinada;
+  - a transcrição lê pelo `service_role`.
+- **Cofre:**
+  - catálogo tipado (`OPENAI_API_KEY`, `OPENAI_TRANSCRIPTION_MODEL`), cache de 60 s, sem fallback para env;
+  - cofre ilegível → 503.
+- **Correções achadas no caminho:**
+  - guard de banco que três rotas chamavam sem testar o resultado;
+  - etiquetar conversa falhava sempre;
+  - prévia não limpava com nota depois;
+  - clique duplo e reenvio simultâneo mandavam duas vezes;
+  - `INVALID_ROLE` virava 500;
+  - Realtime assinava como `anon` (ver Armadilhas).
+
+- **Revisão adversarial independente** (subagente, só leitura, sobre o diff inteiro da fase): nada de severidade alta ou média. Os três achados baixos foram corrigidos:
+  1. **Teste de contrato de guard:** aceitava guard num ramo quando o banco era acessado por helper, que é justamente a regressão real de `messages/[messageId]`. Agora helper que acessa o banco conta como acesso, guard dentro de `if` não vale, e o teste do resultado tem de vir antes do banco.
+  2. **Segredo do webhook:** duas conexões simultâneas podiam deixar o Vault e a uazapi com segredos diferentes. Entrou a RPC atômica `ensure_chat_integration_secret` (migration `20260925120600`), e o `persist` registra o valor que ela devolve. Corrida provada em duas sessões: as duas devolvem o mesmo segredo.
+  3. **Cache do cofre:** uma leitura em voo repunha o valor antigo depois da invalidação. Agora há um contador de geração.
+
+**Decisões tomadas:**
+- **`POST /api/contacts`, e não `/api/contacts/manual`.** A Fase 3 põe a listagem no mesmo recurso. A origem `api` fica reservada à API v1.
+- **Redirect para URL assinada, não proxy dos bytes.** `<audio>`/`<video>` pedem por Range, e o storage-api já responde isso.
+- **A cópia encaminhada aponta para o mesmo objeto do bucket**, sem novo upload.
+- **Segredo do webhook mantido ao reconectar.** Trocar é rotação explícita, da aba Conexão na Fase 5.
+- **O front de Configurações ainda tem o ramo `source === "environment"`**, inalcançável. A aba Cofre da Fase 5 reescreve essa tela.
+- **Portas locais:** o plano previa 3100/55321/55322, mas o compose seguiu em 3000/54321/54322, a convenção do Supabase local. Nesta máquina, a 3000 e a 3100 estão ocupadas por containers de outros projetos, e o teste ponta a ponta rodou `next dev -p 3200`. **Decisão pendente do dono.**
+- **Corrida de identidade provada em duas sessões** (é o caso que `supabase/tests/baseline.sql` não cobre):
+  1. a sessão A resolve `+55 (11) 99000-0777` e segura a transação por 2 s;
+  2. a sessão B resolve `5511990000777` 0,5 s depois e fica bloqueada no lock por telefone até o commit de A;
+  3. B devolve `created=false`.
+
+  Resultado: um contato só, com o nome de A preservado.
+
+**Verificação:**
+
+| Check | Resultado |
+|---|---|
+| typecheck | ✓ |
+| lint | ✓ 0 erros; 9 avisos que já existiam, em `verify-webhook.test.ts` |
+| test | ✓ 78 arquivos, 737 testes |
+| build | ✓ |
+| SQL | ✓ baseline 52/52 e segredo da integração 7/7; reaplicar = 0 migrations; tipos gerados sem diff |
+
+- **Commits isolados:** os commits que separei à mão foram validados em árvore isolada (`git checkout-index`).
+- **Ponta a ponta com `next dev` no stack local** (24 passos, todos ✓):
+  - webhook: 401 sem segredo e com segredo errado; cria contato, conversa e mensagem; retry não duplica nem infla não lidas; fromMe vira `device`;
+  - Realtime entrega conversa e mensagem com dados;
+  - rotas: lista e tela de contato; PATCH de notas 200 e de telefone 422; etiquetar 2× dá 200/200;
+  - mídia: sem sessão 401; com sessão 302 para URL assinada na origem pública, que entrega o arquivo; foto do contato 302.
+
+  Os dados de teste foram apagados depois.
+- **Vault e storage validados pelo PostgREST** como `service_role`:
+  - `config` com token → 23514;
+  - segunda integração → 23505;
+  - `anon` na RPC → 42501;
+  - apagar a integração apaga os segredos;
+  - URL pública do objeto → 400;
+  - MIME com parâmetro e `text/html` → recusados.
+
+**Pendências / próximos passos:**
+- **Push e PR** (sem merge).
+- **`@aws-sdk/client-s3` ficou sem uso** no `package.json`: remover num PR `chore`.
+- **O relay para a IA ainda manda o envelope cru**, com o `token` da instância. É a Fase 5, relay v1.
+- **Objetos substituídos ficam no bucket:** foto antiga do contato e mídia de mensagem apagada. Falta uma limpeza.
+- **Deploy (Fase 10):** criar o 1º admin e fechar os default privileges do `supabase_admin` em produção (ver `DEPLOY.md`).
+
+**Armadilhas descobertas:**
+- **Realtime assina como `anon` se o join sair antes do token.**
+  - O `supabase-js` com `accessToken` assíncrono manda o join assim que o WebSocket abre. Se a busca de `/api/auth/supabase-token` perde a corrida, a assinatura de `postgres_changes` é gravada em `realtime.subscription` com `claims_role = anon`, e todo evento chega com `new: {}` e `errors: ["Error 401: Unauthorized"]`.
+  - O token que chega depois **não** corrige a assinatura já gravada.
+  - Use sempre `subscribeAuthenticated`, que espera o `setAuth()`.
+  - Diagnóstico: `select claims_role from realtime.subscription`.
+- **A 1ª conexão ao Realtime depois de subir o stack falha** (`Tenant realtime-dev is initializing`). As seguintes funcionam.
+- **`service_role` tem grant mínimo.**
+  - Upsert sem `ignoreDuplicates` vira `ON CONFLICT DO UPDATE` e exige UPDATE, que `conversation_tags` e `contact_tags` não têm.
+  - `select('*')` em `app_users`/`app_environment_variables` falha: o SELECT é por coluna.
+- **O bucket compara MIME literal.** `audio/ogg; codecs=opus` é recusado; `storageContentType` tira os parâmetros.
+- **A URL assinada nasce com a origem INTERNA** (`SUPABASE_URL`, que no Docker é `host.docker.internal`). `signStorageObject` troca pela pública (`NEXT_PUBLIC_SUPABASE_URL`).
+- **`normalize_phone` tira o DDI 55:** `5511990000123` é gravado como `11990000123`.
+- **O compose valida o `env_file` do `web` mesmo subindo só `db`.** Sem `.env.local`, nem `config` roda; o CI copia o exemplo.
+- **O ECR público (`public.ecr.aws`, imagem do Postgres e do PostgREST) limita pull anônimo por segundo, e os runners do GitHub dividem IP.** O 1º run do job `banco` falhou em 11 s com `toomanyrequests: Rate exceeded`. O job agora puxa em série (`COMPOSE_PARALLEL_LIMIT=1`) e com até 5 tentativas; no run seguinte, precisou de 2.
+- **`git add -p` não existe neste ambiente.** Para separar commits de um arquivo com mudanças de dois assuntos, monte a versão intermediária, grave com `git hash-object -w` + `git update-index --cacheinfo` e valide com `git checkout-index -a --prefix=<dir>`.
+
 ## [2026-09-25] Sessão confirmada no banco em toda rota /api e login sem open redirect
 
 **Agente/Modelo:** Claude Opus 5.5

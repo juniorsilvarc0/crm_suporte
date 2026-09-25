@@ -1,6 +1,6 @@
 ---
 name: uazapi-integration
-description: Use para mexer na integração de WhatsApp via uazapi neste CRM — conectar/desconectar instância (QR), enviar/receber em tempo real, status (ticks), áudio/ptt, anexos (imagem/vídeo/documento com compressão), lead automático no inbound, relay ao n8n e depuração. Gatilhos - "uazapi", "conectar/desconectar whatsapp", "QR code", "instância", "não recebe/não envia mensagem", "ticks/entregue/lido", "webhook whatsapp", "áudio/ptt", "anexo/vídeo/imagem", "lead do whatsapp", "n8n whatsapp", "chat em tempo real", "limpar chat".
+description: Use para mexer na integração de WhatsApp via uazapi neste CRM — conectar/desconectar instância (QR), enviar/receber em tempo real, status (ticks), áudio/ptt, anexos (imagem/vídeo/documento com compressão), contato automático no inbound, relay ao n8n e depuração. Gatilhos - "uazapi", "conectar/desconectar whatsapp", "QR code", "instância", "não recebe/não envia mensagem", "ticks/entregue/lido", "webhook whatsapp", "áudio/ptt", "anexo/vídeo/imagem", "contato do whatsapp", "n8n whatsapp", "chat em tempo real", "limpar chat".
 ---
 
 # Integração WhatsApp via uazapi
@@ -15,18 +15,18 @@ Guia completo e autossuficiente da integração uazapi deste CRM (Next.js 16 + R
 INBOUND  (WhatsApp → nós)
   uazapi → POST /api/chat/webhook/uazapi?s=<secret>
     ├─ EventType "messages"        → normalizeUazapiWebhook → upsertMessage
-    │                              → upsertLeadFromInbound (cria/atualiza lead)
+    │                              → resolveContactIdentity (acha/cria o contato pelo telefone)
     │                              → relay ao n8n (SÓ inbound e conversa.status='bot')
     └─ EventType "messages_update" → event.Type:
          ├─ Delivered/Read/Played/Sent → atualiza delivery_status (ticks, MONÓTONO)
-         └─ FileDownloaded            → re-hospeda FileURL no chat-media +
+         └─ FileDownloaded            → re-hospeda FileURL no chat-media (PRIVADO) +
                                          anexa à mensagem (a mídia chega AQUI, não na msg)
   → Supabase Realtime (postgres_changes: INSERT+UPDATE) → UI ao vivo
 
 OUTBOUND (nós → WhatsApp)
   UI → POST /api/chat/conversations/[id]/send | send-audio | send-file
      → insere chat_messages 'pending' (o id vira o track_id)
-     → senders/uazapi (POST /send/text|/send/media, header token)
+     → senders/uazapi (POST /send/text|/send/media, header token lido do Vault)
      → grava external_id=messageid, delivery_status='sent'
      → o echo fromMe volta pelo webhook e é RECONCILIADO (não duplica)
 ```
@@ -35,16 +35,17 @@ OUTBOUND (nós → WhatsApp)
 |---|---|---|
 | Conexão | `connection/uazapi.ts` | `connectUazapi`(QR) · `getUazapiStatus` · `registerUazapiWebhook` · **`disconnectUazapi`** |
 | Conexão | `connection/ssrf-guard.ts` | `assertSafeUrl`/`safeBaseUrl` — bloqueia URL interna/ofuscada |
-| Conexão | `connection/integration.ts` | `getUazapiIntegration` — a linha uazapi ativa |
+| Conexão | `connection/integration.ts` | `getUazapiIntegration` / `getIntegrationCredentials` — a linha uazapi com o token lido do **Vault**; `get/setChatIntegrationSecret` |
 | Envio | `senders/uazapi.ts` | `sendUazapiText` · `sendUazapiMedia` · `sendUazapiAudio` · `toUazapiNumber` · **`deleteUazapiMessage`** · **`editUazapiMessage`** |
 | Ações | `lib/message-actions.ts` | `canEdit/canDelete/canForwardMessage` · `buildForwardPayload` — regras puras, compartilhadas por UI e rota |
 | Entrada | `normalizers/uazapi.ts` | envelope real → `NormalizedMessage` · `extractUazapiStatuses` · **`extractUazapiMedia`** |
 | Persistência | `upsert-message.ts` | grava conversa+mensagem, dedup `(conversation_id, external_id)`, avatar/nome sem sobrescrever com null |
-| Lead | `upsert-lead.ts` + `lib/formatters/clean-name.ts` | lead no inbound; `cleanContactName` tira emoji/`~` |
+| Contato | `features/contacts/queries/resolve-contact-identity.ts` + `lib/formatters/clean-name.ts` | contato no inbound (RPC com lock por telefone); `cleanContactName` tira emoji/`~` |
 | Status | `delivery-status.ts` | `overridableFrom` — ticks monótonos (nunca regridem) |
-| Mídia | `media/persist-inbound.ts` · `media/compress-video.ts` | baixa (SSRF) e re-hospeda · comprime vídeo (ffmpeg) |
+| Mídia | `media/persist-inbound.ts` · `media/stored-media.ts` · `lib/storage/{put-media,chat-media}.ts` · `media/compress-video.ts` | baixa (SSRF) e re-hospeda no bucket privado · colunas/metadata da mídia · URL assinada · comprime vídeo (ffmpeg) |
 | Rotas conexão | `api/connection/{persist,qr,state,disconnect}/route.ts` | onboarding / status / logout+wipe+excluir instância |
-| Rota webhook | `api/chat/webhook/uazapi/route.ts` | recebe eventos (secret, status, mídia, **apagada**, echo, inbound, lead, relay) |
+| Rota webhook | `api/chat/webhook/uazapi/route.ts` | recebe eventos (secret do Vault, status, mídia, **apagada**, echo, inbound, contato, relay) |
+| Rotas de mídia | `api/chat/media/[id]` · `api/contacts/[id]/avatar` | sessão + 302 para URL assinada de 10 min |
 | Rotas envio | `api/chat/conversations/[id]/{send,send-audio,send-file}/route.ts` | texto / áudio / anexo |
 | Rotas mensagem | `api/chat/conversations/[id]/messages/[messageId]/route.ts` | `PATCH` edita · `DELETE` apaga para todos |
 | Rota encaminhar | `api/chat/conversations/[id]/forward/route.ts` | reenvia com `forward:true` (máx. 5 destinos) |
@@ -75,7 +76,7 @@ Auth: **header `token: <token>`** (NÃO Bearer). Base URL por-integração em `c
 | POST | `/webhook` | `{enabled, url, events:["messages","messages_update"]}` | ok |
 
 - **`number`**: DDI+dígitos sem `+`. Use `toUazapiNumber()`.
-- **`type` (mídia)**: `image,video,document,audio,myaudio,ptt,ptv,sticker`. **Voz = `ptt`**. `file` = URL pública **ou** base64. Áudio de saída vai como **base64**; anexos (send-file) vão como **URL pública do chat-media** (a uazapi baixa).
+- **`type` (mídia)**: `image,video,document,audio,myaudio,ptt,ptv,sticker`. **Voz = `ptt`**. `file` = URL pública **ou** base64. Áudio de saída vai como **base64**; anexos (send-file) e encaminhamentos vão como **URL assinada de 10 min** do bucket privado (a uazapi baixa; `signStorageObject` reescreve para a origem pública).
 - **`track_id`** = id da NOSSA `chat_messages` (casa status + reconcilia echo fromMe).
 - **`replyid`** = `messageid` da uazapi (nosso `external_id`) a citar. É **oficial**, está no spec — já esteve marcado como palpite no código, não é.
 - **`forward: true`** marca a mensagem como "Encaminhada". ⚠️ **Não existe endpoint de encaminhar**: encaminhar é reenviar o conteúdo com essa bandeira ligada (é o que a rota `.../forward` faz).
@@ -114,37 +115,38 @@ Envelope: `{ EventType, message?, event?, chat?, owner, instanceName, token }`.
 
 ## 3. Modelo de dados (Supabase)
 
-- **`chat_integrations`** — `provider='uazapi'`, `config={apiUrl,token}`, `phone_number` (dono, preenchido ao conectar), `is_active`. **Single-tenant: 1 linha uazapi**, id estável (reconectar não duplica conversas).
+- **`chat_integrations`** — `provider='uazapi'` (único aceito), `config={apiUrl}` (**o check do banco recusa token ali**), `token_secret_id`/`webhook_secret_id` (Vault), `phone_number` (dono, preenchido ao conectar), `is_active`. **Single-tenant: `unique(provider)`**, id estável (reconectar não duplica conversas). Apagar a linha apaga os segredos no Vault (trigger).
 - **`chat_conversations`** — 1 por contato; `external_id`=telefone; `contact_avatar_url` (do `chat.imagePreview`); `status ∈ {bot,human,resolved}`; `unique(integration_id, external_id)`.
-- **`chat_messages`** — `external_id`(messageid), `direction`, `type`, `content`, `media_url`, `delivery_status`, `metadata.uazapiId`; `unique(conversation_id, external_id)` (dedup do echo).
-- **`leads`** — criado no inbound (`upsertLeadFromInbound`), dedup por `normalized_phone`.
-- **Bucket `chat-media`** (público) — playback + mídia re-hospedada. Migration `20260706150000...`.
+- **`chat_messages`** — `external_id`(messageid), `direction`, `sender_type` (`contact` entrada · `device` fromMe do celular · `agent` enviado pelo CRM · `ai`/`system` depois; check casa com `direction`), `type`, `content`, `media_bucket`/`media_key` + `media_url` = `/api/chat/media/<id>`, `delivery_status`, `metadata.uazapiId`/`thumbKey`/`thumbUrl`; `unique(conversation_id, external_id)` (dedup do echo).
+- **`contacts`** — criado no inbound (`resolve_contact_identity`), dedup por `normalized_phone` (sem o DDI 55); telefone imutável; foto em `avatar_bucket`/`avatar_key`.
+- **Bucket `chat-media`** (**privado**, 50 MB, lista de MIME literal sem parâmetros) — mídia re-hospedada e foto do contato. Nada grava URL do storage: a rota do app assina na hora.
 
 ## 4. Conectar / desconectar
 
 **Conectar** — `/app/conexao` (`ConnectionPanel`): sem integração → form de credenciais → `POST /api/connection/persist` (upsert integração + `registerUazapiWebhook` p/ `${APP_PUBLIC_URL}/api/chat/webhook/uazapi?s=<secret>`) → poll `state` (3s) + `qr` (~25s) → escaneia → "Conectado".
 
-**Desconectar** — botão no bloco conectado → diálogo com opção **"limpar todo o chat"** (exige digitar `excluir`) → `POST /api/connection/disconnect { wipe? }`: faz logout; com `wipe`, apaga conversas+mensagens (cascade; **leads intactos**), mantendo a instância. Após desconectar, o painel NÃO vai direto ao QR: mostra a **tela de escolha** (`flow: "auto"|"qr"|"choice"` em `ConnectionPanel`) → **Reconectar** (mesma instância, gera QR, **conversas preservadas** — integração é a mesma linha) ou **Excluir instância**.
+**Desconectar** — botão no bloco conectado → diálogo com opção **"limpar todo o chat"** (exige digitar `excluir`) → `POST /api/connection/disconnect { wipe? }`: faz logout; com `wipe`, apaga conversas+mensagens (cascade; **contatos intactos**), mantendo a instância. Após desconectar, o painel NÃO vai direto ao QR: mostra a **tela de escolha** (`flow: "auto"|"qr"|"choice"` em `ConnectionPanel`) → **Reconectar** (mesma instância, gera QR, **conversas preservadas** — integração é a mesma linha) ou **Excluir instância**.
 
-**Excluir instância** — `POST /api/connection/disconnect { deleteIntegration: true }` (exige digitar `excluir`): logout + apaga conversas (a FK `chat_conversations.integration_id` é `ON DELETE SET NULL`, então **apaga conversas ANTES** de remover a linha, senão ficam órfãs) + deleta `chat_integrations`. `state` passa a `configured:false` → volta ao form de credenciais para conectar uma instância **nova**. **Leads nunca são tocados.**
+**Excluir instância** — `POST /api/connection/disconnect { deleteIntegration: true }` (exige digitar `excluir`): logout + apaga conversas (a FK `chat_conversations.integration_id` é `ON DELETE SET NULL`, então **apaga conversas ANTES** de remover a linha, senão ficam órfãs) + deleta `chat_integrations`. `state` passa a `configured:false` → volta ao form de credenciais para conectar uma instância **nova**. **Contatos nunca são tocados.** O segredo do webhook e o token saem do Vault junto com a linha (trigger).
 
 > O QR só vincula um **celular** à instância existente (mesmo `apiUrl`+`token`) — não troca de instância. Para conectar OUTRA instância uazapi, é preciso **excluir** a atual e informar URL+token novos.
 
-Credenciais NÃO ficam em env — vivem em `chat_integrations.config`. Envs: `UAZAPI_WEBHOOK_SECRET`, `APP_PUBLIC_URL`, `N8N_WEBHOOK_URL`, `OPENAI_API_KEY`.
+Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vault** e obtém o segredo do webhook por `ensure_chat_integration_secret` (atômico: devolve o existente ou grava o candidato de 32 bytes), registrando na uazapi o valor **devolvido** — duas conexões simultâneas nunca divergem. Envs que ainda existem: `APP_PUBLIC_URL` (base do webhook registrado) e `N8N_WEBHOOK_URL` (relay, sai na Fase 5). A chave da OpenAI fica no cofre (Configurações).
 
 > **Dev local:** a uazapi é remota → precisa alcançar nosso webhook. `localhost` não serve — túnel (`ngrok`) em `APP_PUBLIC_URL`.
 
 ## 5. Anexos + compressão de vídeo (send-file)
 
-`POST /api/chat/conversations/[id]/send-file` recebe **`multipart/form-data`** (campo `file`, binário puro — **NÃO base64**). Classifica por mimetype: imagem→`image`, vídeo→`video`, resto→`document`. Sobe no `chat-media` e envia via `/send/media` com a **URL pública**.
+`POST /api/chat/conversations/[id]/send-file` recebe **`multipart/form-data`** (campo `file`, binário puro — **NÃO base64**). Classifica por mimetype: imagem→`image`, vídeo→`video`, resto→`document`. Sobe no bucket privado `chat-media` (`media_url` = `/api/chat/media/<id>`, id gerado antes do INSERT) e envia via `/send/media` com uma **URL assinada** de 10 min. Upload até 64 MB; depois de comprimido, até 50 MB (teto do bucket) — acima disso, 413.
 
 - **Vídeo > 10MB é comprimido com ffmpeg** (`compress-video.ts`: 720p, H.264/AAC, `+faststart`) — como o WhatsApp faz — pra caber no limite (~16MB). Cai de volta ao original se o ffmpeg falhar. **A imagem de produção precisa do ffmpeg** (instalado no `Dockerfile.production`).
 - **⚠️ Limite de body do Next 16:** o default é **10MB** (`experimental.proxyClientMaxBodySize`) — subido p/ `"64mb"` no `next.config.ts`. Sem isso, upload grande é truncado e `request.formData()` quebra. Se anexo grande "carrega e não vai", suspeite disso.
 
-## 6. Relay ao n8n + lead automático
+## 6. Relay ao agente + contato automático
 
 - **Relay:** o webhook repassa o **payload cru** ao `N8N_WEBHOOK_URL` (fire-and-forget) **só p/ inbound e enquanto `conversation.status='bot'`**. A IA "Valquíria" responde enviando **direto pela uazapi** (`/send/text`), e o echo volta como fromMe. Ao **Assumir** (status `human`), o relay para.
-- **Lead:** todo inbound chama `upsertLeadFromInbound` — cria lead (`source=whatsapp`, `status=novo`) ou, se já existe (dedup `normalized_phone`), só atualiza `last_message_at` (**não sobrescreve** funil/nome curados). `cleanContactName` remove emojis, bandeiras e o `~` de auto-update do pushname.
+- **Contato:** todo evento de mensagem chama `resolveContactIdentity` (sem reativar; quem reativa e toca `last_message_at` é o trigger do INSERT real da mensagem, uma vez só) — cria o contato (`source=whatsapp`) ou acha o existente pelo telefone normalizado. O nome do provedor **só preenche nome vazio**; nunca sobrescreve o editado. `cleanContactName` remove emojis, bandeiras e o `~` de auto-update do pushname.
+- ⚠️ O relay ainda manda o **envelope cru**, com o `token` da instância. Sai na Fase 5 (relay v1).
 
 ## 7. Realtime
 
@@ -156,7 +158,7 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 
 ## 8. Playbook de depuração
 
-**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[uazapi-dbg] msg:`/`evt:` e `[webhook/uazapi] não reconhecido:`. Confira: integração ativa? webhook registrado (`GET {base}/webhook`)? secret `?s=` bate? O `message.chatid`/`messageType` batem com o normalizer?
+**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[webhook/uazapi] não reconhecido: {eventType, messageType}` (nunca o envelope: ele traz o `token` e o texto). 401 = segredo: a integração existe, tem token **e** segredo no Vault, e o `?s=` registrado na uazapi é o de agora? Reconectar pelo menu Conexão re-registra. Confira também: integração ativa? webhook registrado (`GET {base}/webhook`)? O `message.chatid`/`messageType` batem com o normalizer?
 
 **"Áudio/imagem não aparece"** → a mídia vem no `messages_update` **FileDownloaded** (separado da msg). Cheque: (a) o FileDownloaded chegou? (b) `extractUazapiMedia` casou por `MessageIDs`? (c) a UI assina **UPDATE** em chat_messages? (d) num reload aparece? (se sim, é realtime UPDATE).
 
@@ -170,10 +172,11 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 
 ## 9. Segurança
 
-- **Secret do webhook via `?s=`** (a uazapi não manda headers custom). 401 se não bater. `openssl rand -hex 32`.
+- **Secret do webhook via `?s=`** (a uazapi não manda headers custom): gerado por integração no `persist`, guardado no Vault, comparado em tempo constante (`safeEqual`) **antes** de ler o corpo. Sem integração, sem segredo ou errado → a mesma 401 (não revela se há instância).
 - **SSRF guard** (`assertSafeUrl`) em toda URL externa (apiUrl, URL de mídia): exige http(s), bloqueia loopback/privados (inclui IPv4-mapped IPv6 `::ffff:` e decimal/hex ofuscado); produção exige HTTPS. Download de mídia: `redirect:"error"` + `token` só p/ o mesmo host da instância (não vaza a credencial).
 - Conexão (`/api/connection/*`) sob sessão; webhook público com secret próprio.
-- **Resíduo:** migration `20260706130000` dá `SELECT` a `anon` em chat_* (realtime no browser). Hardening: realtime autenticado por JWT.
+- **Realtime:** `anon` não lê nada; `authenticated` lê só as tabelas de chat, com policy por `app_role`. O navegador assina **só por `subscribeAuthenticated`** — assinar antes de o token chegar grava a assinatura como `anon` e todo evento vem vazio com 401.
+- **Mídia:** bucket privado; `/api/chat/media/<id>` confere a sessão e redireciona para URL assinada curta. A transcrição baixa pelo `service_role`.
 
 ## 10. Deploy
 

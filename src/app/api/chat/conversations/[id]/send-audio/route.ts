@@ -1,10 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendUazapiAudio } from "@/features/chat/lib/senders/uazapi";
 import { putMedia } from "@/lib/storage/put-media";
+import { storedMediaColumns } from "@/features/chat/lib/media/stored-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 type Params = { params: Promise<{ id: string }> };
@@ -43,26 +47,20 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "No phone on conversation" }, { status: 400 });
     }
 
-    const { data: integration } = conv.integration_id
-      ? await supabase
-          .from("chat_integrations")
-          .select("provider, config")
-          .eq("id", conv.integration_id)
-          .single()
-      : { data: null };
-
+    const integration = await getIntegrationCredentials(supabase, conv.integration_id);
     if (!integration) {
       return NextResponse.json({ error: "No integration" }, { status: 400 });
     }
 
-    const intConfig = integration.config as Record<string, string>;
     const mime = mimeType || "audio/webm";
     const bytes = Buffer.from(audioBase64, "base64");
 
     // 1) Guarda para playback na nossa UI (o envio ao provedor usa base64).
-    //    `putMedia` reencoda o áudio para voz e escolhe R2 ou Supabase.
+    //    `putMedia` reencoda o áudio para voz. Falhando, o áudio sai mesmo
+    //    assim e a bolha fica sem player.
     const stored = await putMedia({ supabase, folder: "chat", body: bytes, mime });
-    const publicUrl = stored?.url ?? null;
+    // O id nasce aqui porque a `media_url` da linha aponta para ele.
+    const messageId = randomUUID();
 
     // Citação: o provedor cita pelo id DELE (`external_id`), não pelo nosso.
     const quote = await resolveQuotedExternalId(supabase, id, quotedMessageId);
@@ -76,14 +74,17 @@ export async function POST(request: Request, { params }: Params) {
     const { data: msg, error: msgErr } = await supabase
       .from("chat_messages")
       .insert({
+        id: messageId,
         quoted_message_id: quotedMessageId ?? null,
         conversation_id: id,
         direction: "outbound",
+        sender_type: "agent",
         type: "audio",
         content: null,
-        media_url: publicUrl,
+        ...(stored ? storedMediaColumns(messageId, stored) : { media_url: null }),
         media_mime_type: mime,
         delivery_status: "pending",
+        sent_by_user_id: auth.viewer.id,
         metadata: { seconds: seconds ?? 0 },
         created_at: now,
       })
@@ -93,22 +94,22 @@ export async function POST(request: Request, { params }: Params) {
 
     // 3) Envia pelo provedor.
     try {
-      if (integration.provider === "uazapi") {
-        const { apiUrl, token } = intConfig;
-        const result = await sendUazapiAudio(apiUrl, token, phone, audioBase64, msg.id, replyExternalId);
-        const { error: idErr } = await supabase
-          .from("chat_messages")
-          .update({
-            external_id: result.messageid,
-            metadata: { seconds: seconds ?? 0, uazapiId: result.id },
-          })
-          .eq("id", msg.id);
-        if (idErr) console.error("[send-audio] gravar external_id falhou:", idErr, msg.id);
-      } else {
-        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
-        // enviada sem ter saído para lugar nenhum.
-        throw new Error(`provedor não suportado: ${integration.provider}`);
-      }
+      const result = await sendUazapiAudio(
+        integration.apiUrl,
+        integration.token,
+        phone,
+        audioBase64,
+        msg.id,
+        replyExternalId
+      );
+      const { error: idErr } = await supabase
+        .from("chat_messages")
+        .update({
+          external_id: result.messageid,
+          metadata: { seconds: seconds ?? 0, uazapiId: result.id },
+        })
+        .eq("id", msg.id);
+      if (idErr) console.error("[send-audio] gravar external_id falhou:", idErr, msg.id);
       // delivery_status → 'sent' monótono (não regride delivered/read de corrida).
       const { error: stErr } = await supabase
         .from("chat_messages")

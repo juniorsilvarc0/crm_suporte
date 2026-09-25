@@ -1,15 +1,14 @@
-import { getTranscriptionModelConfig } from "@/features/settings/lib/get-runtime-environment";
+import { getTranscriptionModelConfig as readTranscriptionModelConfig } from "@/features/settings/lib/get-runtime-environment";
 import {
-  OPENAI_API_KEY_NAME,
+  DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
   type EnvironmentVariableListItem,
+  type TranscriptionModelConfig,
 } from "@/features/settings/types";
 import {
   createSupabaseServerClient,
   hasSupabaseServerEnv,
 } from "@/lib/supabase/server";
-
-const ENVIRONMENT_FALLBACKS = [OPENAI_API_KEY_NAME] as const;
 
 export async function getEnvironmentVariables(): Promise<EnvironmentVariableListItem[]> {
   const managed: EnvironmentVariableListItem[] = [];
@@ -41,20 +40,20 @@ export async function getEnvironmentVariables(): Promise<EnvironmentVariableList
     }
   }
 
-  const names = new Set(managed.map((variable) => variable.name));
-  for (const name of ENVIRONMENT_FALLBACKS) {
-    if (!names.has(name) && process.env[name]) {
-      managed.push({
-        id: null,
-        name,
-        source: "environment",
-        createdAt: null,
-        updatedAt: null,
-      });
-    }
-  }
-
+  // Só o cofre: variável de integração no env não é lida pelo app
+  // (get-runtime-environment), então listá-la aqui mentiria para o admin.
   return managed.sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export { getTranscriptionModelConfig };
+/**
+ * Modelo de transcrição para a tela de Configurações. Cofre ilegível mostra o
+ * padrão e loga, em vez de derrubar a página inteira (leitura resiliente).
+ */
+export async function getTranscriptionModelConfig(): Promise<TranscriptionModelConfig> {
+  try {
+    return await readTranscriptionModelConfig();
+  } catch (error) {
+    console.error("getTranscriptionModelConfig failed", error);
+    return { value: DEFAULT_OPENAI_TRANSCRIPTION_MODEL, source: "default" };
+  }
+}

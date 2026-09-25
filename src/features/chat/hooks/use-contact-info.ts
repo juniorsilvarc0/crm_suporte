@@ -13,7 +13,7 @@ type State = {
 const INITIAL: State = { info: null, loading: true, failed: false };
 
 /**
- * Lead e agendamento da conversa aberta, para a tela de informações do contato.
+ * Cadastro do contato da conversa aberta, para a tela de informações do contato.
  *
  * O dono da busca é este hook, e ele só existe enquanto a tela está montada —
  * quem chama monta o sheet condicionalmente. Isso evita segurar dado de CRM na
@@ -68,18 +68,18 @@ export function useContactInfo(conversationId: string) {
   }, []);
 
   /**
-   * Grava as notas pela rota que já existe (`PATCH /api/leads/[id]`), com a
-   * mesma validação usada pela tela de leads. Rota de escrita nova aqui seria
-   * um segundo caminho para o mesmo campo — e duas validações que divergem.
+   * Grava as notas pela rota do contato (`PATCH /api/contacts/[id]`). Rota de
+   * escrita nova aqui seria um segundo caminho para o mesmo campo — e duas
+   * validações que divergem.
    */
   const saveNotes = useCallback(
     async (draft: string): Promise<boolean> => {
-      const leadId = state.info?.lead?.id;
-      if (!leadId || savingNotes) return false;
+      const contactId = state.info?.contact?.id;
+      if (!contactId || savingNotes) return false;
 
       setSavingNotes(true);
       try {
-        const response = await fetch(`/api/leads/${leadId}`, {
+        const response = await fetch(`/api/contacts/${contactId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ notes: notesPatchValue(draft) }),
@@ -97,12 +97,12 @@ export function useContactInfo(conversationId: string) {
           // Espelha localmente em vez de rebuscar: a rota devolve só `{ ok }`, e
           // uma segunda ida ao servidor faria a nota piscar entre os dois valores.
           setState((current) =>
-            current.info?.lead
+            current.info?.contact
               ? {
                   ...current,
                   info: {
                     ...current.info,
-                    lead: { ...current.info.lead, notes: notesPatchValue(draft) },
+                    contact: { ...current.info.contact, notes: notesPatchValue(draft) },
                   },
                 }
               : current

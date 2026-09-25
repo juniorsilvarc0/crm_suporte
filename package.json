@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:types": "npx -y supabase@2.118.0 gen types typescript --db-url 'postgresql://postgres:postgres@localhost:54322/postgres?sslmode=disable' --schema public > src/lib/supabase/database.types.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

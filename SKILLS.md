@@ -20,12 +20,12 @@ Curadoria filtrada pela **stack real deste projeto**. Normativo: leia antes de i
 | **Forms** | **react-hook-form + zod** (`@hookform/resolvers`) | Existe de verdade — diferente de projetos com form manual. Use. |
 | **Gráficos** | **recharts** | Sem uso desde a Fase 1; volta nas métricas de suporte (Fase 9). |
 | **Drag & drop** | **@dnd-kit** | Kanban do funil (`src/components/kibo-ui/kanban`). |
-| **Banco** | **Supabase (Postgres)** — `supabase-js` | **RLS ligada nas 23 tabelas.** Server usa **service role**; anon só para Realtime do chat. Ver §Segurança. |
+| **Banco** | **Supabase (Postgres)** — `supabase-js` | **RLS em todas as tabelas; `anon` não alcança nada.** Server usa **service role** (grant mínimo, por coluna onde importa); o navegador só assina o Realtime do chat com JWT `authenticated` curto, por `subscribeAuthenticated`. Segredos no **Vault**. Tipos **gerados**: `pnpm db:types` (supabase CLI fixada via `npx`, só para isso). Ver §Segurança. |
 | **Auth** | **JWT HS256 próprio** (`jose`) em cookie `crm-suporte-session` | ⚠️ **Não é Supabase Auth.** Papéis `admin`/`member`. Guard em `src/lib/auth/route-guard.ts`. |
 | **Toast** | **sonner** | |
 | **Tema** | **next-themes** (classe `.dark`) | Claro/escuro compartilham os mesmos componentes. |
 | **Datas** | **date-fns** + `react-day-picker` | |
-| **Testes** | **Vitest + Testing Library + jsdom** — 37 arquivos `.test.ts(x)` | Existe `pnpm test`. CI roda typecheck + lint + test + build. |
+| **Testes** | **Vitest + Testing Library + jsdom** · testes de SQL em `supabase/tests/` | `pnpm test`; `./scripts/db-local-test.sh` no banco local. CI: job `qualidade` (typecheck + lint + test + build) e job `banco` (baseline do zero, reaplicar no-op, testes de SQL, tipos gerados sem diff). |
 | **Package manager** | **pnpm 10.33** | Não é npm nem yarn. |
 | **Deploy** | **VPS + Docker Compose + Traefik** | Há `.vercel/` histórico, mas **produção não é Vercel**. |
 
@@ -126,7 +126,7 @@ Há também o subagente **`engenheiro-de-testes`** (`.claude/agents/`) para trab
 | Sintoma | Skill / caminho |
 |---|---|
 | WhatsApp não envia, não recebe, ticks errados, mídia sumindo | **`uazapi-integration`** (local) → checar `chat_integrations` primeiro |
-| Lead duplicado / conversa duplicada | `upsert-lead.ts` + `upsert-message.ts`; a chave é o telefone normalizado |
+| Contato duplicado / conversa duplicada | `resolve-contact-identity.ts` (RPC com lock por telefone) + `upsert-message.ts`; a chave é o telefone normalizado |
 | Query lenta / lista pesada (`chat_messages`) | `supabase-postgres-best-practices` |
 | Dado sensível chegando ao cliente | `backend-security-coder` + §Segurança |
 | Realtime do chat não atualiza | `supabase` (Realtime) — conferir se a policy `SELECT` de `anon` continua na tabela |
@@ -162,7 +162,7 @@ Há também o subagente **`engenheiro-de-testes`** (`.claude/agents/`) para trab
 4. **`createSupabaseServerClient()` é service role**, não sessão de usuário. Não confie nele para autorização.
 5. **`NEXT_PUBLIC_*` entra no bundle no build.** Mudou? Precisa **rebuild**, não restart.
 6. **`pnpm build` é o único check que pega vazamento client/server.** `typecheck` e `lint` passam com o vazamento intacto.
-7. **Telefone brasileiro tem duas representações.** A Meta Cloud API entrega `wa_id` de 12 dígitos (sem o 9º); outros provedores entregam 13. A normalização é responsabilidade de `src/lib/formatters/phone.ts` + `upsert-lead.ts` — não invente uma terceira no meio da tela.
+7. **Telefone brasileiro tem duas representações.** A Meta Cloud API entrega `wa_id` de 12 dígitos (sem o 9º); outros provedores entregam 13. A normalização é responsabilidade de `src/lib/formatters/phone.ts` + da RPC `resolve_contact_identity` (que é a autoridade) — não invente uma terceira no meio da tela.
 8. **Migration já aplicada não se edita.** Sempre arquivo novo (AGENTS §3.8).
 
 ---

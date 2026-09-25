@@ -195,7 +195,7 @@ Padrões da iteração por tela (mesma data):
 
 ### §3.4 Cores de domínio (tags e colunas do funil)
 
-`src/features/leads/schemas/colors.ts` define **19 cores nomeadas** (`slate`…`rose`), cada uma com variações `dot` / `bar` / `text` / `badge` / `ring`. Consuma por `getColorStyle(name)`.
+`src/features/tags/schemas/colors.ts` define **19 cores nomeadas** (`slate`…`rose`), cada uma com variações `dot` / `bar` / `text` / `badge` / `ring`. Consuma por `getColorStyle(name)`.
 
 > ⚠️ **As classes são literais estáticas de propósito.** Tailwind v4 só detecta classe escrita por extenso. **Nunca** gere classe por interpolação (`` `bg-${cor}-500` ``) — ela não existe no CSS final e o elemento fica sem cor em produção.
 
@@ -535,7 +535,8 @@ Superfície própria com tokens `--wa-*` no `globals.css` (bolhas, fundo). É a 
 - **`onError` é obrigatório.** As URLs de `pps.whatsapp.net` são **assinadas e expiram** (medido: parte já devolve 403). Sem o fallback, o navegador desenha o ícone de imagem quebrada — o "?" que aparecia na lista.
 - **Silhueta, não iniciais de telefone.** Iniciais só quando há nome com letra; caso contrário `UserRoundIcon`, como no WhatsApp Web. Círculo cinza neutro (`--wa-avatar-bg`), nunca a cor de marca.
 - **Zerar o estado de erro quando a URL muda.** O header reaproveita a mesma instância ao trocar de conversa; sem isso uma foto quebrada contamina a conversa seguinte.
-- A foto é **re-hospedada** no `chat-media` no `upsertMessage`, comparando pelo **caminho** da URL (a query é assinatura). Sem isso ela expira e nunca acompanha a troca de foto do contato.
+- A foto é **re-hospedada** no `chat-media` (privado) no `upsertMessage`, comparando pelo **caminho** da URL (a query é assinatura). Sem isso ela expira e nunca acompanha a troca de foto do contato. Ela fica no contato (`contacts.avatar_*`) e a conversa guarda `/api/contacts/<id>/avatar?v=<versão>`: o `v` muda com a foto, senão o navegador reaproveitaria a antiga.
+- **Mídia do chat é servida pela rota do app** (`/api/chat/media/<id>`, e `?variant=thumb` para a miniatura), que redireciona para URL assinada curta. Componente nenhum monta URL do storage; usa `media_url` e `metadata.thumbUrl` como vêm.
 
 ### §5.7.1 Bolha de mensagem: formatação e resposta
 
@@ -638,7 +639,7 @@ Abre tocando na **foto ou no nome** dentro da conversa (`ChatHeader` → `Contac
 - **Fundo da página e fundo do cartão são superfícies diferentes.** `--wa-info-bg` × `--wa-info-card`, com par claro/escuro. É o degrau entre as duas que desenha o cartão; igualá-las apaga a estrutura e obriga a devolver borda em tudo.
 - **A identidade não espera a rede.** Foto, nome e telefone vêm da conversa e pintam no primeiro quadro; só o bloco de lead tem esqueleto — a tela nunca troca de tamanho quando o dado chega (§9).
 - **Erro tem saída.** Falha de rede vira linha com "Tentar de novo", não uma linha morta. Sem lead, a tela **diz** que não há lead em vez de mostrar campos vazios que parecem defeito.
-- **Notas editáveis gravam pela rota que já existe** (`PATCH /api/leads/[id]`), a mesma da tela de leads. Rota nova seria um segundo caminho para o mesmo campo, com duas validações que divergem. O par Descartar/Salvar só aparece com alteração pendente — botão permanente convida a gravar o que não mudou.
+- **Notas editáveis gravam pela rota do contato** (`PATCH /api/contacts/[id]`). Rota nova seria um segundo caminho para o mesmo campo, com duas validações que divergem. O par Descartar/Salvar só aparece com alteração pendente — botão permanente convida a gravar o que não mudou.
 - ⚠️ **O texto de apoio das notas é cinza, não verde.** Na referência "Adicionar notas" é uma **linha que se toca**; aqui o campo já está aberto. Verde num placeholder promete um clique que não existe.
 - ⚠️ **"Ver lead completo" leva o telefone NORMALIZADO.** `getLeadsPage` procura em `name`, `phone` e `normalized_phone`; o número cru do WhatsApp vem com DDI (`5586…`) e não casa com `normalized_phone` (`86…`) — o link caía numa lista vazia. O normalizado casa nos dois lados. E é `next/link`, não `<a>`: sair do chat por documento inteiro pisca branco no PWA.
 - **Foto e nome são um alvo só** no cabeçalho, com `py-1` para o toque chegar a 48px sem mexer na altura fixa de 64px. Os textos viraram `span`: `<button>` aceita só conteúdo de frase, e `<p>` dentro dele é HTML inválido.
@@ -869,7 +870,7 @@ Copia o formato do WhatsApp Desktop: sheet lateral na área da conversa, fechar 
 - **Fora de escopo, de propósito:** HD, cortar, texto sobre a imagem, desenhar e figurinha. Aquilo é editor de imagem.
 - **A legenda NÃO ocupa o rótulo do documento.** O nome do arquivo vai para `metadata.fileName`; `content` guarda a legenda. Sem essa separação a bolha rotularia o anexo com o texto da legenda.
 
-- **Card de contato replica a leitura do WhatsApp:** avatar com inicial, nome, conta comercial e telefone; a ação de rodapé é “Conversar”. Ela usa o mesmo Number Check do telefone escrito e cria uma conversa `human` somente quando o número existe. Copiar e criar lead (`POST /api/leads/manual`, origem `indicacao`) permanecem ações secundárias.
+- **Card de contato replica a leitura do WhatsApp:** avatar com inicial, nome, conta comercial e telefone; a ação de rodapé é “Conversar”. Ela usa o mesmo Number Check do telefone escrito e cria uma conversa `human` somente quando o número existe. Copiar e salvar contato (`POST /api/contacts`, origem `indicacao`) permanecem ações secundárias; o aviso diz se o contato é novo ou já existia.
 
 ### §5.8 Banda de KPI do dashboard
 

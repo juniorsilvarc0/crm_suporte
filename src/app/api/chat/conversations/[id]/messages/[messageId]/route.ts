@@ -14,7 +14,8 @@ import {
   canEditNote,
   isNoteMessage,
 } from "@/features/chat/lib/note-actions";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
+import { getIntegrationCredentials } from "@/features/chat/lib/connection/integration";
 import type { ChatMessage } from "@/features/chat/types";
 import type { Json } from "@/lib/supabase/types";
 
@@ -93,30 +94,16 @@ async function loadContext(
   if (base instanceof NextResponse) return base;
   const { supabase, message, conv } = base;
 
-  const { data: integration } = conv.integration_id
-    ? await supabase
-        .from("chat_integrations")
-        .select("provider, config")
-        .eq("id", conv.integration_id)
-        .maybeSingle()
-    : { data: null };
-
+  const integration = await getIntegrationCredentials(supabase, conv.integration_id);
   if (!integration) {
     return NextResponse.json({ error: "Conversa sem integração." }, { status: 400 });
   }
-  if (integration.provider !== "uazapi") {
-    return NextResponse.json(
-      { error: "Editar e apagar estão disponíveis apenas para uazapi." },
-      { status: 400 }
-    );
-  }
 
-  const { apiUrl, token } = integration.config as Record<string, string>;
   return {
     supabase,
     message,
-    apiUrl,
-    token,
+    apiUrl: integration.apiUrl,
+    token: integration.token,
     lastMessageAt: conv.last_message_at,
   };
 }
@@ -145,6 +132,9 @@ function providerError(action: string, err: unknown) {
 
 /** PATCH — edita o texto (ou a legenda) de uma mensagem nossa. */
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id, messageId } = await params;
     const { text } = (await request.json()) as { text?: unknown };
@@ -161,8 +151,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (base instanceof NextResponse) return base;
 
     if (isNoteMessage(base.message)) {
-      const viewer = await getDashboardViewer();
-      if (!canEditNote(base.message, viewer?.id)) return notNoteAuthor();
+      if (!canEditNote(base.message, auth.viewer.id)) return notNoteAuthor();
 
       const { data: updated, error: noteErr } = await base.supabase
         .from("chat_messages")
@@ -237,6 +226,9 @@ export async function PATCH(request: Request, { params }: Params) {
 
 /** DELETE — apaga para todos. */
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id, messageId } = await params;
 
@@ -245,8 +237,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     if (base instanceof NextResponse) return base;
 
     if (isNoteMessage(base.message)) {
-      const viewer = await getDashboardViewer();
-      if (!canDeleteNote(base.message, viewer?.id)) return notNoteAuthor();
+      if (!canDeleteNote(base.message, auth.viewer.id)) return notNoteAuthor();
 
       const { data: updated, error: noteErr } = await base.supabase
         .from("chat_messages")
@@ -309,6 +300,10 @@ function previewFor(message: ChatMessage, text: string): string {
  *
  * Sem isto, apagar a última mensagem deixa o texto apagado à mostra na lista
  * lateral — que é justamente onde ele fica mais tempo na tela.
+ *
+ * Nota interna não conta como "última": ela não vira prévia (trigger de
+ * `chat_messages`), então uma nota depois da mensagem não pode impedir a
+ * prévia de ser corrigida.
  */
 async function refreshPreviewIfLatest(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -320,6 +315,7 @@ async function refreshPreviewIfLatest(
     .from("chat_messages")
     .select("id")
     .eq("conversation_id", conversationId)
+    .neq("type", "note")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

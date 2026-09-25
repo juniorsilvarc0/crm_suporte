@@ -58,10 +58,12 @@ export async function PATCH(
     p_email: parsed.data.email,
     p_is_active: parsed.data.is_active,
     p_role: parsed.data.role,
-    p_avatar_url: parsed.data.avatar_url ?? null,
+    // `''` limpa a foto: a RPC normaliza vazio para null.
+    p_avatar_url: parsed.data.avatar_url ?? "",
     p_avatar_color: parsed.data.avatar_color,
-    p_apelido_atendimento: parsed.data.apelido_atendimento ?? null,
-    p_assinar_mensagens: parsed.data.assinar_mensagens ?? null,
+    // Omitido = "não altera" (default null na RPC).
+    p_apelido_atendimento: parsed.data.apelido_atendimento,
+    p_assinar_mensagens: parsed.data.assinar_mensagens,
   });
 
   if (error) {

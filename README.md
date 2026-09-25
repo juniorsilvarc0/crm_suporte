@@ -20,17 +20,15 @@ Guia completo em **[`SETUP.md`](SETUP.md)**. Resumo:
 ```bash
 git clone https://github.com/juniorsilvarc0/crm_suporte.git && cd crm_suporte
 cp .env.local.example .env.local     # já vem pronto para o stack local
-docker compose up -d --build          # banco + API + app em http://localhost:3000
-./scripts/db-local-apply.sh           # aplica migrations + seed
+docker compose up -d --build --wait   # banco + API + app em http://localhost:3000
+./scripts/db-local-apply.sh           # aplica migrations + seed (login admin@local / 123456)
 ```
 
 O stack local é 100% `docker compose`: `crm-suporte-db` (Postgres da Supabase),
-`crm-suporte-rest` (PostgREST), `crm-suporte-gateway` (porta 54321) e
-`crm-suporte-web`. **Realtime e Storage ainda não rodam localmente**; entram na
-Fase 2 do plano.
-
-> ⚠️ O `supabase/seed.sql` herdado está quebrado e não cria o `admin@local`. Ver
-> [`SETUP.md`](SETUP.md).
+`crm-suporte-rest` (PostgREST), `realtime` (chat ao vivo), `crm-suporte-storage`
+(mídia privada), `crm-suporte-gateway` (porta 54321) e `crm-suporte-web`.
+Credenciais de integração (uazapi, OpenAI) não vão no `.env.local`: são gravadas
+pelas telas Conexão e Configurações, no Vault do banco.
 
 ## Checks
 
