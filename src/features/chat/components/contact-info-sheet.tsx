@@ -89,7 +89,7 @@ export function ContactInfoSheet({
 
   const displayName = contactDisplayName(conversation);
   const telHref = contactTelHref(conversation.contact_phone);
-  const lead = info?.lead ?? null;
+  const contact = info?.contact ?? null;
 
   const close = (action: PendingAction = null) => {
     if (!open) return;
@@ -253,7 +253,7 @@ export function ContactInfoSheet({
             </InfoGroup>
 
             <NotesSection
-              lead={lead}
+              contact={contact}
               loading={loading}
               failed={failed}
               saving={savingNotes}
@@ -283,10 +283,10 @@ export function ContactInfoSheet({
                     Tentar de novo
                   </button>
                 </div>
-              ) : lead ? (
+              ) : contact ? (
                 <>
-                  {lead.email && <InfoRow label="E-mail" value={lead.email} />}
-                  <InfoRow label="Contato desde" value={formatDate(lead.created_at)} />
+                  {contact.email && <InfoRow label="E-mail" value={contact.email} />}
+                  <InfoRow label="Contato desde" value={formatDate(contact.created_at)} />
                 </>
               ) : (
                 <InfoRow
@@ -325,21 +325,21 @@ const ATTENDANCE: Record<ChatConversation["status"], string> = {
 };
 
 /**
- * Notas do lead, editáveis aqui mesmo.
+ * Notas do contato, editáveis aqui mesmo.
  *
- * Grava pela rota que a tela de leads já usa (`PATCH /api/leads/[id]`) — é o
- * mesmo campo e a mesma validação, não um segundo caminho para o mesmo dado.
+ * Grava pela rota do contato (`PATCH /api/contacts/[id]`) — é o mesmo campo e
+ * a mesma validação, não um segundo caminho para o mesmo dado.
  * O botão só aparece com alteração pendente: um "Salvar" permanente convida a
  * gravar o que não mudou.
  */
 function NotesSection({
-  lead,
+  contact,
   loading,
   failed,
   saving,
   onSave,
 }: {
-  lead: { id: string; notes: string | null } | null;
+  contact: { id: string; notes: string | null } | null;
   loading: boolean;
   failed: boolean;
   saving: boolean;
@@ -349,9 +349,9 @@ function NotesSection({
   // As notas chegam depois da tela. Ajuste durante o render, padrão do repo —
   // `setState` em efeito é barrado pelo lint e pintaria um quadro vazio antes.
   const [syncedNotes, setSyncedNotes] = useState<string | null | undefined>(undefined);
-  if (lead && lead.notes !== syncedNotes) {
-    setSyncedNotes(lead.notes);
-    setDraft(lead.notes ?? "");
+  if (contact && contact.notes !== syncedNotes) {
+    setSyncedNotes(contact.notes);
+    setDraft(contact.notes ?? "");
   }
 
   if (loading) {
@@ -361,9 +361,9 @@ function NotesSection({
       </InfoGroup>
     );
   }
-  if (failed || !lead) return null;
+  if (failed || !contact) return null;
 
-  const dirty = notesAreDirty(draft, lead.notes);
+  const dirty = notesAreDirty(draft, contact.notes);
 
   return (
     <InfoGroup title="Notas">
@@ -393,7 +393,7 @@ function NotesSection({
             <>
               <button
                 type="button"
-                onClick={() => setDraft(lead.notes ?? "")}
+                onClick={() => setDraft(contact.notes ?? "")}
                 disabled={saving}
                 className="min-h-11 rounded-lg px-3 text-[15px] text-[var(--wa-info-label)] transition-colors hover:bg-[var(--wa-info-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >

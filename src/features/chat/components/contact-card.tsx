@@ -25,8 +25,8 @@ import { cn } from "@/lib/utils";
  * Antes disto, as mensagens `type="contact"` caíam no ramo "desconhecido" da
  * bolha e viravam `[contact]` em itálico — 14 delas em produção.
  *
- * A ação principal consulta o Number Check e abre a conversa. Copiar e criar
- * lead continuam disponíveis como ações secundárias do CRM.
+ * A ação principal consulta o Number Check e abre a conversa. Copiar e salvar
+ * o contato continuam disponíveis como ações secundárias do CRM.
  */
 export function ContactCard({
   content,
@@ -56,13 +56,13 @@ export function ContactCard({
     }
   }
 
-  async function createLead(name: string, phone: string) {
+  async function saveContact(name: string, phone: string) {
     setCreating(phone);
     try {
-      // "Contato" é o rótulo de vCard sem nome — mandar isso criaria um lead
+      // "Contato" é o rótulo de vCard sem nome — mandar isso criaria um contato
       // chamado "Contato". O campo é opcional na rota; melhor deixar vazio.
       const realName = name === FALLBACK_CONTACT_NAME ? undefined : name;
-      const res = await fetch("/api/leads/manual", {
+      const res = await fetch("/api/contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // Contato compartilhado numa conversa é indicação, por definição.
@@ -70,16 +70,20 @@ export function ContactCard({
       });
       const result = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
+        created?: boolean;
         message?: string;
       };
       if (!res.ok || !result.ok) {
-        toast.error(result.message ?? "Não foi possível criar o lead.");
+        toast.error(result.message ?? "Não foi possível salvar o contato.");
         return;
       }
-      toast.success(`${realName ?? formatPhone(phone)} entrou no funil.`);
+      const label = realName ?? formatPhone(phone);
+      toast.success(
+        result.created ? `${label} foi salvo nos contatos.` : `${label} já estava nos contatos.`
+      );
       router.refresh();
     } catch {
-      toast.error("Não foi possível criar o lead.");
+      toast.error("Não foi possível salvar o contato.");
     } finally {
       setCreating(null);
     }
@@ -132,10 +136,10 @@ export function ContactCard({
 
                 <button
                   type="button"
-                  onClick={() => createLead(card.name, phone.number)}
+                  onClick={() => saveContact(card.name, phone.number)}
                   disabled={creating !== null}
-                  aria-label={`Criar lead para ${card.name}`}
-                  title="Criar lead"
+                  aria-label={`Salvar contato de ${card.name}`}
+                  title="Salvar contato"
                   className="flex size-11 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:bg-black/5 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 dark:hover:bg-white/10 sm:size-7"
                 >
                   {creating === phone.number ? (
