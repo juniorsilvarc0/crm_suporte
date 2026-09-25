@@ -27,6 +27,29 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Reescrita do commit inicial público (dados da origem)
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Tirar do histórico público os dados da origem que a limpeza do commit inicial deixou passar (decisão do dono: reescrever a `main`).
+**Arquivos alterados:**
+- **Commit inicial:** `docs/CONTRATO-HANDOFF-GRUPO.md`, `UI.md`, comentário de uma migration, `src/features/meta/components/tracking-filters.tsx` (só existe no commit inicial).
+- **Commit inicial e branch:** `chat-header.tsx`, `contact-info.test.ts`, `normalizers/uazapi.test.ts`, `media-key.ts` e o teste dele.
+
+**O que foi feito:**
+- **Valores trocados por fictícios:** o JID do grupo de handoff, dois IDs da Meta (campanha e anúncio) e mais **quatro telefones** com cara de reais. Os telefones estavam no formato `wa_id` da Meta, sem o nono dígito, que a primeira limpeza não cobria. Eram o "dono" e o contato no teste do normalizer, um exemplo no cabeçalho do chat e um caminho de bucket real em `media-key`.
+- **Commit inicial recriado** (a `main` continua com um commit só) e a branch da Fase 1 rebaseada em cima dele. A árvore final da branch difere da anterior só na troca desses números.
+- **Varredura antes de publicar:** `git log -p` das duas refs não encontra nenhum dos valores reais, nem a marca, domínio, IP ou host da origem.
+
+**Decisões tomadas:** force-push na `main` com `--force-with-lease` preso ao SHA antigo. Com um commit só e repositório criado no mesmo dia, ninguém mais dependia dele.
+
+**Pendências / próximos passos:** a GitHub pode manter o commit antigo acessível por SHA direto por um tempo; purga completa só pelo suporte da GitHub, se o dono quiser.
+
+**Armadilhas descobertas:**
+- **Telefone brasileiro tem forma de 12 dígitos** (`wa_id` da Meta, sem o 9º). Varredura que exige o `9` na frente do assinante não acha esses números.
+- **Módulos que a Fase 1 apagou ainda estavam no commit inicial.** A varredura da branch (`HEAD`) não vê o que só existe lá, como o ID em `tracking-filters.tsx`. Varra cada ref que vai ser publicada.
+
+---
+
 ## [2026-09-25] Revisão adversarial da Fase 1 e correções
 
 **Agente/Modelo:** Claude Opus 5.5
