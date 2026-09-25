@@ -63,29 +63,53 @@ const DB_ACCESS = ["createSupabaseAdminClient(", "createSupabaseServerClient("];
 const firstIndex = (body: string, needles: string[]) =>
   Math.min(...needles.map((needle) => body.indexOf(needle)).filter((index) => index >= 0));
 
-/** Chama um guard, testa o resultado e, se toca o banco, só depois do guard. */
-function guardsDirectly(body: string): boolean {
-  const guardAt = firstIndex(body, GUARDS);
+/** Corpo sem a própria declaração (`function PATCH(`), para o nome não casar consigo. */
+const bodyAfterSignature = (body: string) => body.slice(body.indexOf("(") + 1);
+
+/**
+ * Chama um guard fora de qualquer `if`, testa o resultado logo depois e, se
+ * toca o banco — direto ou por função local que toca —, só depois disso.
+ */
+function guardsDirectly(body: string, dbCalls: string[]): boolean {
+  const code = bodyAfterSignature(body);
+  const guardAt = firstIndex(code, GUARDS);
   if (!Number.isFinite(guardAt)) return false;
-  if (!REJECTS.some((pattern) => pattern.test(body))) return false;
-  const dbAt = firstIndex(body, DB_ACCESS);
-  return !Number.isFinite(dbAt) || guardAt < dbAt;
+  // Guard dentro de um ramo só protege aquele ramo. O `if` que É o teste do
+  // guard (`if (!(await getDashboardViewer()))`) não conta como ramo.
+  const wrapper = /if \(!\(await $/.exec(code.slice(0, guardAt));
+  const guardStart = wrapper ? wrapper.index : guardAt;
+  if (code.slice(0, guardStart).includes("if (")) return false;
+  const dbAt = firstIndex(code, dbCalls);
+  if (Number.isFinite(dbAt) && dbAt < guardAt) return false;
+  const beforeDb = code.slice(guardStart, Number.isFinite(dbAt) ? dbAt : undefined);
+  return REJECTS.some((pattern) => pattern.test(beforeDb));
 }
 
 /** Cada handler exportado do arquivo, e se ele confirma o usuário no banco. */
 function handlerGuards(source: string): [string, boolean][] {
   const bodies = functionBodies(source);
+  // Função local que acessa o banco conta como acesso ao banco para quem a chama.
+  const dbHelpers = [...bodies]
+    .filter(([, body]) => DB_ACCESS.some((needle) => bodyAfterSignature(body).includes(needle)))
+    .map(([name]) => `${name}(`);
+  const dbCallsFor = (name: string) => [...DB_ACCESS, ...dbHelpers.filter((call) => call !== `${name}(`)];
+
   const guardedHelpers = [...bodies]
-    .filter(([, body]) => guardsDirectly(body))
+    .filter(([name, body]) => guardsDirectly(body, dbCallsFor(name)))
     .map(([name]) => `${name}(`);
 
   return [...source.matchAll(HANDLER_RE)].map((match) => {
     const handler = match[1];
     const body = bodies.get(handler) ?? "";
-    const guarded =
-      guardsDirectly(body) ||
-      guardedHelpers.some((helper) => helper !== `${handler}(` && body.includes(helper));
-    return [handler, guarded];
+    const code = bodyAfterSignature(body);
+    const dbAt = firstIndex(code, dbCallsFor(handler));
+    const viaHelper = guardedHelpers
+      .filter((helper) => helper !== `${handler}(`)
+      .some((helper) => {
+        const at = code.indexOf(helper);
+        return at >= 0 && (!Number.isFinite(dbAt) || at <= dbAt);
+      });
+    return [handler, guardsDirectly(body, dbCallsFor(handler)) || viaHelper];
   });
 }
 
@@ -99,9 +123,15 @@ describe("regra do contrato", () => {
     expect(handlerGuards(source)).toEqual([["POST", false]]);
   });
 
-  it("recusa guard só dentro de um ramo, depois do banco", () => {
-    const source = `export async function PATCH() {
+  it("recusa guard só dentro de um ramo, com o banco acessado por helper", () => {
+    // A regressão real de messages/[messageId]: `loadMessage` cria o client
+    // admin, e o guard só existia no ramo de nota.
+    const source = `async function loadMessage(id) {
       const supabase = createSupabaseAdminClient();
+      return supabase.from("chat_messages").select("*").eq("id", id);
+    }
+    export async function PATCH() {
+      const base = await loadMessage(id);
       if (isNote) {
         const viewer = await getDashboardViewer();
         if (!viewer) return unauthorized();
@@ -109,6 +139,26 @@ describe("regra do contrato", () => {
       await editOnWhatsApp();
     }`;
     expect(handlerGuards(source)).toEqual([["PATCH", false]]);
+  });
+
+  it("recusa guard dentro de um ramo mesmo sem banco antes dele", () => {
+    const source = `export async function DELETE() {
+      if (isNote) {
+        const auth = await requireDashboardUser();
+        if ("error" in auth) return auth.error;
+      }
+      await deleteOnWhatsApp();
+    }`;
+    expect(handlerGuards(source)).toEqual([["DELETE", false]]);
+  });
+
+  it("recusa guard cujo resultado só é testado depois do banco", () => {
+    const source = `export async function POST() {
+      const viewer = await getDashboardViewer();
+      const supabase = createSupabaseAdminClient();
+      if (!viewer) return unauthorized();
+    }`;
+    expect(handlerGuards(source)).toEqual([["POST", false]]);
   });
 
   it("aceita o guard testado antes do banco, direto ou por helper local", () => {
