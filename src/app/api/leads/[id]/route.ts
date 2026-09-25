@@ -8,7 +8,7 @@ import {
   isAmbiguousLeadStatusError,
   setLeadStatusFromSingleDeal,
 } from "@/features/leads/queries/set-lead-status";
-import { hasDashboardSession } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
 
@@ -72,9 +72,8 @@ const updateSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await hasDashboardSession())) {
-    return NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 });
-  }
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
 
   const { id } = await params;
   if (!UUID_RE.test(id)) {
@@ -199,9 +198,8 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await hasDashboardSession())) {
-    return NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 });
-  }
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
 
   const { id } = await params;
   if (!UUID_RE.test(id)) {

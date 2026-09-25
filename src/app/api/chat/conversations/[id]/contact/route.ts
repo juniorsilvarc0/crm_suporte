@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { normalizePhone } from "@/lib/formatters/phone";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ContactInfo } from "@/features/chat/lib/contact-info";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,9 @@ const EMPTY: ContactInfo = { lead: null };
  * causa do bloco de CRM seria pior que exibi-la incompleta.
  */
 export async function GET(_request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const supabase = createSupabaseAdminClient();

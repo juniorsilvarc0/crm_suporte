@@ -5,6 +5,7 @@ import { z } from "zod";
 import { isColorName } from "@/features/tags/schemas/colors";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,9 @@ const createSchema = z.object({
 });
 
 export async function GET() {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   if (!hasSupabaseAdminEnv()) {
     return NextResponse.json({ ok: true, tags: [] });
   }
@@ -26,6 +30,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   if (!hasSupabaseAdminEnv()) {
     return NextResponse.json(
       { ok: false, message: "Supabase admin não está configurado neste ambiente." },

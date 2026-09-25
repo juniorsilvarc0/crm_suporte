@@ -20,7 +20,7 @@ const {
 
 vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
-  hasDashboardSession: sessionMock,
+  requireDashboardUser: sessionMock,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   hasSupabaseAdminEnv: () => true,
@@ -46,7 +46,7 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  sessionMock.mockResolvedValue(true);
+  sessionMock.mockResolvedValue({ viewer: { id: "user-1" } });
   const single = vi.fn(async () => ({
     data: {
       id: "8f9bc40b-8b1c-4b17-bbb8-fb6d00fc9c07",
@@ -74,8 +74,10 @@ beforeEach(() => {
 });
 
 describe("POST /api/leads/manual", () => {
-  it("recusa cadastro sem sessão antes de acessar o banco", async () => {
-    sessionMock.mockResolvedValue(false);
+  it("recusa cadastro sem usuário ativo antes de acessar o banco", async () => {
+    sessionMock.mockResolvedValue({
+      error: Response.json({ ok: false, message: "Sessão inválida." }, { status: 401 }),
+    });
 
     const response = await POST(request({ phone: "47999999999" }));
 

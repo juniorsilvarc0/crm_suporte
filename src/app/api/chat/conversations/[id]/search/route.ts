@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { escapeLikePattern } from "@/features/chat/lib/search-term";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,6 +19,9 @@ const MAX_HITS = 60;
  * `id` para pedir a janela ao redor (`?around=`).
  */
 export async function GET(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const term = (new URL(request.url).searchParams.get("q") ?? "").trim();

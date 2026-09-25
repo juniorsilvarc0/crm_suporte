@@ -5,6 +5,7 @@ import { z } from "zod";
 import { isColorName } from "@/features/tags/schemas/colors";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,9 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
   if (!UUID_RE.test(id)) {
     return NextResponse.json({ ok: false, message: "Tag inválida." }, { status: 400 });
@@ -58,6 +62,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   const { id } = await params;
   if (!UUID_RE.test(id)) {
     return NextResponse.json({ ok: false, message: "Tag inválida." }, { status: 400 });

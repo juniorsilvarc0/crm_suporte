@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { getDashboardViewer, requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pushTakeoverToAgent } from "@/features/chat/lib/push-takeover";
 import {
@@ -13,6 +13,9 @@ import {
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const supabase = createSupabaseAdminClient();

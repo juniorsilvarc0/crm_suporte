@@ -24,6 +24,9 @@ const schema = z.object({
 });
 
 export async function GET() {
+  const auth = await requireDashboardAdmin();
+  if ("error" in auth) return auth.error;
+
   const config = await getRelayConfig();
   return NextResponse.json({ ok: true, ...config });
 }

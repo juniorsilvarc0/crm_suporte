@@ -8,7 +8,7 @@ import {
   isAmbiguousLeadStatusError,
   setLeadStatusFromSingleDeal,
 } from "@/features/leads/queries/set-lead-status";
-import { hasDashboardSession } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
@@ -49,12 +49,8 @@ const manualLeadSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!(await hasDashboardSession())) {
-    return NextResponse.json(
-      { ok: false, message: "Sessão inválida." },
-      { status: 401 },
-    );
-  }
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
 
   if (!hasSupabaseAdminEnv()) {
     return NextResponse.json(

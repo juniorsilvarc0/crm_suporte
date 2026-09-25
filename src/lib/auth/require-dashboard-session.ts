@@ -12,10 +12,6 @@ export async function getDashboardSession(): Promise<SessionUser | null> {
   return verifySessionToken(cookieStore.get(AUTH_COOKIE)?.value);
 }
 
-export async function hasDashboardSession(): Promise<boolean> {
-  return (await getDashboardSession()) !== null;
-}
-
 // Perfil atual consultado no banco: papel e bloqueio passam a valer mesmo
 // quando o cookie foi emitido antes de uma alteração feita pelo administrador.
 export async function getDashboardViewer(
@@ -52,9 +48,10 @@ export async function requireDashboardAdmin(): Promise<
 }
 
 // Exige apenas um usuário ATIVO — sem exigir papel. É o guard das ações que
-// pertencem a quem atende, não a quem administra (respostas rápidas). Diferente
-// de `hasDashboardSession`, o estado vem do BANCO: um usuário desativado com
-// cookie válido não passa daqui.
+// pertencem a quem atende, não a quem administra (chat, etiquetas, respostas
+// rápidas). O estado vem do BANCO, não do cookie: um usuário desativado com
+// cookie válido não passa daqui. Toda rota /api de sessão chama este guard ou
+// `requireDashboardAdmin` — `api-guards.test.ts` garante.
 export async function requireDashboardUser(): Promise<
   { viewer: AppUser } | { error: NextResponse }
 > {
