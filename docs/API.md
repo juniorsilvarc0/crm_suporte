@@ -7,7 +7,7 @@ Guia completo da API HTTP do CRM, **escrito a partir do código real** (rotas + 
 - **🤖 Integradores (n8n / automações):** comece pelo **[Guia de integração com o n8n](#-guia-de-integração-com-o-n8n)** — é o que você precisa para enviar leads, agendamentos e follow-ups ao CRM.
 - **💻 Desenvolvedores do dashboard:** veja a **[Referência de endpoints](#referência-de-endpoints)** para as rotas internas.
 
-> **Base URL:** a origem do deploy. Em produção, o domínio do cliente (ex.: `https://crm.seudominio.com.br`); em desenvolvimento, `http://localhost:3000`. Nos exemplos abaixo usamos `https://SEU-CRM` como espaço reservado — troque pelo domínio real.
+> **Base URL:** a origem do deploy. Em produção, o domínio do cliente (ex.: `https://crm.seudominio.com.br`); em desenvolvimento, `http://localhost:3200`. Nos exemplos abaixo usamos `https://SEU-CRM` como espaço reservado — troque pelo domínio real.
 
 ---
 

@@ -5,7 +5,7 @@ Windows (via WSL2).
 
 O que você terá no fim:
 
-- App em **http://localhost:3000**
+- App em **http://localhost:3200** (o container escuta na 3000; o compose mapeia a 3200 do host)
 - Postgres local com o que o app consome, atrás de um gateway na porta **54321**:
   PostgREST (`/rest/v1`), Realtime (`/realtime/v1`, chat ao vivo) e Storage
   (`/storage/v1`, mídia privada do chat). Banco na **54322** (psql direto).
@@ -41,7 +41,7 @@ cp .env.local.example .env.local
 docker compose up -d --build --wait # db + rest + realtime + storage + gateway + web
 ./scripts/db-local-apply.sh         # aplica migrations + seed
 ./scripts/db-local-test.sh          # opcional: testes de SQL do baseline
-# http://localhost:3000 — login: admin@local / 123456
+# http://localhost:3200 — login: admin@local / 123456
 ```
 
 - O `db-local-apply.sh` tem **livro-razão** (`supabase_migrations.schema_migrations`):
@@ -108,7 +108,7 @@ docker exec crm-suporte-web pnpm test
 
   Dá para aumentar em **Docker Desktop → Settings → Resources → Virtual disk limit**.
 
-- **Porta 3000 / 54321 / 54322 ocupada** → derrube o que está usando ou ajuste as
+- **Porta 3200 / 54321 / 54322 ocupada** → derrube o que está usando ou ajuste as
   portas em `docker-compose.yml`.
 
 - **O app abre mas o login falha** → rode `./scripts/db-local-apply.sh` (cria o

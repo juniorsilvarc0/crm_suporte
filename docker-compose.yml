@@ -1,5 +1,5 @@
 # Ambiente de desenvolvimento local em Docker — SEM o stack do CLI da Supabase.
-#   docker compose up -d --build     -> banco + API + dashboard em http://localhost:3000
+#   docker compose up -d --build     -> banco + API + dashboard em http://localhost:3200
 #   ./scripts/db-local-apply.sh      -> aplica migrations + seed (admin@local / 123456)
 #   docker compose logs -f web       -> acompanha os logs
 #   docker compose down              -> derruba os containers (o volume do banco fica)
@@ -154,7 +154,9 @@ services:
     depends_on:
       - gateway
     ports:
-      - "3000:3000"
+      # Host 3200 → container 3000. A 3000 do host costuma estar ocupada por
+      # outros projetos; o app dentro do container segue na 3000.
+      - "3200:3000"
     env_file:
       - .env.local
     # Permite ao container alcançar o gateway publicado no host (54321).
