@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/lib/supabase/types";
 
@@ -92,6 +92,42 @@ export function createSupabaseBrowserClient() {
   }
 
   return browserClient;
+}
+
+/**
+ * Assina um canal do Realtime só DEPOIS de o token `authenticated` estar no
+ * socket. Devolve a função que desfaz a assinatura.
+ *
+ * ⚠️ Sem esperar o `setAuth()`, o join sai com a chave anônima sempre que a
+ * busca do token (`/api/auth/supabase-token`) perde a corrida para a abertura
+ * do WebSocket. O Realtime grava a assinatura de `postgres_changes` como
+ * `anon`, e todo evento chega vazio, com "Error 401: Unauthorized". O token
+ * que chega depois não corrige uma assinatura já gravada. Medido no stack
+ * local: com o token atrasado 150 ms, `realtime.subscription.claims_role`
+ * ficava `anon`; esperando o `setAuth()`, `authenticated`.
+ */
+export function subscribeAuthenticated(
+  build: (supabase: SupabaseClient<Database>) => RealtimeChannel
+): () => void {
+  const supabase = createSupabaseBrowserClient();
+  let channel: RealtimeChannel | null = null;
+  let cancelled = false;
+
+  void (async () => {
+    // Sem token (sessão expirada) o canal nem é criado: a tela volta ao login
+    // por outro caminho, e assinar como anônimo não entregaria nada.
+    if (!(await getAccessToken()) || cancelled) return;
+    // Sem argumento: o socket segue renovando pelo `accessToken` do client.
+    await supabase.realtime.setAuth();
+    if (!cancelled) channel = build(supabase).subscribe();
+  })().catch((error) => {
+    console.error("[realtime] assinatura falhou", error);
+  });
+
+  return () => {
+    cancelled = true;
+    if (channel) void supabase.removeChannel(channel);
+  };
 }
 
 /** Só para teste: zera o token guardado entre casos. */
