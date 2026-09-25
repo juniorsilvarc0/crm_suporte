@@ -188,10 +188,13 @@ export const BOARD_COLOR_NAMES: ColorName[] = [
 const fallbackColor: ColorStyle = colorStyle.slate;
 
 export function getColorStyle(name: string | null | undefined): ColorStyle {
-  if (!name) return fallbackColor;
-  return colorStyle[name as ColorName] ?? fallbackColor;
+  if (!name || !isColorName(name)) return fallbackColor;
+  return colorStyle[name];
 }
 
+// `Object.hasOwn`, não `in`: `in` aceita chaves do protótipo ("constructor",
+// "toString"), que passam no check de formato do banco (`^[a-z]{3,20}$`) e
+// fariam getColorStyle devolver uma função no lugar do estilo.
 export function isColorName(value: string): value is ColorName {
-  return value in colorStyle;
+  return Object.hasOwn(colorStyle, value);
 }
