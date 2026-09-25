@@ -27,12 +27,6 @@ describe("decideRouteAccess", () => {
   });
 
   describe("rotas de API públicas (autenticação própria)", () => {
-    it("libera webhooks do n8n mesmo sem sessão", () => {
-      expect(decideRouteAccess("/api/webhooks/n8n/lead", false)).toEqual({
-        type: "allow",
-      });
-    });
-
     it("libera o webhook da uazapi mesmo sem sessão", () => {
       expect(decideRouteAccess("/api/chat/webhook/uazapi", false)).toEqual({
         type: "allow",
@@ -48,19 +42,19 @@ describe("decideRouteAccess", () => {
       });
     });
 
-    it("libera a API de Integração (token próprio) mesmo sem sessão", () => {
-      expect(decideRouteAccess("/api/integracao/leads", false)).toEqual({
-        type: "allow",
-      });
-    });
-
-    it("não libera mais as rotas do rastreamento Meta, que saíram", () => {
+    it("não libera mais as rotas que saíram (Meta, n8n, integração antiga)", () => {
       // Prefixo público que sobrasse sem rota viraria porta aberta para a
       // próxima rota criada ali.
       expect(decideRouteAccess("/api/internal/meta/dispatch", false)).toEqual({
         type: "unauthorized",
       });
       expect(decideRouteAccess("/api/meta/conversions/123/retry", false)).toEqual({
+        type: "unauthorized",
+      });
+      expect(decideRouteAccess("/api/webhooks/n8n/lead", false)).toEqual({
+        type: "unauthorized",
+      });
+      expect(decideRouteAccess("/api/integracao/leads", false)).toEqual({
         type: "unauthorized",
       });
     });
@@ -124,9 +118,7 @@ describe("decideRouteAccess", () => {
 
   describe("isPublicApiRoute", () => {
     it("reconhece rotas públicas", () => {
-      expect(isPublicApiRoute("/api/webhooks/n8n/lead")).toBe(true);
       expect(isPublicApiRoute("/api/chat/webhook/uazapi")).toBe(true);
-      expect(isPublicApiRoute("/api/integracao/leads")).toBe(true);
       expect(isPublicApiRoute("/api/auth/login")).toBe(true);
     });
 
@@ -134,6 +126,7 @@ describe("decideRouteAccess", () => {
       expect(isPublicApiRoute("/api/leads/manual")).toBe(false);
       expect(isPublicApiRoute("/api/tags")).toBe(false);
       expect(isPublicApiRoute("/api/internal/meta/dispatch")).toBe(false);
+      expect(isPublicApiRoute("/api/integracao/leads")).toBe(false);
     });
   });
 });

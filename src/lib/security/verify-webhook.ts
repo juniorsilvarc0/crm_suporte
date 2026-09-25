@@ -4,26 +4,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { hashApiToken } from "@/lib/security/api-token";
 import type { Database } from "@/lib/supabase/types";
 
-export function verifyWebhookSecret(request: Request, expectedSecret?: string) {
-  if (!expectedSecret) {
-    return NextResponse.json(
-      { ok: false, error: "webhook_secret_missing" },
-      { status: 500 }
-    );
-  }
-
-  const receivedSecret = request.headers.get("x-webhook-secret");
-
-  if (receivedSecret !== expectedSecret) {
-    return NextResponse.json(
-      { ok: false, error: "unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  return null;
-}
-
 // Extrai o segredo enviado: header `x-webhook-secret` ou `Authorization: Bearer`.
 function extractSecret(request: Request): string | null {
   const header = request.headers.get("x-webhook-secret");

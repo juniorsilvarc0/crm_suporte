@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { hashApiToken } from "@/lib/security/api-token";
-import { verifyWebhookAuth, verifyWebhookSecret } from "@/lib/security/verify-webhook";
+import { verifyWebhookAuth } from "@/lib/security/verify-webhook";
 import type { Database } from "@/lib/supabase/types";
 
 function req(secret?: string) {
@@ -62,26 +62,6 @@ function makeSupabase(data: { id: string } | null) {
     updateExecuted,
   };
 }
-
-describe("verifyWebhookSecret", () => {
-  it("500 quando o segredo esperado não está configurado (fail-closed)", async () => {
-    const res = verifyWebhookSecret(req("abc"), undefined);
-    expect(res?.status).toBe(500);
-    expect(await res!.json()).toMatchObject({ error: "webhook_secret_missing" });
-  });
-
-  it("401 quando o header x-webhook-secret está ausente", () => {
-    expect(verifyWebhookSecret(req(), "segredo")?.status).toBe(401);
-  });
-
-  it("401 quando o header não bate com o segredo", () => {
-    expect(verifyWebhookSecret(req("errado"), "segredo")?.status).toBe(401);
-  });
-
-  it("null (deixa passar) quando o header bate", () => {
-    expect(verifyWebhookSecret(req("segredo"), "segredo")).toBeNull();
-  });
-});
 
 describe("verifyWebhookAuth", () => {
   it("retorna null quando o header x-webhook-secret bate com o envSecret, sem consultar o token", async () => {

@@ -23,16 +23,15 @@ const ADMIN_PAGE_PREFIXES = [
   "/app/configuracoes",
 ];
 
-// Rotas de /api com autenticação PRÓPRIA (segredo/token) — não passam pelo
-// guard de sessão do dashboard:
-//   - /api/webhooks/*    → n8n, valida `x-webhook-secret`
+// Rotas de /api com autenticação PRÓPRIA — não passam pelo guard de sessão do
+// dashboard:
 //   - /api/chat/webhook/* → uazapi, verificação própria
-//   - /api/integracao/*  → API de Integração (agentes de IA), token de API
 //   - /api/auth/*        → login e logout
+// A API de integração para agentes e sistemas externos volta como /api/v1/*
+// (token com escopo) na Fase 5 de docs/PLANO-IMPLANTACAO.md. Prefixo novo
+// aqui = handler que PRECISA autenticar sozinho.
 const PUBLIC_API_PREFIXES = [
-  "/api/webhooks/",
   "/api/chat/webhook/",
-  "/api/integracao/",
   "/api/auth/",
 ];
 
