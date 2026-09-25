@@ -1,8 +1,5 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getBoardColumns } from "@/features/board/queries/get-board-columns";
-import { PipelinesManager } from "@/features/pipelines/components/pipelines-manager";
-import { getPipelines } from "@/features/pipelines/queries/get-pipelines";
 import { ApiTokensManager } from "@/features/settings/components/api-tokens-manager";
 import { AutomationSettings } from "@/features/settings/components/automation-settings";
 import { BotSignatureSettings } from "@/features/settings/components/bot-signature-settings";
@@ -30,19 +27,12 @@ export default async function ConfiguracoesPage() {
     botSignature,
     environmentVariables,
     transcriptionModel,
-    pipelines,
-    // Etapas de todos os funis numa consulta só (são dezenas de linhas). O
-    // editor de funil precisa da lista pronta no momento em que abre — buscar
-    // por funil, no clique, colocaria uma espera no meio de uma ação de ajuste.
-    pipelineStages,
   ] = await Promise.all([
     getApiTokens(),
     getRelayConfig(),
     getBotSignatureConfig(),
     getEnvironmentVariables(),
     getTranscriptionModelConfig(),
-    getPipelines(),
-    getBoardColumns(),
   ]);
 
   return (
@@ -60,9 +50,6 @@ export default async function ConfiguracoesPage() {
               </TabsTrigger>
               <TabsTrigger value="agent" className="h-10 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground data-active:shadow-sm sm:h-9">
                 Agente de IA
-              </TabsTrigger>
-              <TabsTrigger value="pipelines" className="h-10 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground data-active:shadow-sm sm:h-9">
-                Funis
               </TabsTrigger>
             </TabsList>
           </div>
@@ -98,10 +85,6 @@ export default async function ConfiguracoesPage() {
                 </div>
               </div>
             </section>
-          </TabsContent>
-
-          <TabsContent value="pipelines">
-            <PipelinesManager pipelines={pipelines} stages={pipelineStages} />
           </TabsContent>
         </Tabs>
       </main>
