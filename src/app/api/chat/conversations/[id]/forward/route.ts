@@ -169,6 +169,7 @@ async function forwardOne({
     .insert({
       conversation_id: target,
       direction: "outbound",
+      sender_type: "agent",
       type: isText ? "text" : messageTypeOf(payload),
       // A assinatura do operador NÃO entra: encaminhar reproduz o que foi
       // escrito, e assinar mudaria o texto que o paciente original mandou.

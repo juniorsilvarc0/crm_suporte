@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     p_role: parsed.data.role,
     p_avatar_color: parsed.data.avatar_color,
     p_must_change_password: parsed.data.must_change_password,
-    p_apelido_atendimento: parsed.data.apelido_atendimento ?? null,
+    p_apelido_atendimento: parsed.data.apelido_atendimento,
     p_assinar_mensagens: parsed.data.assinar_mensagens,
   });
 

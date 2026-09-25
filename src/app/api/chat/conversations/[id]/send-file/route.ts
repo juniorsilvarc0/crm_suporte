@@ -148,6 +148,7 @@ export async function POST(request: Request, { params }: Params) {
       .insert({
         conversation_id: id,
         direction: "outbound",
+        sender_type: "agent",
         type: msgType,
         // `content` é a legenda. O nome do arquivo vai para o metadata: se a
         // legenda ocupasse o `content`, a bolha do documento perderia o nome e
@@ -158,6 +159,7 @@ export async function POST(request: Request, { params }: Params) {
         media_mime_type: mime,
         quoted_message_id: quotedMessageId,
         delivery_status: "pending",
+        sent_by_user_id: auth.viewer.id,
         created_at: now,
       })
       .select()

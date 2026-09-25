@@ -20,7 +20,7 @@ function avatarKey(url: string): string {
 
 export async function upsertMessage(
   integrationId: string,
-  leadId: string,
+  contactId: string,
   msg: NormalizedMessage
 ) {
   const supabase = createSupabaseAdminClient();
@@ -47,7 +47,7 @@ export async function upsertMessage(
     .upsert(
       {
         integration_id: integrationId,
-        lead_id: leadId,
+        contact_id: contactId,
         external_id: msg.contact_phone,
         contact_phone: msg.contact_phone,
         updated_at: new Date().toISOString(),
@@ -56,7 +56,7 @@ export async function upsertMessage(
       },
       { onConflict: "integration_id,external_id" }
     )
-    .select("id, lead_id, status, unread_count")
+    .select("id, contact_id, status, unread_count")
     .single();
 
   if (convErr || !conv) {
@@ -86,6 +86,9 @@ export async function upsertMessage(
       external_id: msg.external_id,
       ...(quotedId ? { quoted_message_id: quotedId } : {}),
       direction: msg.direction,
+      // Mensagem nova com fromMe e sem track_id é do celular da empresa, fora
+      // do CRM (o eco do que o CRM enviou é conciliado antes, no webhook).
+      sender_type: msg.direction === "inbound" ? "contact" : "device",
       type: msg.type,
       content: msg.content,
       media_url: msg.media_url,

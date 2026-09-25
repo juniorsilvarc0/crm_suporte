@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { resolveLeadIdentity } from "@/features/leads/queries/resolve-lead-identity";
+import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
 import type { Database } from "@/lib/supabase/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -8,39 +8,56 @@ function clientWithRpc(rpc: ReturnType<typeof vi.fn>) {
   return { rpc } as unknown as SupabaseClient<Database>;
 }
 
-describe("resolveLeadIdentity", () => {
+describe("resolveContactIdentity", () => {
   it("envia formatos equivalentes para a mesma resolução canônica", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: {
-        leadId: "lead-1",
+        contactId: "contato-1",
         normalizedPhone: "86999999999",
         created: false,
-        initialDealId: null,
       },
       error: null,
     });
 
-    const result = await resolveLeadIdentity(clientWithRpc(rpc), {
+    const result = await resolveContactIdentity(clientWithRpc(rpc), {
       phone: "+55 86 99999-9999",
       name: "João",
       source: "whatsapp",
-      createInitialDeal: true,
       lastInteractionAt: "2026-08-09T10:00:00.000Z",
     });
 
     expect(result).toEqual({
-      leadId: "lead-1",
+      contactId: "contato-1",
       normalizedPhone: "86999999999",
       created: false,
-      initialDealId: null,
     });
-    expect(rpc).toHaveBeenCalledWith("resolve_lead_identity", {
+    expect(rpc).toHaveBeenCalledWith("resolve_contact_identity", {
       p_phone: "+55 86 99999-9999",
       p_name: "João",
       p_source: "whatsapp",
-      p_create_initial_deal: true,
       p_last_interaction_at: "2026-08-09T10:00:00.000Z",
       p_reactivate: true,
+    });
+  });
+
+  it("omite nome e interação ausentes para valer o default da RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { contactId: "contato-1", normalizedPhone: "86999999999", created: true },
+      error: null,
+    });
+
+    await resolveContactIdentity(clientWithRpc(rpc), {
+      phone: "86999999999",
+      name: null,
+      reactivate: false,
+    });
+
+    expect(rpc).toHaveBeenCalledWith("resolve_contact_identity", {
+      p_phone: "86999999999",
+      p_name: undefined,
+      p_source: "whatsapp",
+      p_last_interaction_at: undefined,
+      p_reactivate: false,
     });
   });
 
@@ -48,16 +65,16 @@ describe("resolveLeadIdentity", () => {
     const rpc = vi.fn();
 
     await expect(
-      resolveLeadIdentity(clientWithRpc(rpc), { phone: "sem telefone" })
+      resolveContactIdentity(clientWithRpc(rpc), { phone: "sem telefone" })
     ).rejects.toThrow("invalid_normalized_phone");
     expect(rpc).not.toHaveBeenCalled();
   });
 
   it("recusa contrato inesperado da RPC", async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: { leadId: "lead-1" }, error: null });
+    const rpc = vi.fn().mockResolvedValue({ data: { contactId: "contato-1" }, error: null });
 
     await expect(
-      resolveLeadIdentity(clientWithRpc(rpc), { phone: "86999999999" })
-    ).rejects.toThrow("invalid_lead_identity_response");
+      resolveContactIdentity(clientWithRpc(rpc), { phone: "86999999999" })
+    ).rejects.toThrow("invalid_contact_identity_response");
   });
 });

@@ -11,8 +11,7 @@ import {
   type UazapiEnvelope,
 } from "@/features/chat/lib/normalizers/uazapi";
 import { upsertMessage } from "@/features/chat/lib/upsert-message";
-import { upsertLeadFromInbound } from "@/features/chat/lib/upsert-lead";
-import { resolveLeadIdentity } from "@/features/leads/queries/resolve-lead-identity";
+import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
 import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
 import { downloadUazapiMedia } from "@/features/chat/lib/connection/uazapi";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
@@ -290,22 +289,16 @@ export async function POST(request: Request) {
       }
     }
 
-    const identity =
-      normalized.direction === "inbound"
-        ? await upsertLeadFromInbound(supabase, {
-            phone: normalized.contact_phone,
-            name: normalized.contact_name,
-          })
-        : await resolveLeadIdentity(supabase, {
-            phone: normalized.contact_phone,
-            name: normalized.contact_name,
-            source: "whatsapp",
-            createInitialDeal: false,
-            lastInteractionAt: null,
-            reactivate: false,
-          });
+    // Sem reativar nem tocar a interação: a mensagem ainda pode ser um retry.
+    // Quem faz isso é o trigger do INSERT real da mensagem, uma vez só.
+    const identity = await resolveContactIdentity(supabase, {
+      phone: normalized.contact_phone,
+      name: normalized.contact_name,
+      source: "whatsapp",
+      reactivate: false,
+    });
 
-    const conv = await upsertMessage(integration.id, identity.leadId, normalized);
+    const conv = await upsertMessage(integration.id, identity.contactId, normalized);
 
     // 5) Repassa ao agente/automação só inbound e enquanto status='bot'.
     // URL configurável na UI (Configurações), com fallback para N8N_WEBHOOK_URL.

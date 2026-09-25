@@ -79,11 +79,13 @@ export async function POST(request: Request, { params }: Params) {
         quoted_message_id: quotedMessageId ?? null,
         conversation_id: id,
         direction: "outbound",
+        sender_type: "agent",
         type: "audio",
         content: null,
         media_url: publicUrl,
         media_mime_type: mime,
         delivery_status: "pending",
+        sent_by_user_id: auth.viewer.id,
         metadata: { seconds: seconds ?? 0 },
         created_at: now,
       })

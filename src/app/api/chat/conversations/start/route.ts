@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
 import { checkUazapiNumber } from "@/features/chat/lib/senders/uazapi";
-import { resolveLeadIdentity } from "@/features/leads/queries/resolve-lead-identity";
+import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
 import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -57,12 +57,10 @@ export async function POST(request: Request) {
     }
 
     const contactName = checked.verifiedName ?? parsed.data.name ?? null;
-    const identity = await resolveLeadIdentity(supabase, {
+    const identity = await resolveContactIdentity(supabase, {
       phone: checked.phone,
       name: contactName,
       source: "whatsapp",
-      createInitialDeal: false,
-      lastInteractionAt: null,
     });
 
     const { data: existing, error: existingError } = await supabase
@@ -77,7 +75,7 @@ export async function POST(request: Request) {
       const { data: restored, error: restoreError } = await supabase
         .from("chat_conversations")
         .update({
-          lead_id: identity.leadId,
+          contact_id: identity.contactId,
           removed_at: null,
           archived_at: null,
           ...(contactName && !existing.contact_name ? { contact_name: contactName } : {}),
@@ -94,7 +92,7 @@ export async function POST(request: Request) {
       .from("chat_conversations")
       .insert({
         integration_id: integration.id,
-        lead_id: identity.leadId,
+        contact_id: identity.contactId,
         external_id: checked.phone,
         contact_phone: checked.phone,
         ...(contactName ? { contact_name: contactName } : {}),

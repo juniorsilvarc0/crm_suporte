@@ -30,7 +30,7 @@ export type ChatIntegration = {
 export type ChatConversation = {
   id: string;
   integration_id: string | null;
-  lead_id: string;
+  contact_id: string;
   external_id: string;
   contact_name: string | null;
   contact_phone: string | null;

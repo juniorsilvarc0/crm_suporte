@@ -63,6 +63,7 @@ export async function POST(request: Request, { params }: Params) {
         .insert({
           conversation_id: id,
           direction: "outbound",
+          sender_type: "agent",
           type: "note",
           content,
           delivery_status: "sent",
@@ -103,15 +104,19 @@ export async function POST(request: Request, { params }: Params) {
      * isto, o paciente receberia a mesma mensagem duas vezes. Também cobre o
      * clique duplo e o retry automático do navegador.
      */
-    const { data: existing } = clientId
-      ? await supabase
-          .from("chat_messages")
-          .select()
-          .eq("conversation_id", id)
-          .eq("metadata->>clientId", clientId)
-          .limit(1)
-          .maybeSingle()
-      : { data: null };
+    const findByClientId = async () =>
+      clientId
+        ? (
+            await supabase
+              .from("chat_messages")
+              .select()
+              .eq("conversation_id", id)
+              .eq("metadata->>clientId", clientId)
+              .limit(1)
+              .maybeSingle()
+          ).data
+        : null;
+    const existing = await findByClientId();
 
     // Já saiu (ou está saindo): devolve a mesma linha, sem reenviar nada.
     if (existing && existing.delivery_status !== "failed") {
@@ -140,18 +145,22 @@ export async function POST(request: Request, { params }: Params) {
     //    No reenvio a linha já existe e só volta para `pending`: os ticks são
     //    monótonos e `sent` não sobrescreve `failed` (ver `overridableFrom`),
     //    então sem esse passo um reenvio bem-sucedido ficaria marcado como erro.
+    //    O filtro por `failed` faz só UM de dois reenvios simultâneos virar a
+    //    linha; o outro não acha nada e devolve a mesma mensagem, sem mandar.
     const { data: msg, error: msgErr } = existing
       ? await supabase
           .from("chat_messages")
           .update({ delivery_status: "pending" })
           .eq("id", existing.id)
+          .eq("delivery_status", "failed")
           .select()
-          .single()
+          .maybeSingle()
       : await supabase
           .from("chat_messages")
           .insert({
             conversation_id: id,
             direction: "outbound",
+            sender_type: "agent",
             type: "text",
             content: outboundContent,
             quoted_message_id: quotedId,
@@ -165,6 +174,15 @@ export async function POST(request: Request, { params }: Params) {
           })
           .select()
           .single();
+
+    // Clique duplo simultâneo: os dois passaram pelo SELECT acima, e o índice
+    // único de `clientId` barrou o segundo INSERT (23505). Quem envia é a
+    // primeira requisição; esta devolve a mesma linha.
+    const lostRace = existing ? !msgErr && !msg : msgErr?.code === "23505";
+    if (lostRace) {
+      const winner = await findByClientId();
+      if (winner) return NextResponse.json({ message: winner });
+    }
     if (msgErr || !msg) throw msgErr ?? new Error("insert failed");
 
     // 2) Envia pelo provedor.

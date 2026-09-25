@@ -5,7 +5,7 @@ import { decideRouteAccess, isPublicApiRoute } from "@/lib/auth/route-guard";
 describe("decideRouteAccess", () => {
   describe("rotas internas de /api", () => {
     it("bloqueia com 401 quando não há sessão", () => {
-      expect(decideRouteAccess("/api/leads/manual", false)).toEqual({
+      expect(decideRouteAccess("/api/contacts", false)).toEqual({
         type: "unauthorized",
       });
       expect(decideRouteAccess("/api/tags", false)).toEqual({
@@ -17,7 +17,7 @@ describe("decideRouteAccess", () => {
     });
 
     it("libera quando há sessão válida", () => {
-      expect(decideRouteAccess("/api/leads/manual", true)).toEqual({
+      expect(decideRouteAccess("/api/contacts", true)).toEqual({
         type: "allow",
       });
       expect(decideRouteAccess("/api/chat/conversations", true)).toEqual({
@@ -123,7 +123,7 @@ describe("decideRouteAccess", () => {
     });
 
     it("reconhece rotas internas como não-públicas", () => {
-      expect(isPublicApiRoute("/api/leads/manual")).toBe(false);
+      expect(isPublicApiRoute("/api/contacts")).toBe(false);
       expect(isPublicApiRoute("/api/tags")).toBe(false);
       expect(isPublicApiRoute("/api/internal/meta/dispatch")).toBe(false);
       expect(isPublicApiRoute("/api/integracao/leads")).toBe(false);

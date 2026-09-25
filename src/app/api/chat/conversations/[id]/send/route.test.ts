@@ -116,6 +116,23 @@ describe("POST /send — sessão", () => {
     expect(adminClientMock).not.toHaveBeenCalled();
     expect(sendTextMock).not.toHaveBeenCalled();
   });
+
+  it("grava a nota interna como do analista que escreveu", async () => {
+    queue("chat_conversations", {
+      data: { id: "conversation-1", external_id: "5511999999999" },
+      error: null,
+    });
+    queue("chat_messages", { data: { id: "note-1" }, error: null });
+
+    const response = await POST(request({ content: "ligar amanhã", kind: "note" }), params);
+
+    expect(response.status).toBe(200);
+    expect(calls.find((call) => call.method === "insert")?.payload).toMatchObject({
+      type: "note",
+      sender_type: "agent",
+      sent_by_user_id: "user-1",
+    });
+  });
 });
 
 describe("POST /send — idempotência por clientId", () => {
@@ -152,6 +169,8 @@ describe("POST /send — idempotência por clientId", () => {
     expect(insert?.payload).toMatchObject({
       metadata: { clientId: "abc-123" },
       delivery_status: "pending",
+      sender_type: "agent",
+      sent_by_user_id: "user-1",
       // A assinatura do operador é aplicada uma vez, aqui.
       content: "*Ana:*\nbom dia",
     });
@@ -232,6 +251,56 @@ describe("POST /send — idempotência por clientId", () => {
           call.table === "chat_messages" &&
           call.method === "update" &&
           (call.payload as { delivery_status?: string })?.delivery_status === "pending"
+      )
+    ).toBe(true);
+  });
+
+  it("clique duplo simultâneo: o INSERT barrado devolve a linha da outra requisição", async () => {
+    queueConversation();
+    const winner = { id: "message-1", delivery_status: "pending", metadata: { clientId: "abc-123" } };
+    queue(
+      "chat_messages",
+      { data: null, error: null }, // as duas passaram pelo SELECT
+      { data: null, error: { code: "23505" } }, // o índice único barrou esta
+      { data: winner, error: null } // relê a linha da outra
+    );
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: winner });
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it("dois reenvios simultâneos: só quem virou a linha para pendente manda", async () => {
+    queueConversation();
+    const failed = {
+      id: "message-1",
+      delivery_status: "failed",
+      content: "*Ana:*\nbom dia",
+      quoted_message_id: null,
+      metadata: { clientId: "abc-123" },
+    };
+    const pending = { ...failed, delivery_status: "pending" };
+    queue(
+      "chat_messages",
+      { data: failed, error: null },
+      { data: null, error: null }, // a outra requisição já tirou de `failed`
+      { data: pending, error: null }
+    );
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: pending });
+    expect(sendTextMock).not.toHaveBeenCalled();
+    // O UPDATE para `pending` só casa linha que ainda está `failed`.
+    expect(
+      calls.some(
+        (call) =>
+          call.table === "chat_messages" &&
+          call.method === "eq" &&
+          call.payload === "delivery_status"
       )
     ).toBe(true);
   });
