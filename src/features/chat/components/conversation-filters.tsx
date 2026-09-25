@@ -21,7 +21,7 @@ import {
 import { getColorStyle } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
 import type { Tag } from "@/features/tags/types";
-import type { ChatStageOption, StatusFilter } from "@/features/chat/types";
+import type { StatusFilter } from "@/features/chat/types";
 
 /**
  * Filtros rápidos da lista de conversas.
@@ -29,7 +29,7 @@ import type { ChatStageOption, StatusFilter } from "@/features/chat/types";
  * ## Por que NÃO há rolagem horizontal aqui
  *
  * A versão anterior era um trilho `overflow-x-auto` com todos os chips —
- * responsável, não lidas, cada etapa do funil e cada etiqueta. Não funcionou, e
+ * responsável, não lidas e cada etiqueta. Não funcionou, e
  * o problema não era o ajuste: **a quantidade de filtros não cabe numa faixa de
  * 360px e nenhum truque de rolagem conserta isso**. Roda de mouse não rola na
  * horizontal, o gesto de dois dedos vira "voltar" do navegador, a barra de
@@ -42,10 +42,10 @@ import type { ChatStageOption, StatusFilter } from "@/features/chat/types";
  *   `Tudo · IA · Humano · Não lidas`. Mais o botão do painel. `flex-wrap` é a
  *   rede de segurança: se um dia não couber, quebra a linha — nunca vaza nem
  *   esconde.
- * - **Painel (dropdown).** Etapa do funil e etiquetas, em lista vertical com
+ * - **Painel (dropdown).** Etiquetas, em lista vertical com
  *   marcação. Rolagem **vertical** dentro do popup, que é confiável, esperada e
  *   já vem pronta do primitivo (`max-h-(--available-height) overflow-y-auto`).
- * - **Linha 2 — só quando há etapa ou etiqueta escolhida.** O que está filtrando
+ * - **Linha 2 — só quando há etiqueta escolhida.** O que está filtrando
  *   aparece como chip removível, com `flex-wrap`. Nada fica escondido: se são
  *   seis filtros, a linha vira duas.
  *
@@ -55,23 +55,18 @@ import type { ChatStageOption, StatusFilter } from "@/features/chat/types";
 export function ConversationFilters({
   filters,
   onFiltersChange,
-  stages,
   tags,
 }: {
   filters: ChatFilters;
   onFiltersChange: (next: ChatFilters) => void;
-  /** Etapas do funil, na ordem do Kanban. Vêm do servidor com a página. */
-  stages: readonly ChatStageOption[];
   /** Catálogo de etiquetas, já carregado pelo ChatShell. */
   tags: readonly Tag[];
 }) {
   const activeCount = countActiveFilters(filters);
-  // Só etapa e etiqueta viram chip na linha 2 — responsável e "não lidas" já
-  // estão acesos na linha 1, e repeti-los seria dizer duas vezes a mesma coisa.
-  const refinements = filters.stages.length + filters.tags.length;
+  // Só etiqueta vira chip na linha 2 — responsável e "não lidas" já estão
+  // acesos na linha 1, e repeti-los seria dizer duas vezes a mesma coisa.
+  const refinements = filters.tags.length;
 
-  const toggleStage = (key: string) =>
-    onFiltersChange({ ...filters, stages: toggleFilterValue(filters.stages, key) });
   const toggleTag = (id: string) =>
     onFiltersChange({ ...filters, tags: toggleFilterValue(filters.tags, id) });
 
@@ -144,28 +139,6 @@ export function ConversationFilters({
                 derrubava a tela inteira no error boundary — e typecheck, lint e
                 build passam, porque só quebra na interação. */}
             <DropdownMenuGroup>
-              <DropdownMenuLabel>Etapa do funil</DropdownMenuLabel>
-              {stages.length === 0 ? (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                  Nenhuma etapa configurada no funil.
-                </p>
-              ) : (
-                stages.map((stage) => (
-                  <DropdownMenuCheckboxItem
-                    key={stage.key}
-                    checked={filters.stages.includes(stage.key)}
-                    onCheckedChange={() => toggleStage(stage.key)}
-                    className="min-h-11 sm:min-h-8"
-                  >
-                    <span className="min-w-0 truncate">{stage.label}</span>
-                  </DropdownMenuCheckboxItem>
-                ))
-              )}
-            </DropdownMenuGroup>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuGroup>
               <DropdownMenuLabel>Etiquetas</DropdownMenuLabel>
               {tags.length === 0 ? (
                 <p className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -210,13 +183,6 @@ export function ConversationFilters({
 
       {refinements > 0 ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          {filters.stages.map((key) => (
-            <ActiveFilterChip
-              key={key}
-              label={stages.find((stage) => stage.key === key)?.label ?? key}
-              onRemove={() => toggleStage(key)}
-            />
-          ))}
           {filters.tags.map((id) => {
             const tag = tags.find((item) => item.id === id);
             if (!tag) return null;

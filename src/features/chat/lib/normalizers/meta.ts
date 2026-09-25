@@ -1,4 +1,4 @@
-import type { NormalizedMessage } from "@/features/chat/lib/normalizers/evolution";
+import type { NormalizedMessage } from "@/features/chat/lib/normalizers/types";
 import type { MessageType } from "@/features/chat/types";
 import type { MetaWebhookEnvelope } from "@/features/meta/schemas";
 

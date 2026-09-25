@@ -1,6 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
-import type { NormalizedMessage } from "@/features/chat/lib/normalizers/evolution";
+import type { NormalizedMessage } from "@/features/chat/lib/normalizers/types";
 import type { Json } from "@/lib/supabase/types";
 
 /**

@@ -34,7 +34,7 @@ import {
   viewportIndexFromHeights,
   type ConversationPromotion,
 } from "@/features/chat/lib/conversation-scroll";
-import type { ChatConversation, ChatStageOption } from "@/features/chat/types";
+import type { ChatConversation } from "@/features/chat/types";
 import type { SwipeSide } from "@/features/chat/lib/conversation-swipe";
 import type { Tag } from "@/features/tags/types";
 
@@ -51,8 +51,6 @@ type ConversationsListProps = {
   /** Filtros da lista — dono no ChatShell, que é quem aplica. */
   filters: ChatFilters;
   onFiltersChange: (next: ChatFilters) => void;
-  /** Etapas do funil oferecidas como chip. Vêm do servidor com a página. */
-  stages: readonly ChatStageOption[];
   onConversationAction: (
     conversation: ChatConversation,
     action: ConversationAction
@@ -129,7 +127,6 @@ export function ConversationsList({
   focusSearchToken = 0,
   filters,
   onFiltersChange,
-  stages,
   onConversationAction,
   tagsController,
   archivedCount,
@@ -493,7 +490,6 @@ export function ConversationsList({
           acknowledgePromotions();
           onFiltersChange(next);
         }}
-        stages={stages}
         tags={tagsController.tags}
       />
 

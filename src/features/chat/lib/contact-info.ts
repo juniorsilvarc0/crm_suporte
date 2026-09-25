@@ -13,25 +13,13 @@ import type { ChatConversation } from "@/features/chat/types";
 /** Lead correspondente à conversa, resolvido pelo telefone normalizado. */
 export type ContactLead = {
   id: string;
-  status: string;
-  source: string | null;
   email: string | null;
   notes: string | null;
-  valor_estimado: number | null;
   created_at: string;
-};
-
-/** Próximo agendamento futuro do lead, quando existe. */
-export type ContactAppointment = {
-  id: string;
-  scheduled_at: string;
-  status: string;
-  tipo_ensaio: string | null;
 };
 
 export type ContactInfo = {
   lead: ContactLead | null;
-  nextAppointment: ContactAppointment | null;
 };
 
 /**

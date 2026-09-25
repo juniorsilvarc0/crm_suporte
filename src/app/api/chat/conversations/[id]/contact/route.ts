@@ -8,15 +8,12 @@ export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Agendamento cancelado não é "o próximo": ele não vai acontecer. */
-const LIVE_APPOINTMENT_STATUS = ["agendado", "confirmado"] as const;
-
-const EMPTY: ContactInfo = { lead: null, nextAppointment: null };
+const EMPTY: ContactInfo = { lead: null };
 
 /**
- * Lead e próximo agendamento da pessoa do outro lado da conversa.
+ * Cadastro (lead) da pessoa do outro lado da conversa.
  *
- * Precisa ser no servidor: a RLS fecha `leads` e `appointments` para `anon`, e
+ * Precisa ser no servidor: a RLS fecha `leads` para `anon`, e
  * ampliar essa superfície para pintar uma tela seria decisão de segurança, não
  * de interface (AGENTS §3.1).
  *
@@ -45,7 +42,7 @@ export async function GET(_request: Request, { params }: Params) {
 
     let leadQuery = supabase
       .from("leads")
-      .select("id, status, source, email, notes, valor_estimado, created_at");
+      .select("id, email, notes, created_at");
 
     if (conversation?.lead_id) {
       leadQuery = leadQuery.eq("id", conversation.lead_id);
@@ -63,24 +60,7 @@ export async function GET(_request: Request, { params }: Params) {
     }
     if (!lead) return NextResponse.json(EMPTY);
 
-    const { data: appointment, error: appointmentError } = await supabase
-      .from("appointments")
-      .select("id, scheduled_at, status, tipo_ensaio")
-      .eq("lead_id", lead.id)
-      .in("status", LIVE_APPOINTMENT_STATUS)
-      .gte("scheduled_at", new Date().toISOString())
-      .order("scheduled_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (appointmentError) {
-      console.error("[GET /api/chat/conversations/[id]/contact]", appointmentError.message);
-    }
-
-    const info: ContactInfo = {
-      lead,
-      nextAppointment: appointmentError ? null : (appointment ?? null),
-    };
+    const info: ContactInfo = { lead };
     return NextResponse.json(info);
   } catch (err) {
     console.error("[GET /api/chat/conversations/[id]/contact] threw", err);
