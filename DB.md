@@ -1,5 +1,7 @@
 # DB.md — Modelo de Dados
 
+> ⚠️ **Descreve o banco e as telas herdados da clínica.** O banco ainda é este (a Fase 2 o troca por um baseline novo), mas as telas e rotas citadas aqui saíram na Fase 1. Ver [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md).
+
 > Fonte de verdade: [`src/lib/supabase/types.ts`](./src/lib/supabase/types.ts) (mantido manualmente). Existe também `src/lib/supabase/generated-types.ts`, mas está desatualizado/incompleto (não reflete `board_columns` nem os tipos atuais) — **não use esse arquivo como referência**.
 >
 > Migrations versionadas em `supabase/migrations/`: `20260101000000_core_schema.sql` (schema base reconstruído a partir de `types.ts` para paridade no ambiente local), `20260612180000_disable_rls_enable_realtime.sql` e `20260622_chat_module.sql`. **Atenção**: a migration de schema base foi reconstruída do `types.ts` (fonte de verdade do código) e reflete o que o app usa, mas **pode não ser idêntica byte-a-byte ao banco de produção** — que foi criado direto no Supabase (Studio/Management API). Para paridade exata com produção, gerar um dump com `supabase db dump`. Por isso, as colunas abaixo vêm de `types.ts` (garantido) e dessa migration base; detalhes de constraint/índice específicos de produção que não constem nessa migration seguem marcados como **inferidos** ou **não confirmáveis** sem inspecionar o banco real.

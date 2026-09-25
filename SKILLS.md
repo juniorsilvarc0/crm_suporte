@@ -18,7 +18,7 @@ Curadoria filtrada pela **stack real deste projeto**. Normativo: leia antes de i
 | **Ícones** | **lucide-react v1** | Ícone de WhatsApp é próprio: `src/features/chat/components/whatsapp-icon.tsx`. |
 | **Estado** | React local + server components + `router.refresh()` | ⚠️ **Sem Redux, Zustand, Jotai ou TanStack Query.** É deliberado. Revalidação vem do servidor. |
 | **Forms** | **react-hook-form + zod** (`@hookform/resolvers`) | Existe de verdade — diferente de projetos com form manual. Use. |
-| **Gráficos** | **recharts** | Dashboard e rastreamento. |
+| **Gráficos** | **recharts** | Sem uso desde a Fase 1; volta nas métricas de suporte (Fase 9). |
 | **Drag & drop** | **@dnd-kit** | Kanban do funil (`src/components/kibo-ui/kanban`). |
 | **Banco** | **Supabase (Postgres)** — `supabase-js` | **RLS ligada nas 23 tabelas.** Server usa **service role**; anon só para Realtime do chat. Ver §Segurança. |
 | **Auth** | **JWT HS256 próprio** (`jose`) em cookie `crm-suporte-session` | ⚠️ **Não é Supabase Auth.** Papéis `admin`/`member`. Guard em `src/lib/auth/route-guard.ts`. |
@@ -37,7 +37,7 @@ src/app/api/*               route handlers (4 famílias de auth — ver abaixo)
 src/features/<dominio>/     components/ queries/ schemas/ types.ts
 src/components/{ui,data-display,forms,layout,kibo-ui}/
 src/lib/{auth,supabase,security,formatters,http,image}/
-src/config/                 navigation.ts (menu + adminOnly), site.ts
+src/config/                 navigation.ts (menu + allowedRoles), site.ts (marca)
 supabase/migrations/        fonte da verdade do schema
 ```
 

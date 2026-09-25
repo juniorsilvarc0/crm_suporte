@@ -222,7 +222,7 @@ Os prazos são ordem de grandeza.
 | **7 · Agenda + Follow-ups** | Telas recuperadas da tag local `legado-clinica` (`agenda-month-view`, `agenda-time-grid`, `agenda-list-view`, `appointment-dialog`, `followups-table`, `novo-followup-dialog`), sem modo venda, sem promoção a paciente, com cor por tipo e vínculo ao ticket | Do ticket se agenda uma visita e um retorno; os dois aparecem na timeline, e o retorno vencido fica destacado | 5–6 |
 | **8 · Financeiro** (paralela à 7) | Contratos (admin), mensalidades e despesas a partir do WIP (`finance-overview-cards`, `finance-entries-list`, `expense-form-dialog`), **com `requireAdminPage` + `requireDashboardAdmin`** (o WIP deixa um member gravar pela API) | Gerar a mesma competência 2× cria 0 linhas; um member recebe 403 na API | 4–5 |
 | **9 · Métricas de suporte** | `dashboard/components/kpi-band.tsx`, `daily-chart` (abertos × resolvidos), `period-links`; backlog, SLA estourado, 1ª resposta, resolução, reabertos, IA × humano, por produto/cliente/analista | Todo número vem de consulta e tem lastro (UI.md) | 3–4 |
-| **10 · Produção** — **bloqueada** até você decidir hospedagem e domínio | Seção G | — | 3–4 |
+| **10 · Produção** — **bloqueada** até você decidir hospedagem e domínio | Seção G + **política de privacidade definitiva** (revisão jurídica; hoje a página é um aviso provisório) | — | 3–4 |
 
 Total: ~55–70 dias de desenvolvimento. As Fases 4 e 5 correm em paralelo, e as Fases 7 e 8 também.
 

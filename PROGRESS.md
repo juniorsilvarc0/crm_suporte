@@ -27,6 +27,62 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Revisão adversarial da Fase 1 e correções
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Achar o que a poda quebrou ou deixou falso antes do PR, já que as skills `bug-hunter` e `verification-before-completion` não existem neste ambiente.
+**Arquivos alterados:**
+- **Dados:** `docs/CONTRATO-HANDOFF-GRUPO.md`, `UI.md`, comentário de `supabase/migrations/20260806010000_fill_meta_attribution_snapshot.sql`.
+- **Assinatura do bot:** `bot-signature-settings.tsx`, `push-bot-signature.ts`, `get-bot-signature.ts`, `api/settings/bot-signature/route.ts`.
+- **Política:** `politica-de-privacidade/page.tsx`.
+- **Demo:** `scripts/seed-demo.mjs` e `scripts/reset-demo.mjs` removidos; `package.json` e `.env.local.example` ajustados.
+- **Comentários:** 5 comentários de código.
+- **Docs:** AGENTS, PRD, SKILLS, DB, `docs/API.md`, `docs/especificacao_dashboard_frontend.md`, skills uazapi.
+
+**O que foi feito:**
+- **Revisão:** três revisores independentes (regressão, segurança, escopo/docs) e um cético por achado. Houve 9 achados confirmados e 1 refutado; os menores ficaram sem verificação e foram conferidos à mão.
+- **Correção da limpeza do commit inicial.** Ainda estavam no repo, e portanto no commit público `e35f887`:
+  - o JID real de um grupo de WhatsApp da origem (a segunda ocorrência no contrato de handoff);
+  - um ID de campanha Meta (em `UI.md`);
+  - um ID de anúncio (num comentário de migration).
+
+  Os três viraram valores fictícios. A varredura original procurava de 15 a 17 dígitos, e esses têm 18.
+- **Assinatura do bot.** Sem agente configurado, a tela dizia "salva" e prometia "reconciliar na próxima sincronização" por uma rota que saiu. Agora ela avisa que o valor só fica no CRM, e os comentários dizem que a leitura por GET volta na API v1.
+- **Política de Privacidade.** Afirmava envio de dados à Meta e descrevia a clínica como controladora de dados de saúde. Virou um aviso provisório de "política em revisão", com contato e `noindex`. A política definitiva é pré-requisito do deploy (Fase 10).
+- **Demais correções:**
+  - `seed-demo`/`reset-demo` saíram, como o plano mandava na Fase 1 e eu tinha esquecido;
+  - exemplos do AGENTS apontavam arquivos removidos;
+  - `adminOnly` virou `allowedRoles`, que é o nome real;
+  - a skill uazapi apontava para `normalizers/evolution.ts`.
+
+**Decisões tomadas:**
+- **A página de privacidade vira aviso provisório, sem poda parcial.** Tirar só a parte da Meta deixaria uma política de clínica, que também é falsa para o produto novo. **Decisão a revisar pelo dono.**
+- **Os `revalidatePath("/app/leads" | "/app/funil")` ficam por ora.** Estão nas rotas de lead e tags que o chat usa, não fazem nada e são reescritos na Fase 2, quando essas rotas viram `contacts`.
+- **`recharts` fica nas dependências.** Está sem uso até a Fase 9, e remover dependência também mexe no lockfile.
+
+**Verificação:** ver a entrada do PR desta fase (checks rodados depois destas correções).
+
+**Pendências / próximos passos — segurança, anteriores à Fase 1 (confirmadas pela revisão):**
+1. **Sessão só por JWT em 17 handlers.**
+   - **Quais:** 14 rotas não chamam guard nenhum:
+     - chat: `contact`, `search`, `send-audio`, `send-file`, `tags`, `conversations/tags`, `transcribe`;
+     - `connection/state`;
+     - `tags`, `tags/[id]`.
+
+     Outras 3 usam `hasDashboardSession`, que também é só JWT: `leads/[id]` PATCH e DELETE, e `leads/manual`.
+   - **Efeito:** um usuário desativado, ou com papel desconhecido no banco, segue enviando WhatsApp e mexendo em contato até o cookie expirar (7 dias).
+   - **O "falha fechado" da Fase 1 cobre só:** login, `getAppUser`/viewer, token do Supabase e cookie com papel desconhecido.
+   - **Correção proposta:** `requireDashboardUser()` na primeira linha de cada handler, antes de ler o corpo, mais um teste de contrato que varre as rotas.
+2. **Open redirect no login.** O `?redirect=` aceita URL externa (`login-form.tsx:63`). Correção: comparar a origem com `new URL(raw, location.origin)`.
+3. **Webhook uazapi sem segredo aceita qualquer chamada.** Já está previsto na Fase 2 (falhar fechado + comparação em tempo constante).
+4. **Histórico público.** Os três IDs acima continuam no commit `e35f887` de `origin/main`. Tirá-los de lá exige reescrever o commit inicial e fazer force-push na `main`; a decisão é do dono.
+
+**Armadilhas descobertas:**
+- **Varredura de dado sensível com faixa de tamanho fixa deixa passar.** IDs de WhatsApp e da Meta têm 18 dígitos. Procure `[0-9]{15,}` sem limite superior.
+- **Tirar uma rota pode deixar mensagem de UI mentindo sem quebrar teste nenhum.** O caso aqui foi o toast de "reconciliar". Ao remover rota, procure no texto da UI e nos comentários quem prometia usá-la.
+
+---
+
 ## [2026-09-25] Fase 1 — poda do legado da clínica (TS e rotas; banco intacto)
 
 **Agente/Modelo:** Claude Opus 5.5

@@ -115,7 +115,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - Decisão de acesso: `src/lib/auth/route-guard.ts` (isolada do runtime do Next para ser testável).
 - Aplicação: `src/proxy.ts` (o middleware do Next 16).
 - Papéis: `admin` | `member`. O middleware redireciona pelo papel do JWT; **a página confirma com o papel fresco do banco**, cobrindo o caso do admin recém-rebaixado com cookie antigo.
-- Rota nova de admin exige atualizar **os dois lugares**: `ADMIN_PAGE_PREFIXES` e `adminOnly` em `navigation.ts`.
+- Rota nova de admin exige atualizar **os dois lugares**: `ADMIN_PAGE_PREFIXES` e `allowedRoles` em `navigation.ts`.
 
 ## 10. Integrações externas
 
