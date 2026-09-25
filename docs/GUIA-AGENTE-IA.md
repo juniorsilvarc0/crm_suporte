@@ -1,5 +1,7 @@
 # Guia de Integração para Agentes de IA
 
+> ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** As rotas de leads, funil, agenda, follow-ups e métricas usadas nos exemplos foram **removidas**. O guia é reescrito sobre a API v1 (`/api/v1/*`) na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md).
+
 Como um **agente de IA** (n8n, Python, LangChain, Agno, Claude, etc.) opera o CRM
 de ponta a ponta: **atender pelo WhatsApp, salvar/editar leads, mover no funil,
 agendar, dar follow-up, ler métricas e monitorar** — tudo por HTTP, autenticado

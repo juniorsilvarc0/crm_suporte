@@ -181,20 +181,17 @@ Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não 
 
 ```
 src/app/
-  (dashboard)/app/*      # telas autenticadas: dashboard, leads, funil, agendamentos,
-                         #   chat, follow-ups, rastreamento, conexao, equipe,
-                         #   configuracoes, perfil
+  (dashboard)/app/*      # telas autenticadas: início (notas), chat, conexao,
+                         #   equipe, configuracoes, perfil
   api/                   # route handlers, agrupados por finalidade:
     auth/                #   login/logout/definir-senha (cookie de sessão)
-    chat/webhook/{evolution,uazapi,meta}/   # entrada de mensagem, auth PRÓPRIA
-    integracao/          #   API pública p/ agentes de IA — token Bearer
-    webhooks/n8n/        #   entrada do n8n — header x-webhook-secret
-    internal/meta/       #   worker do CAPI — segredo próprio + bloqueio no proxy
+    chat/webhook/uazapi/ #   entrada de mensagem, auth PRÓPRIA
     <resto>              #   CRUD do app, protegido pela sessão
+                         #   (a API v1 para integradores entra na Fase 5)
   login, definir-senha, politica-de-privacidade, offline
-src/features/<dominio>/  # appointments, auth, board, chat, connection, dashboard,
-                         #   deals, financeiro, followups, integrations, leads,
-                         #   meta, settings
+src/features/<dominio>/  # auth, chat, connection, home, integrations (logs),
+                         #   leads (só identidade por telefone), quick-replies,
+                         #   settings, tags
 src/components/
   ui/                    # primitivos (Base UI) — reuse antes de criar
   data-display/          # data-toolbar, empty-state, page-skeletons
@@ -216,14 +213,13 @@ Arquivos grandes e acoplados. Abrir e ler a região inteira antes de mudar:
 
 | Arquivo | ~linhas | Por quê é sensível |
 |---|---|---|
-| `src/lib/supabase/types.ts` | 921 | Tipos do banco escritos à mão. Mudou coluna? Atualize aqui. |
+| `src/lib/supabase/types.ts` | 1411 | Tipos do banco escritos à mão. Mudou coluna? Atualize aqui. Ainda descreve o banco herdado (a Fase 2 troca). |
+| `src/features/chat/components/chat-view.tsx` | 1052 | Conversa aberta: bolhas, envio, anexos, áudio, citação. |
 | `src/features/connection/components/connection-panel.tsx` | 870 | QR, estado da instância, ciclo de conexão. |
-| `src/features/leads/components/lead-detail-dialog.tsx` | 720 | Modo leitura + modo edição no mesmo componente. |
-| `src/features/leads/components/funnel-board.tsx` | 598 | Kanban com dnd-kit, filtros, densidade, otimismo local. |
-| `src/features/appointments/components/appointment-dialog.tsx` | 554 | Criação/edição de agendamento com regras de data. |
-| `src/features/dashboard/queries/get-dashboard-data.ts` | 525 | Agregações; mudança aqui move todos os números da home. |
-| `src/features/leads/components/leads-table.tsx` | 514 | Tabela desktop + cards mobile + ações em massa. |
-| `src/features/meta/outbox.ts` | 373 | Claim/lease/retry do CAPI. Mexer errado gera evento duplicado no Meta. |
+| `src/features/chat/components/contact-info-sheet.tsx` | 541 | Painel do contato e etiquetas, com geometria própria do chat. |
+| `src/app/api/chat/webhook/uazapi/route.ts` | 328 | Entrada de toda mensagem: eco, mídia, ticks, identidade, relay. |
+
+Os módulos da clínica (leads, funil, agenda, financeiro, métricas, rastreamento Meta) saíram na Fase 1; o código deles está na tag local `legado-clinica`.
 
 ---
 

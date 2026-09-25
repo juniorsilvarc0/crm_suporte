@@ -41,18 +41,17 @@ src/config/                 navigation.ts (menu + adminOnly), site.ts
 supabase/migrations/        fonte da verdade do schema
 ```
 
-### Quatro modelos de autenticação convivendo
+### Modelos de autenticação convivendo
 
-Confundir os quatro é o erro mais caro deste repositório.
+Confundir os modelos é o erro mais caro deste repositório. A API v1 para integradores (token com escopo) entra na Fase 5 do plano.
 
 | Família de rota | Autenticação | Onde |
 |---|---|---|
 | `/app/*` e a maioria de `/api/*` | Cookie `crm-suporte-session` (JWT HS256) | `src/proxy.ts` + `src/lib/auth/route-guard.ts` |
-| `/api/integracao/*` | **Token Bearer de API** (hash em `api_tokens`) | `src/lib/security/api-token.ts` |
-| `/api/webhooks/n8n/*` | Header `x-webhook-secret` | `src/lib/security/verify-webhook.ts` |
-| `/api/chat/webhook/{evolution,uazapi,meta}` | **Cada provedor tem a sua** — Meta usa HMAC `X-Hub-Signature-256`, uazapi usa segredo em query string | `src/features/meta/signature.ts`, `src/features/chat/lib/signature.ts` |
+| `/api/chat/webhook/uazapi` | Segredo em query string (`?s=`), próprio da uazapi | `src/app/api/chat/webhook/uazapi/route.ts` |
+| *(Fase 5)* `/api/v1/*` | Token de API com escopo (hash em `api_tokens`), base em `verifyWebhookAuth` | `src/lib/security/api-token.ts`, `src/lib/security/verify-webhook.ts` |
 
-Rota nova em `/api` = **decida e declare** qual dos quatro modelos ela usa. Se nenhum servir, pare e pergunte (AGENTS §7).
+Rota nova em `/api` = **decida e declare** qual modelo ela usa. Se nenhum servir, pare e pergunte (AGENTS §7).
 
 ---
 
@@ -127,7 +126,6 @@ Há também o subagente **`engenheiro-de-testes`** (`.claude/agents/`) para trab
 | Sintoma | Skill / caminho |
 |---|---|
 | WhatsApp não envia, não recebe, ticks errados, mídia sumindo | **`uazapi-integration`** (local) → checar `chat_integrations` primeiro |
-| Rastreamento de anúncio zerado, CAPI não envia | Módulo herdado, que sai na Fase 1 do plano. Até lá: `systematic-debugging`. Verificar nesta ordem: webhook chega? → `meta_attributions` tem linha? → outbox `pending` ou `skipped`? |
 | Lead duplicado / conversa duplicada | `upsert-lead.ts` + `upsert-message.ts`; a chave é o telefone normalizado |
 | Query lenta / lista pesada (`chat_messages`) | `supabase-postgres-best-practices` |
 | Dado sensível chegando ao cliente | `backend-security-coder` + §Segurança |
@@ -184,11 +182,6 @@ Há também o subagente **`engenheiro-de-testes`** (`.claude/agents/`) para trab
 **Mexendo em WhatsApp**
 1. Skill local **`uazapi-integration`** primeiro. Checar `chat_integrations` antes de qualquer hipótese.
 2. `backend-security-coder` se tocar o webhook.
-
-**Mexendo em rastreamento Meta**
-1. Módulo herdado, que sai na Fase 1 do plano; a spec antiga do pipeline não veio para este repositório.
-2. `systematic-debugging`. A cadeia é: webhook → `ingest_meta_webhook_message` → `meta_attributions` → `meta_ad_assets` (enriquecimento) → `meta_conversion_outbox` → dispatcher → CAPI. **Descubra em qual elo parou antes de mudar código.**
-3. Nunca dispare evento de teste contra o dataset de produção sem autorização.
 
 **Banco / migration**
 1. Management API para inspecionar (read-only). Migration = arquivo novo, idempotente.

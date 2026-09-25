@@ -1,5 +1,7 @@
 # Referência de API — CRM Suporte
 
+> ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** A API de integração (`/api/integracao/*`) e os webhooks do n8n descritos aqui foram **removidos**. A API para a IA e para outros sistemas volta como `/api/v1/*`, com token com escopo, na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md), quando este documento é reescrito. As rotas internas de chat, conexão, equipe e configurações continuam valendo.
+
 Guia completo da API HTTP do CRM, **escrito a partir do código real** (rotas + validações Zod). Serve dois públicos:
 
 - **🤖 Integradores (n8n / automações):** comece pelo **[Guia de integração com o n8n](#-guia-de-integração-com-o-n8n)** — é o que você precisa para enviar leads, agendamentos e follow-ups ao CRM.

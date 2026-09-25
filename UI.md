@@ -1,5 +1,7 @@
 # UI — CRM Suporte
 
+> ⚠️ **Telas citadas como exemplo (2026-09-25).** Vários padrões abaixo apontam para telas herdadas que saíram na Fase 1 (leads, funil, agenda, métricas, rastreamento). Os padrões continuam valendo para as telas novas; os arquivos citados estão na tag local `legado-clinica`.
+
 > **Fonte da verdade visual.** Consulte **antes** de criar qualquer componente, tela ou variação de estilo. Estado confirmado por leitura do código em 2026-08-06.
 >
 > Ordem obrigatória (AGENTS §5): **reusar → estender → generalizar → criar novo**. Criar primitivo novo exige justificar por que as três anteriores falharam.
