@@ -66,6 +66,21 @@ jobs:
       - name: Preparar .env.local de exemplo
         run: cp .env.local.example .env.local
 
+      # O ECR público limita pull anônimo por segundo, e os runners dividem IP:
+      # o primeiro run falhou com "toomanyrequests: Rate exceeded". Pull em
+      # série e com nova tentativa antes de subir.
+      - name: Baixar imagens (em série, com nova tentativa)
+        env:
+          COMPOSE_PARALLEL_LIMIT: "1"
+        run: |
+          for tentativa in 1 2 3 4 5; do
+            docker compose pull db rest storage && exit 0
+            espera=$((tentativa * 15))
+            echo "pull falhou (tentativa $tentativa); nova tentativa em ${espera}s"
+            sleep "$espera"
+          done
+          exit 1
+
       # O storage-api é quem cria o schema `storage`; o script de apply recusa
       # rodar antes dele.
       - name: Subir Postgres, PostgREST e storage
