@@ -156,6 +156,7 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 - **A URL assinada nasce com a origem INTERNA** (`SUPABASE_URL`, que no Docker é `host.docker.internal`). `signStorageObject` troca pela pública (`NEXT_PUBLIC_SUPABASE_URL`).
 - **`normalize_phone` tira o DDI 55:** `5511990000123` é gravado como `11990000123`.
 - **O compose valida o `env_file` do `web` mesmo subindo só `db`.** Sem `.env.local`, nem `config` roda; o CI copia o exemplo.
+- **O ECR público (`public.ecr.aws`, imagem do Postgres e do PostgREST) limita pull anônimo por segundo, e os runners do GitHub dividem IP.** O 1º run do job `banco` falhou em 11 s com `toomanyrequests: Rate exceeded`. O job agora puxa em série (`COMPOSE_PARALLEL_LIMIT=1`) e com até 5 tentativas; no run seguinte, precisou de 2.
 - **`git add -p` não existe neste ambiente.** Para separar commits de um arquivo com mudanças de dois assuntos, monte a versão intermediária, grave com `git hash-object -w` + `git update-index --cacheinfo` e valide com `git checkout-index -a --prefix=<dir>`.
 
 ## [2026-09-25] Sessão confirmada no banco em toda rota /api e login sem open redirect
