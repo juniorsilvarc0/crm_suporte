@@ -43,3 +43,50 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: chave-ficticia-ci
+
+  # Baseline do banco num Postgres descartável: aplica as migrations do zero,
+  # reaplica (tem de ser no-op), roda os testes de SQL e confere que os tipos
+  # gerados (`database.types.ts`) ainda batem com o schema.
+  banco:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # O compose valida o `env_file` do serviço `web` mesmo sem subi-lo. O
+      # exemplo só tem as chaves de DEMONSTRAÇÃO do Supabase local.
+      - name: Preparar .env.local de exemplo
+        run: cp .env.local.example .env.local
+
+      # O storage-api é quem cria o schema `storage`; o script de apply recusa
+      # rodar antes dele.
+      - name: Subir Postgres, PostgREST e storage
+        run: docker compose up -d --wait db rest storage
+
+      - name: Aplicar migrations e seed
+        run: ./scripts/db-local-apply.sh
+
+      - name: Reaplicar (tem de ser no-op)
+        run: |
+          ./scripts/db-local-apply.sh | tee reaplicar.log
+          grep -q "0 migration(s) aplicada(s)" reaplicar.log
+
+      - name: Testes de SQL
+        run: ./scripts/db-local-test.sh
+
+      - name: Tipos gerados batem com o banco
+        run: |
+          pnpm db:types
+          git diff --exit-code -- src/lib/supabase/database.types.ts
+
+      - name: Logs dos serviços (se falhar)
+        if: failure()
+        run: docker compose logs --tail 200 db rest storage
