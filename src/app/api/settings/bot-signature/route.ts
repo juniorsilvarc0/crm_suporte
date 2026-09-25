@@ -14,7 +14,8 @@ export const runtime = "nodejs";
 
 // Config da assinatura das mensagens da IA. Guardado em app_settings.key =
 // 'bot_signature'. Rota protegida pela sessão do dashboard (admin) — não é
-// pública. O agente lê pela rota de integração (GET /api/integracao/bot-signature).
+// pública. O agente recebe a config por push a cada save (a leitura por GET
+// volta na API v1, Fase 5).
 export async function GET() {
   const config = await getBotSignatureConfig();
   return NextResponse.json({ ok: true, ...config });
@@ -60,7 +61,7 @@ export async function PATCH(request: Request) {
   }
 
   // Push best-effort ao agente. A falha NÃO desfaz o save — a UI mostra o aviso
-  // e o agente ainda reconcilia pela rota de integração.
+  // para salvar de novo.
   const agent = await pushBotSignatureToAgent(config);
 
   return NextResponse.json({ ok: true, ...config, agent });

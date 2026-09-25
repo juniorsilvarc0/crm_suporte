@@ -13,9 +13,10 @@ export type BotSignatureConfig = {
 const EMPTY: BotSignatureConfig = { enabled: false, apelido: "" };
 
 // Config da assinatura do bot, guardada em app_settings.key = 'bot_signature'.
-// O agente lê isto (via /api/integracao/bot-signature) e aplica o prefixo no
-// envio — o CRM não dispara as mensagens do bot, só é a fonte de verdade da
-// config. Nunca lança: em qualquer falha devolve o default (desligado).
+// O agente recebe isto por push a cada save (a leitura por GET volta na API v1,
+// Fase 5) e aplica o prefixo no envio — o CRM não dispara as mensagens do bot,
+// só é a fonte de verdade da config. Nunca lança: em qualquer falha devolve o
+// default (desligado).
 export async function getBotSignatureConfig(): Promise<BotSignatureConfig> {
   if (!hasSupabaseServerEnv()) return EMPTY;
   try {

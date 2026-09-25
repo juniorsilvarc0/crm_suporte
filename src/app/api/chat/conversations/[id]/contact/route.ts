@@ -20,7 +20,7 @@ const EMPTY: ContactInfo = { lead: null };
  * A FK `chat_conversations.lead_id` é a fonte normal. O fallback por telefone
  * existe apenas para a janela de rollout anterior à migration.
  *
- * Erro devolve vazio e loga, como `getDeals` e `getLeadAttributions`: a tela de
+ * Erro devolve vazio e loga, como `getNotes` e `getAppUsers`: a tela de
  * contato ainda mostra nome, foto e telefone sem o lead — derrubá-la inteira por
  * causa do bloco de CRM seria pior que exibi-la incompleta.
  */

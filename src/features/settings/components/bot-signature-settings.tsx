@@ -54,12 +54,16 @@ export function BotSignatureSettings({ config }: { config: BotSignatureConfig })
       if (result.agent?.delivered) {
         toast.success("Assinatura do bot salva e enviada ao agente.");
       } else if (result.agent?.skipped) {
-        toast.success("Assinatura do bot salva.");
+        // Sem agente configurado, o valor fica só no CRM: dizer "salva" sem
+        // ressalva faria parecer que a IA já assina assim.
+        toast.warning(
+          "Assinatura salva no CRM, mas nenhum agente está configurado para recebê-la."
+        );
       } else {
         toast.warning(
           `Salvo no CRM, mas não consegui avisar o agente${
             result.agent?.error ? ` (${result.agent.error})` : ""
-          }. Ele vai reconciliar na próxima sincronização.`
+          }. Salve de novo quando o agente estiver no ar.`
         );
       }
       router.refresh();
