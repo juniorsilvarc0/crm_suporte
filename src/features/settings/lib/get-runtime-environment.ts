@@ -45,10 +45,17 @@ export class RuntimeEnvironmentUnavailableError extends Error {
 
 const CACHE_TTL_MS = 60_000;
 let cache: { values: Map<string, string>; expiresAt: number } | null = null;
+/**
+ * Sobe a cada invalidação. Uma leitura que começou ANTES de uma gravação no
+ * cofre não pode repor o valor antigo no cache quando terminar — seria a
+ * chave apagada (vazada) valendo por mais 60 s.
+ */
+let generation = 0;
 
 /** Zera o cache. A rota que grava/apaga no cofre chama depois de gravar. */
 export function invalidateRuntimeEnvironmentCache() {
   cache = null;
+  generation += 1;
 }
 
 async function loadCatalog(): Promise<Map<string, string>> {
@@ -58,6 +65,7 @@ async function loadCatalog(): Promise<Map<string, string>> {
   }
 
   // Uma ida ao banco para o catálogo inteiro.
+  const startedAt = generation;
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_app_environment_variables", {
     p_names: [...RUNTIME_ENVIRONMENT_CATALOG],
@@ -68,7 +76,7 @@ async function loadCatalog(): Promise<Map<string, string>> {
   for (const row of data ?? []) {
     if (typeof row.value === "string" && row.value.length > 0) values.set(row.name, row.value);
   }
-  cache = { values, expiresAt: Date.now() + CACHE_TTL_MS };
+  if (generation === startedAt) cache = { values, expiresAt: Date.now() + CACHE_TTL_MS };
   return values;
 }
 

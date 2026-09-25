@@ -71,6 +71,22 @@ describe("getRuntimeEnvironmentVariable", () => {
       value: "sk-2",
     });
   });
+
+  it("leitura que começou antes de uma gravação não repõe o valor antigo no cache", async () => {
+    let finishRead!: (value: unknown) => void;
+    rpcMock.mockReturnValueOnce(new Promise((resolve) => (finishRead = resolve)));
+    const inFlight = getRuntimeEnvironmentVariable("OPENAI_API_KEY");
+
+    // O admin troca a chave enquanto a leitura está em voo.
+    invalidateRuntimeEnvironmentCache();
+    finishRead({ data: [{ name: "OPENAI_API_KEY", value: "sk-antiga" }], error: null });
+    await inFlight;
+
+    vault([{ name: "OPENAI_API_KEY", value: "sk-nova" }]);
+    await expect(getRuntimeEnvironmentVariable("OPENAI_API_KEY")).resolves.toMatchObject({
+      value: "sk-nova",
+    });
+  });
 });
 
 describe("getTranscriptionModelConfig", () => {
