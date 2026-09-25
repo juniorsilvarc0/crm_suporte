@@ -52,7 +52,7 @@ Se não puder preencher honestamente, **pare e pergunte** (§7). Depois execute 
 
 ### §0.3 Stack real (para não escrever código de versão/ferramenta errada)
 
-**Next.js 16.2.6 App Router** · **React 19.2.4** · **TypeScript `strict: true`** · **Tailwind v4** (CSS-first, `@theme` em `src/app/globals.css` — **não existe `tailwind.config.js`**) · UI **Base UI (`@base-ui/react`)** + primitivos próprios em `src/components/ui` · **react-hook-form + zod** · **Supabase** (service role no servidor; anon só para Realtime do chat) · **Vitest + Testing Library** · **pnpm 10.33** · Node ≥20 · deploy em **VPS com Docker Compose atrás do Traefik**. Detalhe completo e skills por área: [`SKILLS.md`](SKILLS.md).
+**Next.js 16.2.6 App Router** · **React 19.2.4** · **TypeScript `strict: true`** · **Tailwind v4** (CSS-first, `@theme` em `src/app/globals.css` — **não existe `tailwind.config.js`**) · UI **Base UI (`@base-ui/react`)** + primitivos próprios em `src/components/ui` · **react-hook-form + zod** · **Supabase** (service role no servidor; JWT `authenticated` curto só para o Realtime do chat) · **Vitest + Testing Library** · **pnpm 10.33** · Node ≥20 · deploy em **VPS com Docker Compose atrás do Traefik**. Detalhe completo e skills por área: [`SKILLS.md`](SKILLS.md).
 
 ### §0.4 Verificação e fechamento
 
@@ -126,8 +126,10 @@ Se não puder preencher isso honestamente, **pare e pergunte**.
 | 11 | **Segredo nunca vai para o repositório.** Nem em código, nem em doc, nem em comentário, nem em mensagem de commit. Se você viu um segredo no chat, ele não entra em arquivo. |
 | 12 | **Não use Playwright nem teste de browser.** A verificação é `typecheck` + `lint` + `vitest` + `build` + leitura do diff. |
 
-### §3.1 🟢 Estado de segurança do banco (medido no banco em 2026-08-19, após a migration `20260819120000_blindagem_anon.sql`)
+### §3.1 🟢 Estado de segurança do banco (baseline da Fase 2, medido no banco local em 2026-09-25)
 
+> O baseline (`supabase/migrations/20260925120000_fundacao.sql` a `…120500_storage_realtime.sql`) nasce neste estado, e `assert_security_baseline()` o confere no fim de toda migration. Além do que está abaixo, o **`service_role` tem grant mínimo**, por coluna onde importa (ex.: sem UPDATE no telefone de `contacts`, sem SELECT de `app_users.password_hash`). Por isso upsert precisa de `ignoreDuplicates` em tabela sem UPDATE, e `select('*')` falha onde o SELECT é por coluna.
+>
 > ⚠️ Esta seção foi **reescrita em 2026-08-19**. A versão anterior (herdada do template) descrevia `anon` com policy `SELECT` nas tabelas de chat. Isso valia enquanto o PostgREST só existia na rede interna; ao publicá-lo para o Realtime funcionar, virou leitura pública na internet. Ver `PROGRESS.md` da mesma data.
 
 **O papel `anon` não alcança absolutamente nada.** Medido no catálogo, não inferido:
@@ -139,7 +141,7 @@ Se não puder preencher isso honestamente, **pare e pergunte**.
 | Tabela/função **nova** nasce aberta para `anon`? | **não** (default privileges fechados) |
 | Tabelas alcançáveis por `authenticated` | apenas `chat_conversations` e `chat_messages`, só `SELECT` |
 
-O navegador **não usa mais a chave anônima**. Ele pede um JWT curto (15 min) em `GET /api/auth/supabase-token`, emitido de `src/lib/auth/supabase-token.ts` a partir do cookie `crm-suporte-session`, com `role: authenticated` e o claim **`app_role`**. O `supabase-js` o injeta em REST e Realtime pela opção `accessToken` (`src/lib/supabase/client.ts`).
+O navegador **não usa mais a chave anônima**. Ele pede um JWT curto (15 min) em `GET /api/auth/supabase-token`, emitido de `src/lib/auth/supabase-token.ts` a partir do cookie `crm-suporte-session`, com `role: authenticated` e o claim **`app_role`**. O `supabase-js` o injeta em REST e Realtime pela opção `accessToken` (`src/lib/supabase/client.ts`). **Canal do Realtime só por `subscribeAuthenticated`**: assinar antes de o token chegar grava a assinatura como `anon`, e todo evento vem vazio com 401 (PROGRESS 2026-09-25).
 
 - As policies de chat **filtram por `app_role`** (`admin`/`member`), repetindo no banco a regra que `src/config/navigation.ts` aplica na navegação. Sem esse filtro, um papel fora de `admin`/`member` (ex.: `paid_traffic`, que o app removeu mas a constraint do banco ainda aceita) leria todas as conversas chamando o PostgREST direto.
 - Todo o resto passa por **`createSupabaseServerClient()` / `createSupabaseAdminClient()`**, que usam a **service role** e rodam **somente no servidor** (`src/lib/supabase/server.ts`, `src/lib/supabase/admin.ts`).
@@ -148,10 +150,11 @@ O navegador **não usa mais a chave anônima**. Ele pede um JWT curto (15 min) e
 
 1. **Não amplie a superfície do `anon`.** Ela é zero, e deve continuar zero. Consulta nova = server component, server action ou route handler com service role.
 2. **`authenticated` é alcançável pela internet.** Todo grant a ele é uma rota pública para qualquer operador logado, **fora** do `route-guard`. Conceder tabela nova a `authenticated` é decisão de segurança: pergunte (§7), e escreva a policy filtrando por `app_role`.
-3. **Função nova precisa de `revoke execute ... from public, anon, authenticated`.** No Postgres a função nasce com `EXECUTE` para **PUBLIC**, e `anon` herda dali — revogar só de `anon` **não fecha nada**. Padrão em `20260818120000_pacientes.sql:195`.
-4. **Nunca** exponha ao cliente `api_tokens.token_hash`, `app_users.password_hash`, `meta_attributions.ctwa_clid` ou qualquer segredo de integração.
-5. `createSupabaseServerClient` **não é** um client de sessão do usuário — é service role. Autorização é responsabilidade do guard (`src/lib/auth/route-guard.ts`) e da própria rota, não do banco.
-6. ⚠️ **Ordem de deploy:** não existe fallback anônimo. A imagem com o `client.ts` novo precisa estar no ar **antes** de a blindagem ser aplicada; ao contrário, a lista de conversas cai.
+3. **Função nova precisa de `revoke execute ... from public, anon, authenticated`.** No Postgres a função nasce com `EXECUTE` para **PUBLIC**, e `anon` herda dali — revogar só de `anon` **não fecha nada**. Padrão em qualquer migration do baseline (seção "Privilégios de função").
+4. **Nunca** exponha ao cliente `api_tokens.token_hash`, `app_users.password_hash` ou qualquer segredo de integração. Segredo de integração mora no **Vault** (tabela guarda só o id) e sai por RPC; nunca em `config`, env ou log.
+5. **Mídia do chat é privada.** `media_url` aponta para `/api/chat/media/<id>` (sessão + URL assinada curta); nunca grave nem devolva URL do storage.
+6. `createSupabaseServerClient` **não é** um client de sessão do usuário — é service role. Autorização é responsabilidade do guard (`src/lib/auth/route-guard.ts`) e da própria rota, não do banco.
+7. ⚠️ **Ordem de deploy:** não existe fallback anônimo. A imagem com o `client.ts` novo precisa estar no ar **antes** de a blindagem ser aplicada; ao contrário, a lista de conversas cai.
 
 ### §3.2 Autenticação — modelo real
 
@@ -214,7 +217,7 @@ Arquivos grandes e acoplados. Abrir e ler a região inteira antes de mudar:
 
 | Arquivo | ~linhas | Por quê é sensível |
 |---|---|---|
-| `src/lib/supabase/types.ts` | 1411 | Tipos do banco escritos à mão. Mudou coluna? Atualize aqui. Ainda descreve o banco herdado (a Fase 2 troca). |
+| `src/lib/supabase/database.types.ts` | ~500 | **Gerado** do banco local (`pnpm db:types`). Não edite à mão: mudou migration, aplique e regenere. O CI falha se divergir. |
 | `src/features/chat/components/chat-view.tsx` | 1052 | Conversa aberta: bolhas, envio, anexos, áudio, citação. |
 | `src/features/connection/components/connection-panel.tsx` | 870 | QR, estado da instância, ciclo de conexão. |
 | `src/features/chat/components/contact-info-sheet.tsx` | 541 | Painel do contato e etiquetas, com geometria própria do chat. |
