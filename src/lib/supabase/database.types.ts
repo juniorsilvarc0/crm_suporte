@@ -326,6 +326,9 @@ isOneToOne: false
 "delete_app_user":
 { Args: { "p_actor_id": string,"p_id": string }; Returns: undefined
                            },
+"ensure_chat_integration_secret":
+{ Args: { "p_candidate": string,"p_integration_id": string,"p_kind": string }; Returns: string
+                           },
 "get_app_environment_variable":
 { Args: { "p_name": string }; Returns: string
                            },
