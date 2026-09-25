@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { viewerMock, adminClientMock, sendTextMock } = vi.hoisted(() => ({
-  viewerMock: vi.fn(),
+const { sessionMock, adminClientMock, sendTextMock } = vi.hoisted(() => ({
+  sessionMock: vi.fn(),
   adminClientMock: vi.fn(),
   sendTextMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({
-  getDashboardViewer: viewerMock,
+  requireDashboardUser: sessionMock,
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: adminClientMock,
@@ -86,11 +86,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   queues.clear();
-  viewerMock.mockResolvedValue({
-    id: "user-1",
-    name: "Ana Souza",
-    apelido_atendimento: null,
-    assinar_mensagens: true,
+  sessionMock.mockResolvedValue({
+    viewer: {
+      id: "user-1",
+      name: "Ana Souza",
+      apelido_atendimento: null,
+      assinar_mensagens: true,
+    },
   });
   adminClientMock.mockReturnValue({
     from: (table: string) => {
@@ -100,6 +102,20 @@ beforeEach(() => {
     },
   });
   sendTextMock.mockResolvedValue({ id: "uazapi-1", messageid: "provider-1" });
+});
+
+describe("POST /send — sessão", () => {
+  it("recusa usuário desativado antes de tocar no banco ou no WhatsApp", async () => {
+    sessionMock.mockResolvedValue({
+      error: Response.json({ ok: false, message: "Sessão inválida." }, { status: 401 }),
+    });
+
+    const response = await POST(request({ content: "oi" }), params);
+
+    expect(response.status).toBe(401);
+    expect(adminClientMock).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /send — idempotência por clientId", () => {

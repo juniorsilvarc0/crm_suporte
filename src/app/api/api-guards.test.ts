@@ -15,9 +15,15 @@ import { isPublicApiRoute } from "@/lib/auth/route-guard";
  * `requireDashboardUser`, `requireDashboardAdmin` ou `getDashboardViewer`.
  *
  * Este teste falha se aparecer handler que não chama nenhum deles, direto ou
- * por uma função local do mesmo arquivo. Rota pública (webhook, login) é
- * decidida pela mesma lista do guard, então abrir um prefixo novo lá já tira
- * a rota daqui — e o handler dela passa a ser responsável pela própria auth.
+ * por uma função local do mesmo arquivo. Chamar não basta: o resultado tem de
+ * ser testado (`"error" in auth` ou `!viewer`), e a chamada direta tem de vir
+ * antes do primeiro acesso ao banco — `send`, `forward` e a edição de mensagem
+ * chegaram a chamar o guard só para ler o nome, ou só dentro de um ramo, e um
+ * usuário desativado seguia enviando pelo WhatsApp.
+ *
+ * Rota pública (webhook, login) é decidida pela mesma lista do guard, então
+ * abrir um prefixo novo lá já tira a rota daqui — e o handler dela passa a ser
+ * responsável pela própria auth.
  */
 
 const API_DIR = path.join(process.cwd(), "src/app/api");
@@ -50,7 +56,80 @@ function functionBodies(source: string): Map<string, string> {
   );
 }
 
-const callsGuard = (body: string) => GUARDS.some((guard) => body.includes(guard));
+// O que conta como "testou o resultado do guard".
+const REJECTS = [/"error" in \w+\)\s*return/, /if \(!viewer\)/, /if \(!\(await getDashboardViewer\(\)\)\)/];
+const DB_ACCESS = ["createSupabaseAdminClient(", "createSupabaseServerClient("];
+
+const firstIndex = (body: string, needles: string[]) =>
+  Math.min(...needles.map((needle) => body.indexOf(needle)).filter((index) => index >= 0));
+
+/** Chama um guard, testa o resultado e, se toca o banco, só depois do guard. */
+function guardsDirectly(body: string): boolean {
+  const guardAt = firstIndex(body, GUARDS);
+  if (!Number.isFinite(guardAt)) return false;
+  if (!REJECTS.some((pattern) => pattern.test(body))) return false;
+  const dbAt = firstIndex(body, DB_ACCESS);
+  return !Number.isFinite(dbAt) || guardAt < dbAt;
+}
+
+/** Cada handler exportado do arquivo, e se ele confirma o usuário no banco. */
+function handlerGuards(source: string): [string, boolean][] {
+  const bodies = functionBodies(source);
+  const guardedHelpers = [...bodies]
+    .filter(([, body]) => guardsDirectly(body))
+    .map(([name]) => `${name}(`);
+
+  return [...source.matchAll(HANDLER_RE)].map((match) => {
+    const handler = match[1];
+    const body = bodies.get(handler) ?? "";
+    const guarded =
+      guardsDirectly(body) ||
+      guardedHelpers.some((helper) => helper !== `${handler}(` && body.includes(helper));
+    return [handler, guarded];
+  });
+}
+
+describe("regra do contrato", () => {
+  it("recusa guard chamado só para ler o usuário", () => {
+    const source = `export async function POST() {
+      const supabase = createSupabaseAdminClient();
+      const viewer = await getDashboardViewer();
+      await send(viewer?.id ?? null);
+    }`;
+    expect(handlerGuards(source)).toEqual([["POST", false]]);
+  });
+
+  it("recusa guard só dentro de um ramo, depois do banco", () => {
+    const source = `export async function PATCH() {
+      const supabase = createSupabaseAdminClient();
+      if (isNote) {
+        const viewer = await getDashboardViewer();
+        if (!viewer) return unauthorized();
+      }
+      await editOnWhatsApp();
+    }`;
+    expect(handlerGuards(source)).toEqual([["PATCH", false]]);
+  });
+
+  it("aceita o guard testado antes do banco, direto ou por helper local", () => {
+    const source = `export async function POST() {
+      const auth = await requireDashboardUser();
+      if ("error" in auth) return auth.error;
+      const supabase = createSupabaseAdminClient();
+    }
+    async function authorized() {
+      const viewer = await getDashboardViewer();
+      if (!viewer) return { error: 401 };
+    }
+    export async function DELETE() {
+      const target = await authorized();
+    }`;
+    expect(handlerGuards(source)).toEqual([
+      ["POST", true],
+      ["DELETE", true],
+    ]);
+  });
+});
 
 describe("rotas /api de sessão", () => {
   const files = routeFiles(API_DIR).filter((file) => !isPublicApiRoute(routePath(file)));
@@ -62,19 +141,10 @@ describe("rotas /api de sessão", () => {
   it.each(files.map((file) => [path.relative(process.cwd(), file), file]))(
     "%s: todo handler confirma o usuário no banco",
     (_label, file) => {
-      const source = readFileSync(file, "utf8");
-      const bodies = functionBodies(source);
-      const guardedHelpers = [...bodies]
-        .filter(([, body]) => callsGuard(body))
-        .map(([name]) => `${name}(`);
-
-      const handlers = [...source.matchAll(HANDLER_RE)].map((match) => match[1]);
+      const handlers = handlerGuards(readFileSync(file, "utf8"));
       expect(handlers.length).toBeGreaterThan(0);
 
-      for (const handler of handlers) {
-        const body = bodies.get(handler) ?? "";
-        const guarded =
-          callsGuard(body) || guardedHelpers.some((helper) => helper !== `${handler}(` && body.includes(helper));
+      for (const [handler, guarded] of handlers) {
         expect(guarded, `${handler} sem guard de banco`).toBe(true);
       }
     }

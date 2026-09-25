@@ -14,7 +14,7 @@ import {
   canEditNote,
   isNoteMessage,
 } from "@/features/chat/lib/note-actions";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import type { ChatMessage } from "@/features/chat/types";
 import type { Json } from "@/lib/supabase/types";
 
@@ -145,6 +145,9 @@ function providerError(action: string, err: unknown) {
 
 /** PATCH — edita o texto (ou a legenda) de uma mensagem nossa. */
 export async function PATCH(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id, messageId } = await params;
     const { text } = (await request.json()) as { text?: unknown };
@@ -161,8 +164,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (base instanceof NextResponse) return base;
 
     if (isNoteMessage(base.message)) {
-      const viewer = await getDashboardViewer();
-      if (!canEditNote(base.message, viewer?.id)) return notNoteAuthor();
+      if (!canEditNote(base.message, auth.viewer.id)) return notNoteAuthor();
 
       const { data: updated, error: noteErr } = await base.supabase
         .from("chat_messages")
@@ -237,6 +239,9 @@ export async function PATCH(request: Request, { params }: Params) {
 
 /** DELETE — apaga para todos. */
 export async function DELETE(_request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id, messageId } = await params;
 
@@ -245,8 +250,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     if (base instanceof NextResponse) return base;
 
     if (isNoteMessage(base.message)) {
-      const viewer = await getDashboardViewer();
-      if (!canDeleteNote(base.message, viewer?.id)) return notNoteAuthor();
+      if (!canDeleteNote(base.message, auth.viewer.id)) return notNoteAuthor();
 
       const { data: updated, error: noteErr } = await base.supabase
         .from("chat_messages")

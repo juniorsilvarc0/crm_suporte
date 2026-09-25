@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { sendUazapiText } from "@/features/chat/lib/senders/uazapi";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { CLIENT_ID_PATTERN } from "@/features/chat/lib/outgoing-message";
@@ -12,6 +12,11 @@ import { resolveConversationChannelAddress } from "@/features/chat/lib/conversat
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+  // Quem está falando: define a assinatura e fica registrado na mensagem.
+  const { viewer } = auth;
+
   try {
     const { id } = await params;
     const { content, kind, quotedMessageId, clientId } = (await request.json()) as {
@@ -37,8 +42,6 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const supabase = createSupabaseAdminClient();
-    // Quem está falando: define a assinatura e fica registrado na mensagem.
-    const viewer = await getDashboardViewer();
 
     const { data: conv, error: convErr } = await supabase
       .from("chat_conversations")
@@ -63,7 +66,7 @@ export async function POST(request: Request, { params }: Params) {
           type: "note",
           content,
           delivery_status: "sent",
-          sent_by_user_id: viewer?.id ?? null,
+          sent_by_user_id: viewer.id,
           created_at: now,
         })
         .select()
@@ -122,8 +125,7 @@ export async function POST(request: Request, { params }: Params) {
     // No reenvio o texto vem da LINHA, não do corpo: assinar de novo o que já
     // está assinado poria a assinatura duas vezes na mensagem do paciente.
     const outboundContent =
-      existing?.content ??
-      signMessage(content, viewer ? resolveSignature(viewer) : null);
+      existing?.content ?? signMessage(content, resolveSignature(viewer));
     const quotedId = existing ? existing.quoted_message_id : quotedMessageId ?? null;
 
     // Responder: o provedor cita pelo id DELE (`external_id`), não pelo nosso.
@@ -158,7 +160,7 @@ export async function POST(request: Request, { params }: Params) {
               ...(linkPreview ? { linkPreview } : {}),
             },
             delivery_status: "pending",
-            sent_by_user_id: viewer?.id ?? null,
+            sent_by_user_id: viewer.id,
             created_at: now,
           })
           .select()

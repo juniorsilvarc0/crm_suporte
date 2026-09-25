@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import {
   MAX_FORWARD_TARGETS,
@@ -35,6 +35,9 @@ type Target = {
 };
 
 export async function POST(request: Request, { params }: Params) {
+  const auth = await requireDashboardUser();
+  if ("error" in auth) return auth.error;
+
   try {
     const { id } = await params;
     const body = (await request.json()) as {
@@ -66,7 +69,6 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const supabase = createSupabaseAdminClient();
-    const viewer = await getDashboardViewer();
 
     // Ordem cronológica: encaminhar 3 mensagens tem de reproduzir a sequência
     // original no destino, não a ordem em que o operador foi clicando.
@@ -121,7 +123,7 @@ export async function POST(request: Request, { params }: Params) {
           phone,
           payload,
           credentials,
-          viewerId: viewer?.id ?? null,
+          viewerId: auth.viewer.id,
         });
         if (ok) sent += 1;
         else failed += 1;
@@ -157,7 +159,7 @@ async function forwardOne({
   phone: string;
   payload: ForwardPayload;
   credentials: Credentials;
-  viewerId: string | null;
+  viewerId: string;
 }): Promise<boolean> {
   const now = new Date().toISOString();
   const isText = payload.kind === "text";
