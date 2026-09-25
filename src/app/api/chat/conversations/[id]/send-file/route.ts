@@ -1,7 +1,14 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendUazapiMedia, type UazapiMediaType } from "@/features/chat/lib/senders/uazapi";
 import { putMedia } from "@/lib/storage/put-media";
+import { CHAT_MEDIA_MAX_BYTES, signStorageObject } from "@/lib/storage/chat-media";
+import {
+  storedMediaColumns,
+  storedMediaMetadata,
+} from "@/features/chat/lib/media/stored-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { compressVideo } from "@/features/chat/lib/media/compress-video";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
@@ -99,9 +106,17 @@ export async function POST(request: Request, { params }: Params) {
       }
     }
 
-    // 1) Guarda (URL pública — a uazapi baixa esta URL no /send/media).
-    //    Vídeo já veio comprimido acima; `putMedia` cuida de imagem e áudio e
-    //    escolhe entre R2 e Supabase.
+    // O teto do bucket vale para o arquivo JÁ comprimido: um vídeo de 60 MB que
+    // cai para 15 MB passa; um documento, que não comprime, não.
+    if (bytes.length > CHAT_MEDIA_MAX_BYTES) {
+      return NextResponse.json(
+        { error: "Arquivo muito grande (máx. 50MB depois de comprimido)." },
+        { status: 413 }
+      );
+    }
+
+    // 1) Guarda no bucket privado. Vídeo já veio comprimido acima; `putMedia`
+    //    cuida de imagem e áudio.
     const stored = await putMedia({
       supabase,
       folder: "chat",
@@ -111,17 +126,23 @@ export async function POST(request: Request, { params }: Params) {
     if (!stored) {
       return NextResponse.json({ error: "Falha ao subir o arquivo." }, { status: 500 });
     }
-    const publicUrl = stored.url;
+
+    // A uazapi baixa o arquivo pela URL no /send/media, e o bucket é privado:
+    // URL assinada, com vida só para o download dela.
+    const providerUrl = await signStorageObject(supabase, stored.bucket, stored.key, 600);
+    if (!providerUrl) {
+      return NextResponse.json({ error: "Falha ao preparar o arquivo." }, { status: 500 });
+    }
+
+    // O id nasce aqui porque a `media_url` da linha aponta para ele.
+    const messageId = randomUUID();
 
     // ⚠️ A miniatura e as dimensões são GERADAS e SUBIDAS pelo `putMedia`. Sem
     // gravá-las aqui, a bolha ignora o arquivo pequeno que acabou de ser pago e
     // serve o cheio — e a foto volta a remedir a linha ao carregar.
-    const mediaMeta: Record<string, string | number> = {
+    const mediaMeta = {
       ...(msgType === "document" ? { fileName } : {}),
-      ...(stored.thumbUrl ? { thumbUrl: stored.thumbUrl } : {}),
-      ...(stored.width && stored.height
-        ? { mediaWidth: stored.width, mediaHeight: stored.height }
-        : {}),
+      ...(storedMediaMetadata(messageId, stored) ?? {}),
     };
 
     // Citação: o provedor cita pelo id DELE (`external_id`), não pelo nosso.
@@ -135,6 +156,7 @@ export async function POST(request: Request, { params }: Params) {
     const { data: msg, error: msgErr } = await supabase
       .from("chat_messages")
       .insert({
+        id: messageId,
         conversation_id: id,
         direction: "outbound",
         sender_type: "agent",
@@ -144,7 +166,7 @@ export async function POST(request: Request, { params }: Params) {
         // passaria a rotular o anexo com o texto da legenda.
         content: caption || (msgType === "document" ? fileName : null),
         ...(Object.keys(mediaMeta).length > 0 ? { metadata: mediaMeta } : {}),
-        media_url: publicUrl,
+        ...storedMediaColumns(messageId, stored),
         media_mime_type: mime,
         quoted_message_id: quotedMessageId,
         delivery_status: "pending",
@@ -155,11 +177,11 @@ export async function POST(request: Request, { params }: Params) {
       .single();
     if (msgErr || !msg) throw msgErr ?? new Error("insert failed");
 
-    // 3) Envia via uazapi (file = URL pública).
+    // 3) Envia via uazapi (file = URL assinada).
     try {
       const result = await sendUazapiMedia(integration.apiUrl, integration.token, phone, {
         type: uazapiType,
-        file: publicUrl,
+        file: providerUrl,
         trackId: msg.id,
         replyId: quote.externalId,
         ...(caption ? { text: caption } : {}),

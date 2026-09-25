@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendUazapiAudio } from "@/features/chat/lib/senders/uazapi";
 import { putMedia } from "@/lib/storage/put-media";
+import { storedMediaColumns } from "@/features/chat/lib/media/stored-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
@@ -53,9 +56,11 @@ export async function POST(request: Request, { params }: Params) {
     const bytes = Buffer.from(audioBase64, "base64");
 
     // 1) Guarda para playback na nossa UI (o envio ao provedor usa base64).
-    //    `putMedia` reencoda o áudio para voz e escolhe R2 ou Supabase.
+    //    `putMedia` reencoda o áudio para voz. Falhando, o áudio sai mesmo
+    //    assim e a bolha fica sem player.
     const stored = await putMedia({ supabase, folder: "chat", body: bytes, mime });
-    const publicUrl = stored?.url ?? null;
+    // O id nasce aqui porque a `media_url` da linha aponta para ele.
+    const messageId = randomUUID();
 
     // Citação: o provedor cita pelo id DELE (`external_id`), não pelo nosso.
     const quote = await resolveQuotedExternalId(supabase, id, quotedMessageId);
@@ -69,13 +74,14 @@ export async function POST(request: Request, { params }: Params) {
     const { data: msg, error: msgErr } = await supabase
       .from("chat_messages")
       .insert({
+        id: messageId,
         quoted_message_id: quotedMessageId ?? null,
         conversation_id: id,
         direction: "outbound",
         sender_type: "agent",
         type: "audio",
         content: null,
-        media_url: publicUrl,
+        ...(stored ? storedMediaColumns(messageId, stored) : { media_url: null }),
         media_mime_type: mime,
         delivery_status: "pending",
         sent_by_user_id: auth.viewer.id,

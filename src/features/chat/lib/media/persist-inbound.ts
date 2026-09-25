@@ -1,11 +1,8 @@
 // Re-hospeda mídia recebida. As URLs de mídia da uazapi/WhatsApp
 // (mmg.whatsapp.net, ...) são assinadas e EXPIRAM — se só guardarmos a URL
 // original, o playback quebra depois. Aqui baixamos (com SSRF guard) e subimos
-// para o NOSSO armazenamento, devolvendo uma URL pública estável.
-//
-// Desde a migração, "nosso armazenamento" é o R2 quando ele está configurado, e
-// o Supabase Storage enquanto não estiver. Quem decide é `putMedia` — este
-// arquivo só cuida de baixar com segurança.
+// para o bucket privado `chat-media` via `putMedia` — este arquivo só cuida de
+// baixar com segurança.
 
 import { assertSafeUrl } from "@/features/chat/lib/connection/ssrf-guard";
 import { putMedia, type StoredMedia } from "@/lib/storage/put-media";
@@ -14,8 +11,9 @@ import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
 type Admin = ReturnType<typeof createSupabaseAdminClient>;
 
 /**
- * Baixa `mediaUrl` e re-hospeda. Devolve a URL nova (mais miniatura e dimensões
- * quando é imagem), ou `null` se falhar — o chamador mantém a URL original.
+ * Baixa `mediaUrl` e re-hospeda. Devolve onde o objeto ficou (mais miniatura e
+ * dimensões quando é imagem), ou `null` se falhar — o chamador mantém a URL
+ * original.
  *
  * Segurança: `redirect:"error"` (não seguimos 3xx — o guard só valida a URL
  * inicial, então seguir redirect burlaria o SSRF). O header `token` (credencial

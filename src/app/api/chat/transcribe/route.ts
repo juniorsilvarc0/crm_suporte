@@ -5,14 +5,17 @@ import {
 } from "@/features/settings/lib/get-runtime-environment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
+import { assertSafeUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import { CHAT_MEDIA_BUCKET } from "@/lib/storage/chat-media";
 
 type Body = { messageId: string };
 
 /**
  * Transcribes an audio message using OpenAI Whisper.
  * Works across providers by resolving the audio bytes from:
+ *  - o bucket privado `chat-media`, baixado pela service role
  *  - a data: URI stored in media_url
- *  - a public/accessible media URL (UazAPI, our own storage)
+ *  - a URL do provedor, quando a re-hospedagem falhou (com guard de SSRF)
  */
 export async function POST(request: Request) {
   const auth = await requireDashboardUser();
@@ -36,7 +39,9 @@ export async function POST(request: Request) {
 
     const { data: msg, error: msgErr } = await supabase
       .from("chat_messages")
-      .select("id, conversation_id, external_id, media_url, media_mime_type, metadata")
+      .select(
+        "id, conversation_id, external_id, media_url, media_mime_type, media_bucket, media_key, metadata"
+      )
       .eq("id", messageId)
       .single();
 
@@ -48,7 +53,7 @@ export async function POST(request: Request) {
     const cached = (msg.metadata as { transcription?: string })?.transcription;
     if (cached) return NextResponse.json({ transcription: cached });
 
-    const bytes = await resolveAudioBytes(msg);
+    const bytes = await resolveAudioBytes(supabase, msg);
     if (!bytes) {
       return NextResponse.json(
         { error: "Não foi possível obter o áudio para transcrição." },
@@ -100,9 +105,24 @@ export async function POST(request: Request) {
 type MsgRow = {
   media_url: string | null;
   media_mime_type: string | null;
+  media_bucket: string | null;
+  media_key: string | null;
 };
 
-async function resolveAudioBytes(msg: MsgRow): Promise<Buffer | null> {
+async function resolveAudioBytes(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  msg: MsgRow
+): Promise<Buffer | null> {
+  // 0. Bucket privado: `media_url` é a rota do app, que exige sessão.
+  if (msg.media_bucket === CHAT_MEDIA_BUCKET && msg.media_key) {
+    const { data, error } = await supabase.storage.from(CHAT_MEDIA_BUCKET).download(msg.media_key);
+    if (error || !data) {
+      console.error("[transcribe] download do bucket falhou:", error?.message);
+      return null;
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
   const url = msg.media_url;
 
   // 1. data: URI
@@ -111,10 +131,14 @@ async function resolveAudioBytes(msg: MsgRow): Promise<Buffer | null> {
     return Buffer.from(base64, "base64");
   }
 
-  // 2. Directly fetchable URL (our storage, UazAPI)
+  // 2. URL do provedor. Ela veio do payload do webhook: sem o guard, a rota
+  //    buscaria qualquer endereço da rede interna que chegasse ali.
   if (url && !url.endsWith(".enc")) {
     try {
-      const r = await fetch(url);
+      const r = await fetch(assertSafeUrl(url), {
+        redirect: "error",
+        signal: AbortSignal.timeout(20000),
+      });
       if (r.ok) return Buffer.from(await r.arrayBuffer());
     } catch {
       /* cai no retorno nulo abaixo */
