@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FollowupRowActions } from "@/features/followups/components/followup-row-actions";
 import { followupStatusLabel, getFollowupStepLabel } from "@/features/followups/schemas/status";
 import type { Followup } from "@/features/followups/types";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { formatDateTime } from "@/lib/formatters/date";
 import { formatPhone } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";

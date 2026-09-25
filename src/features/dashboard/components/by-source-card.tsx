@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { OverlayScrollArea } from "@/components/ui/overlay-scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { SourceRow } from "@/features/dashboard/types";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { formatNumber } from "@/lib/formatters/numbers";
 import { cn } from "@/lib/utils";
 

@@ -28,7 +28,7 @@ import {
   toStageType,
   type StageType,
 } from "@/features/board/schemas/stage";
-import { getColorStyle, isColorName, type ColorName } from "@/features/leads/schemas/colors";
+import { getColorStyle, isColorName, type ColorName } from "@/features/tags/schemas/colors";
 import type { Pipeline, PipelineStage } from "@/features/pipelines/types";
 import { cn } from "@/lib/utils";
 

@@ -32,7 +32,7 @@ import { formatMoney } from "@/lib/formatters/money";
 import { formatPhoneBR, normalizePhone } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";
 import type { ChatConversation } from "@/features/chat/types";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * Tela de informações do contato — **sheet lateral contido na conversa**.

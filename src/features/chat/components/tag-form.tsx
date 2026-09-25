@@ -5,7 +5,7 @@ import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
 
 import { ColorSwatchPicker } from "@/components/forms/color-swatch-picker";
 import { cn } from "@/lib/utils";
-import type { ColorName } from "@/features/leads/schemas/colors";
+import type { ColorName } from "@/features/tags/schemas/colors";
 
 /** Cor inicial de etiqueta nova — a mesma do editor de tags do lead. */
 export const DEFAULT_TAG_COLOR: ColorName = "violet";

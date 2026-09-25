@@ -21,7 +21,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { toAppDateKey } from "@/lib/formatters/date";
 import { formatPhone } from "@/lib/formatters/phone";
 import type { Database } from "@/lib/supabase/types";

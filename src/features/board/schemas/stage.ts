@@ -1,4 +1,4 @@
-import type { ColorName } from "@/features/leads/schemas/colors";
+import type { ColorName } from "@/features/tags/schemas/colors";
 
 export type StageType = "open" | "won" | "lost";
 

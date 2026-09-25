@@ -53,7 +53,7 @@ import {
   leadStatusOrder,
 } from "@/features/leads/schemas/status";
 import { getTipoEnsaioLabel } from "@/features/leads/schemas/status";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import type { Procedure } from "@/features/financeiro/lib/procedure-options";
 import {
   EMPTY_SALE_RANGE,

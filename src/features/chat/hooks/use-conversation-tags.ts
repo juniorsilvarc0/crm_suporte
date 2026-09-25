@@ -9,8 +9,8 @@ import {
   type ConversationTagPair,
   type TagsByConversation,
 } from "@/features/chat/lib/conversation-tags";
-import type { ColorName } from "@/features/leads/schemas/colors";
-import type { Tag } from "@/features/leads/types";
+import type { ColorName } from "@/features/tags/schemas/colors";
+import type { Tag } from "@/features/tags/types";
 
 type State = {
   tags: Tag[];

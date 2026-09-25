@@ -3,7 +3,7 @@ import {
   getColorStyle,
   type ColorName,
   type ColorStyle,
-} from "@/features/leads/schemas/colors";
+} from "@/features/tags/schemas/colors";
 
 // Etapas canônicas do funil do CRM (seed do board_columns).
 // As colunas são dinâmicas no banco; estes mapas são fallback de rótulo/cor.

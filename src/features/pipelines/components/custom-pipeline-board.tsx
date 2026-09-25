@@ -33,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PipelineCardDialog } from "@/features/pipelines/components/pipeline-card-dialog";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import type { PipelineStage } from "@/features/pipelines/types";
 import { formatDate, formatShortDate } from "@/lib/formatters/date";
 import { formatMoney } from "@/lib/formatters/money";

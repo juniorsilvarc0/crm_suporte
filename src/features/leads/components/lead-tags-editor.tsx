@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getColorStyle, type ColorName } from "@/features/leads/schemas/colors";
+import { getColorStyle, type ColorName } from "@/features/tags/schemas/colors";
 import type { Tag } from "@/features/leads/types";
 import { cn } from "@/lib/utils";
 

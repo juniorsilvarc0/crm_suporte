@@ -2,7 +2,7 @@ import { DollarSignIcon, RefreshCwIcon, TrendingUpIcon } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/data-display/empty-state";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import type { LtvSummary } from "@/features/dashboard/types";
 import { formatMoney } from "@/lib/formatters/money";
 import { formatNumber } from "@/lib/formatters/numbers";

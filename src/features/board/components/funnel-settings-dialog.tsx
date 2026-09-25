@@ -48,7 +48,7 @@ import {
   toStageType,
   type StageType,
 } from "@/features/board/schemas/stage";
-import { getColorStyle, type ColorName } from "@/features/leads/schemas/colors";
+import { getColorStyle, type ColorName } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
 
 type StagePayload = {

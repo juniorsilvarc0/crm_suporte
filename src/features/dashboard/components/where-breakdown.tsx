@@ -3,7 +3,7 @@ import { ClockIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/data-display/empty-state";
 import type { WhereBreakdown as WhereBreakdownData } from "@/features/dashboard/types";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { formatNumber } from "@/lib/formatters/numbers";
 import { formatPercentage, ratioPercentage } from "@/lib/formatters/percentage";
 import { cn } from "@/lib/utils";

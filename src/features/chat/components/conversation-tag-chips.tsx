@@ -1,8 +1,8 @@
 import { memo } from "react";
 
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * Etiquetas na linha da conversa.

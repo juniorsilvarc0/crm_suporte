@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { ConversationFilters } from "@/features/chat/components/conversation-filters";
 import { EMPTY_FILTERS, type ChatFilters } from "@/features/chat/lib/chat-filters";
 import type { ChatStageOption } from "@/features/chat/types";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * ⚠️ Este arquivo existe por causa de um defeito real: `DropdownMenuLabel` é o

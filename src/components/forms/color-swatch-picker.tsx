@@ -2,7 +2,7 @@
 
 import { CheckIcon } from "lucide-react";
 
-import { BOARD_COLOR_NAMES, colorStyle, type ColorName } from "@/features/leads/schemas/colors";
+import { BOARD_COLOR_NAMES, colorStyle, type ColorName } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
 
 export function ColorSwatchPicker({

@@ -6,9 +6,9 @@ import { toast } from "sonner";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { TagForm } from "@/features/chat/components/tag-form";
-import { getColorStyle, type ColorName } from "@/features/leads/schemas/colors";
+import { getColorStyle, type ColorName } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * Etiquetar UMA conversa: marcar, desmarcar e criar na hora.

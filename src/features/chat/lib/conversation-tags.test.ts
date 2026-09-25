@@ -7,7 +7,7 @@ import {
   mergeTagAssignment,
   removeTagEverywhere,
 } from "@/features/chat/lib/conversation-tags";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 const tag = (id: string, name: string): Tag => ({
   id,

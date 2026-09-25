@@ -18,9 +18,9 @@ import {
   toggleFilterValue,
   type ChatFilters,
 } from "@/features/chat/lib/chat-filters";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 import type { ChatStageOption, StatusFilter } from "@/features/chat/types";
 
 /**

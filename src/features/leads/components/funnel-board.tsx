@@ -64,7 +64,7 @@ import {
 import type { LeadSale } from "@/features/financeiro/types";
 import { FunnelSettingsDialog } from "@/features/board/components/funnel-settings-dialog";
 import { useFunnelView } from "@/features/board/lib/funnel-view";
-import { getColorStyle } from "@/features/leads/schemas/colors";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import {
   getLeadSourceLabel,
   getLeadStatusLabel,

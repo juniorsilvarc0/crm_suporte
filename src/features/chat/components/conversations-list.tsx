@@ -36,7 +36,7 @@ import {
 } from "@/features/chat/lib/conversation-scroll";
 import type { ChatConversation, ChatStageOption } from "@/features/chat/types";
 import type { SwipeSide } from "@/features/chat/lib/conversation-swipe";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 type ConversationsListProps = {
   conversations: ChatConversation[];

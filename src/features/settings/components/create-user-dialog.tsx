@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSelect } from "@/components/forms/form-select";
 import { ColorSwatchPicker } from "@/components/forms/color-swatch-picker";
-import type { ColorName } from "@/features/leads/schemas/colors";
+import type { ColorName } from "@/features/tags/schemas/colors";
 import {
   appUserRoleOptions,
   isAppUserRole,

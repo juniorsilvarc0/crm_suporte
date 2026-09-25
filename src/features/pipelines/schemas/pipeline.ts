@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isColorName, type ColorName } from "@/features/leads/schemas/colors";
+import { isColorName, type ColorName } from "@/features/tags/schemas/colors";
 import { localDateTimeToIso } from "@/lib/formatters/date";
 
 /*
