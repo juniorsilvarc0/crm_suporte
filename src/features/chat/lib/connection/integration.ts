@@ -59,6 +59,29 @@ export async function setChatIntegrationSecret(
   if (error) throw error;
 }
 
+/**
+ * Devolve o segredo que já existe; se não existe, grava `candidate`. Atômico no
+ * banco (trava da linha): duas conexões simultâneas recebem o MESMO valor.
+ * Use o valor devolvido, nunca o candidato — é ele que está no Vault.
+ */
+export async function ensureChatIntegrationSecret(
+  supabase: Admin,
+  integrationId: string,
+  kind: ChatIntegrationSecretKind,
+  candidate: string
+): Promise<string> {
+  const { data, error } = await supabase.rpc("ensure_chat_integration_secret", {
+    p_integration_id: integrationId,
+    p_kind: kind,
+    p_candidate: candidate,
+  });
+  if (error) throw error;
+  if (typeof data !== "string" || data.length === 0) {
+    throw new Error("ensure_chat_integration_secret sem valor");
+  }
+  return data;
+}
+
 async function withToken(
   supabase: Admin,
   row: IntegrationRow | null

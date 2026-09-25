@@ -8,7 +8,7 @@ const {
   webhookMock,
   adminClientMock,
   fromMock,
-  getSecretMock,
+  ensureSecretMock,
   setSecretMock,
 } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(),
@@ -16,7 +16,8 @@ const {
   webhookMock: vi.fn(async () => {}),
   fromMock: vi.fn(),
   adminClientMock: vi.fn(),
-  getSecretMock: vi.fn(),
+  // Como a RPC: devolve o existente ou o candidato.
+  ensureSecretMock: vi.fn<(s: unknown, id: string, kind: string, candidate: string) => Promise<string>>(),
   setSecretMock: vi.fn<(supabase: unknown, id: string, kind: string, value: string) => Promise<void>>(
     async () => {}
   ),
@@ -37,7 +38,7 @@ vi.mock("@/features/chat/lib/connection/uazapi", () => ({
   registerUazapiWebhook: webhookMock,
 }));
 vi.mock("@/features/chat/lib/connection/integration", () => ({
-  getChatIntegrationSecret: getSecretMock,
+  ensureChatIntegrationSecret: ensureSecretMock,
   setChatIntegrationSecret: setSecretMock,
 }));
 
@@ -59,7 +60,7 @@ beforeEach(() => {
   existing = null;
   requireAdminMock.mockResolvedValue({ viewer: { id: "u1" } });
   statusMock.mockResolvedValue({ connected: false, state: "connecting", owner: null });
-  getSecretMock.mockResolvedValue(null);
+  ensureSecretMock.mockImplementation(async (_s, _id, _kind, candidate) => candidate);
 
   const maybeSingle = vi.fn(async () => ({ data: existing, error: null }));
   const select = vi.fn(() => ({ eq: () => ({ maybeSingle }) }));
@@ -106,28 +107,30 @@ describe("POST /api/connection/persist", () => {
     expect(setSecretMock).toHaveBeenCalledWith(expect.anything(), "int-1", "token", "token-abc-123");
   });
 
-  it("gera o segredo do webhook na primeira conexão e o usa na URL", async () => {
+  it("propõe um segredo de 32 bytes e registra o que o banco devolveu", async () => {
     await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
 
-    const generated = setSecretMock.mock.calls.find((call) => call[2] === "webhook_secret");
-    expect(generated?.[3]).toMatch(/^[0-9a-f]{64}$/);
+    const [, id, kind, candidate] = ensureSecretMock.mock.calls[0];
+    expect([id, kind]).toEqual(["int-1", "webhook_secret"]);
+    expect(candidate).toMatch(/^[0-9a-f]{64}$/);
     expect(webhookMock).toHaveBeenCalledWith(
       "https://ok.uazapi.com",
       "token-abc-123",
-      `http://x/api/chat/webhook/uazapi?s=${generated?.[3]}`
+      `http://x/api/chat/webhook/uazapi?s=${candidate}`
     );
   });
 
-  it("reconectar mantém o segredo do webhook que já existe", async () => {
+  it("registra o segredo EFETIVO, não o candidato local (conexão simultânea ou reconexão)", async () => {
     existing = { id: "int-1" };
-    getSecretMock.mockResolvedValue("segredo-que-ja-existia");
+    ensureSecretMock.mockResolvedValue("segredo-que-ja-existia");
 
     await POST(req({ apiUrl: "https://ok.uazapi.com", token: "token-abc-123" }));
 
     expect(insert).not.toHaveBeenCalled();
+    // O segredo do webhook não é gravado por fora do "cria se ausente".
     expect(setSecretMock).not.toHaveBeenCalledWith(
       expect.anything(),
-      "int-1",
+      expect.anything(),
       "webhook_secret",
       expect.anything()
     );

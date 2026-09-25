@@ -11,7 +11,7 @@ import {
 } from "@/features/chat/lib/connection/uazapi";
 import { safeBaseUrl } from "@/features/chat/lib/connection/ssrf-guard";
 import {
-  getChatIntegrationSecret,
+  ensureChatIntegrationSecret,
   setChatIntegrationSecret,
 } from "@/features/chat/lib/connection/integration";
 
@@ -119,14 +119,18 @@ export async function POST(request: Request) {
 
   // Segredo do webhook: gerado na primeira conexão e mantido nas seguintes,
   // para reconectar não invalidar um webhook já registrado. Trocar o segredo
-  // é rotação, decisão explícita (menu Conexão, Fase 5).
+  // é rotação, decisão explícita (menu Conexão, Fase 5). "Cria se ausente" é
+  // atômico no banco: duas conexões simultâneas registram o MESMO segredo que
+  // ficou no Vault — gerar e gravar aqui em passos separados deixaria a uazapi
+  // com um e o Vault com outro, e todo webhook em 401.
   let secret: string;
   try {
-    const current = await getChatIntegrationSecret(supabase, integrationId, "webhook_secret");
-    secret = current ?? randomBytes(32).toString("hex");
-    if (!current) {
-      await setChatIntegrationSecret(supabase, integrationId, "webhook_secret", secret);
-    }
+    secret = await ensureChatIntegrationSecret(
+      supabase,
+      integrationId,
+      "webhook_secret",
+      randomBytes(32).toString("hex")
+    );
   } catch (error) {
     console.error("[connection/persist] segredo do webhook falhou:", error);
     return NextResponse.json(
