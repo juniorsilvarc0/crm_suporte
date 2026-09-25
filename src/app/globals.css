@@ -1,0 +1,772 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* ⚠️ Markdown fora da varredura do Tailwind.
+ *
+ * O v4 procura candidatos a classe em TODO arquivo de texto do projeto, não só
+ * em código. Os nossos docs citam nomes de classe o tempo todo — e uma citação
+ * como `pb-[env(...)]`, com reticências literais, virava a regra
+ * `.pb-\[env\(\.\.\.\)\] { padding-bottom: env(...) }`, que é CSS inválido.
+ *
+ * No `next build` isso saía como warning do lightningcss e passava batido; no
+ * `pnpm dev` o Turbopack trata como erro fatal e a aplicação nem abre
+ * ("Parsing CSS source code failed"). Documentar uma classe não pode quebrar o
+ * build — e o PROGRESS.md é append-only, então corrigir as citações antigas
+ * está fora de questão. */
+@source not "../../**/*.md";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-outfit);
+  --font-heading: var(--font-outfit);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: light;
+  /* Altura da barra de navegação do celular.
+     Vive num token porque cinco telas de altura cheia (chat, funil, agenda e o
+     skeleton dela, mais o banner de instalar o PWA) precisam descontar
+     exatamente este valor. Enquanto era `4rem` escrito à mão em cada uma,
+     mudar a barra significava caçar cinco `calc()` e torcer para não faltar um. */
+  --mobile-nav-height: 3.5rem;
+  /* Casca 3.0 — a barra superior FLUTUA: além da própria altura ela reserva a
+     folga de cada lado. Telas de altura cheia (chat, funil, agenda e seus
+     skeletons) descontam `--app-chrome-top`; nunca escreva a altura à mão. */
+  --app-bar-height: 3.5rem;
+  --app-chrome-top: calc(var(--app-bar-height) + 1rem);
+  /* Tema da marca: branco principal + azul-petróleo da marca (hue ~235,
+     #1d658e) com apoio em teal (hue ~199, #27a9ae) */
+  --background: oklch(0.99 0.004 235);
+  --foreground: oklch(0.21 0.025 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.025 240);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.025 240);
+  --primary: oklch(0.50 0.10 236);
+  --primary-foreground: oklch(0.99 0.005 235);
+  --secondary: oklch(0.95 0.020 225);
+  --secondary-foreground: oklch(0.32 0.06 236);
+  --muted: oklch(0.96 0.010 235);
+  --muted-foreground: oklch(0.47 0.025 240);
+  --accent: oklch(0.93 0.035 199);
+  --accent-foreground: oklch(0.35 0.08 199);
+  --destructive: oklch(0.55 0.21 27);
+  --border: oklch(0.91 0.010 235);
+  --input: oklch(0.91 0.010 235);
+  --ring: oklch(0.50 0.10 236);
+  --chart-1: oklch(0.50 0.10 236);
+  --chart-2: oklch(0.67 0.11 199);
+  --chart-3: oklch(0.58 0.10 225);
+  --chart-4: oklch(0.72 0.08 210);
+  --chart-5: oklch(0.42 0.08 245);
+  /* Casca 3.0: raio base generoso — painéis flutuantes e controles bem
+     arredondados (a escala --radius-sm..4xl deriva daqui). */
+  --radius: 1.1rem;
+  /* Sidebar branco com destaques em azul (consistente com o resto) */
+  --sidebar: oklch(0.99 0.005 235);
+  --sidebar-foreground: oklch(0.40 0.025 240);
+  --sidebar-primary: oklch(0.50 0.10 236);
+  --sidebar-primary-foreground: oklch(0.99 0.005 235);
+  --sidebar-accent: oklch(0.93 0.035 199);
+  --sidebar-accent-foreground: oklch(0.35 0.08 199);
+  --sidebar-border: oklch(0.91 0.010 235);
+  --sidebar-ring: oklch(0.50 0.10 236);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.16 0.012 240);
+  --foreground: oklch(0.96 0.005 235);
+  --card: oklch(0.20 0.015 240);
+  --card-foreground: oklch(0.96 0.005 235);
+  --popover: oklch(0.20 0.015 240);
+  --popover-foreground: oklch(0.96 0.005 235);
+  --primary: oklch(0.62 0.10 225);
+  --primary-foreground: oklch(0.99 0.005 235);
+  --secondary: oklch(0.27 0.020 240);
+  --secondary-foreground: oklch(0.95 0.005 235);
+  --muted: oklch(0.27 0.020 240);
+  --muted-foreground: oklch(0.72 0.018 235);
+  --accent: oklch(0.32 0.045 199);
+  --accent-foreground: oklch(0.98 0.005 235);
+  --destructive: oklch(0.62 0.22 27);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.62 0.10 225);
+  --chart-1: oklch(0.62 0.10 225);
+  --chart-2: oklch(0.70 0.11 199);
+  --chart-3: oklch(0.55 0.10 240);
+  --chart-4: oklch(0.78 0.08 210);
+  --chart-5: oklch(0.48 0.08 250);
+  --sidebar: oklch(0.13 0.012 240);
+  --sidebar-foreground: oklch(0.85 0.008 235);
+  --sidebar-primary: oklch(0.62 0.10 225);
+  --sidebar-primary-foreground: oklch(0.99 0.005 235);
+  --sidebar-accent: oklch(0.26 0.025 240);
+  --sidebar-accent-foreground: oklch(0.98 0.005 235);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.62 0.10 225);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* ÁGUA — o fundo da aplicação.
+       Quatro manchas de luz (petróleo, ciano, turquesa e um sopro de verde-água)
+       sobre branco. É o que os painéis brancos flutuam por cima: sem isto, a
+       casca vira um app cinza qualquer. Fixo para não "rolar" com o conteúdo. */
+    background-image:
+      radial-gradient(60rem 44rem at -6% -10%, oklch(0.62 0.13 236 / 26%), transparent 60%),
+      radial-gradient(52rem 40rem at 104% 4%, oklch(0.74 0.12 196 / 24%), transparent 58%),
+      radial-gradient(56rem 46rem at 88% 96%, oklch(0.7 0.13 214 / 20%), transparent 60%),
+      radial-gradient(44rem 38rem at 18% 104%, oklch(0.8 0.1 174 / 18%), transparent 58%);
+    background-attachment: fixed;
+  }
+  .dark body {
+    background-image:
+      radial-gradient(60rem 44rem at -6% -10%, oklch(0.55 0.12 236 / 30%), transparent 60%),
+      radial-gradient(52rem 40rem at 104% 4%, oklch(0.6 0.11 196 / 22%), transparent 58%),
+      radial-gradient(56rem 46rem at 88% 96%, oklch(0.5 0.12 214 / 26%), transparent 60%),
+      radial-gradient(44rem 38rem at 18% 104%, oklch(0.55 0.09 174 / 18%), transparent 58%);
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Gradiente da marca (azul-petróleo → azul → teal). Fundo de ações primárias,
+   item ativo da navegação e destaques. Texto por cima: --primary-foreground.
+   ⚠️ Contraste: todos os stops têm L ≤ 0.54 de propósito — com --primary-foreground
+   (L 0.99), o pior ponto do gradiente fica ≥ 4,5:1 (WCAG AA para texto pequeno).
+   Clarear o stop final quebra a aba ativa da agenda e o botão primário. */
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, oklch(0.46 0.1 240), oklch(0.52 0.105 228) 55%, oklch(0.54 0.105 204));
+}
+
+/* Sombra de flutuação tingida pela marca — superfícies principais "soltas" do
+   fundo. Sombras fortes continuam exclusivas de overlay (popover/dialog). */
+@utility shadow-soft {
+  box-shadow:
+    0 16px 40px -20px oklch(0.5 0.1 236 / 35%),
+    0 4px 12px -6px oklch(0.5 0.1 236 / 12%);
+}
+
+/* Versão maior do shadow-soft, para os cartões de autenticação (login /
+   definir senha). No tema escuro combine com um dark:shadow-* neutro. */
+@utility shadow-soft-lg {
+  box-shadow:
+    0 24px 80px -24px oklch(0.5 0.1 236 / 40%),
+    0 6px 20px -8px oklch(0.5 0.1 236 / 14%);
+}
+
+/* ── Casca 3.0 ────────────────────────────────────────────────────────────
+   A barra de navegação é o elemento de assinatura do app: uma faixa flutuante
+   em gradiente da marca, sobre o wash. Vai do petróleo profundo ao turquesa —
+   os mesmos três tons do símbolo da logomarca, na mesma ordem. */
+@utility bg-brand-bar {
+  background-image: linear-gradient(
+    100deg,
+    oklch(0.36 0.085 245),
+    oklch(0.45 0.1 236) 34%,
+    oklch(0.47 0.1 214) 66%,
+    oklch(0.50 0.1 196)
+  );
+}
+
+/* Painel de conteúdo flutuante: a superfície branca que carrega cada tela.
+   Sombra difusa e ampla, tingida de azul — o painel paira sobre a água. */
+@utility panel-float {
+  background-color: var(--card);
+  border-radius: var(--radius-xl);
+  box-shadow:
+    0 1px 0 0 oklch(1 0 0 / 60%) inset,
+    0 20px 60px -28px oklch(0.45 0.1 236 / 42%),
+    0 4px 16px -8px oklch(0.45 0.1 236 / 14%);
+  border: 1px solid oklch(0.5 0.06 225 / 10%);
+}
+.dark .panel-float,
+.dark [class~="panel-float"] {
+  box-shadow:
+    0 20px 60px -28px oklch(0 0 0 / 60%),
+    0 4px 16px -8px oklch(0 0 0 / 40%);
+  border-color: oklch(1 0 0 / 10%);
+}
+
+/* Superfície de vidro — barras internas e chips sobre o painel ou sobre a água. */
+@utility glass {
+  background-color: oklch(1 0 0 / 72%);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+.dark .glass {
+  background-color: oklch(0.22 0.02 240 / 72%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+.reactEasyCrop_Container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.reactEasyCrop_Image,
+.reactEasyCrop_Video {
+  will-change: transform;
+}
+
+.reactEasyCrop_Contain {
+  position: absolute;
+  inset: 0;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+}
+
+.reactEasyCrop_Cover_Horizontal {
+  width: 100%;
+  height: auto;
+}
+
+.reactEasyCrop_Cover_Vertical {
+  width: auto;
+  height: 100%;
+}
+
+.reactEasyCrop_CropArea {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: rgb(0 0 0 / 50%);
+  border: 1px solid rgb(255 255 255 / 50%);
+  box-shadow: 0 0 0 9999em;
+  transform: translate(-50%, -50%);
+}
+
+.reactEasyCrop_CropAreaGrid::before,
+.reactEasyCrop_CropAreaGrid::after {
+  position: absolute;
+  box-sizing: border-box;
+  content: " ";
+  border: 1px solid rgb(255 255 255 / 50%);
+}
+
+.reactEasyCrop_CropAreaGrid::before {
+  inset: 0 33.33%;
+  border-top: 0;
+  border-bottom: 0;
+}
+
+.reactEasyCrop_CropAreaGrid::after {
+  inset: 33.33% 0;
+  border-right: 0;
+  border-left: 0;
+}
+
+/* Conversa aberta no celular: overlay próprio, sem mutar a casca do app.
+
+   A lista, o cabeçalho e a navegação permanecem montados e com sua geometria
+   estável atrás da conversa. Isso evita que a transição de padding da casca
+   seja reproduzida ao voltar e impede medidas residuais do teclado de vazarem
+   para a lista.
+
+   A camada externa pinta também a extensão inferior da área segura. A interna
+   acompanha a viewport visual somente quando `useViewportHeight` confirma um
+   teclado real; no estado normal, `100dvh` continua sendo a fonte da verdade. */
+@media (width < 64rem) {
+  .chat-mobile-overlay {
+    position: fixed;
+    z-index: 40;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: calc(100dvh + env(safe-area-inset-bottom));
+    width: 100%;
+    background-color: var(--wa-panel);
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .chat-mobile-viewport {
+    position: relative;
+    top: var(--chat-vtop, 0px);
+    flex: none;
+    width: 100%;
+    height: var(--chat-vh, 100dvh);
+    background-color: var(--wa-panel);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: var(--chat-safe-bottom, env(safe-area-inset-bottom));
+  }
+}
+
+/* ─── WhatsApp-style live chat surface ─────────────────────────────── */
+.wa-surface {
+  /* ⚠️ O chat NÃO acompanha o raio do app.
+     A casca 3.0 subiu `--radius` para 1.1rem; num mensageiro isso vira menu de
+     canto redondo demais ao lado de bolhas de 7,5px. As utilities do Tailwind
+     leem `var(--radius)` no momento do uso, então redeclarar aqui devolve a
+     geometria do WhatsApp para tudo que vive dentro desta superfície — sem
+     tocar em componente nenhum. Popup portalizado fica FORA daqui: esse leva
+     raio literal (ver §5.7 do UI.md). */
+  --radius: 0.5rem;
+  --wa-bg: #efeae2;
+  --wa-panel: #f0f2f5;
+  --wa-panel-border: #e9edef;
+  --wa-out: #d9fdd3;
+  --wa-out-text: #111b21;
+  --wa-in: #ffffff;
+  --wa-in-text: #111b21;
+  --wa-meta: #667781;
+  --wa-tick: #53bdeb;
+  --wa-green: #25d366;
+  --wa-green-deep: #008069;
+  --wa-preview-bg: #ffffff;
+  --wa-preview-fg: #111b21;
+  /* Círculo do avatar sem foto — o mesmo cinza do WhatsApp Web. */
+  --wa-avatar-bg: #dfe5e7;
+  --wa-avatar-fg: #8696a0;
+  /* Tela de informações do contato — lista agrupada do iOS. O fundo da página e
+     o fundo do grupo são superfícies DIFERENTES de propósito: é o degrau entre
+     as duas que desenha o cartão. Igualar as duas apaga a estrutura da tela e
+     obriga a devolver borda em tudo, que não é o padrão da referência. */
+  --wa-info-bg: #f0f2f5;
+  --wa-info-card: #ffffff;
+  --wa-info-divider: rgb(17 27 33 / 9%);
+  --wa-info-label: #667781;
+  --wa-info-active: rgb(17 27 33 / 6%);
+  /* O menu contextual acompanha o tema, como as superfícies do WhatsApp.
+     `-bg` é o material translúcido (só vale com `backdrop-filter`); `-bg-solid`
+     é a queda para navegador sem suporte, onde translucidez viraria texto
+     ilegível sobre a conversa. */
+  --wa-context-bg: rgb(255 255 255 / 76%);
+  --wa-context-bg-solid: rgb(252 252 253 / 97%);
+  --wa-context-fg: #111b21;
+  --wa-context-divider: rgb(17 27 33 / 12%);
+  --wa-context-danger: #d70015;
+  --wa-context-border: rgb(17 27 33 / 10%);
+  --wa-context-active: rgb(17 27 33 / 7%);
+  --wa-context-focus: rgb(17 27 33 / 24%);
+  --wa-context-shadow: 0 18px 48px rgb(11 20 26 / 22%);
+}
+.dark .wa-surface {
+  --wa-bg: #0b141a;
+  --wa-panel: #202c33;
+  --wa-panel-border: rgb(255 255 255 / 8%);
+  --wa-out: #005c4b;
+  --wa-out-text: #e9edef;
+  --wa-in: #202c33;
+  --wa-in-text: #e9edef;
+  --wa-meta: #8696a0;
+  --wa-tick: #53bdeb;
+  --wa-green: #00a884;
+  --wa-green-deep: #00a884;
+  --wa-preview-bg: #0b141a;
+  --wa-preview-fg: #e9edef;
+  --wa-avatar-bg: #3b4a54;
+  --wa-avatar-fg: #cfd6da;
+  --wa-info-bg: #0b141a;
+  --wa-info-card: #182229;
+  --wa-info-divider: rgb(255 255 255 / 8%);
+  --wa-info-label: #8696a0;
+  --wa-info-active: rgb(255 255 255 / 6%);
+  --wa-context-bg: rgb(30 30 33 / 76%);
+  --wa-context-bg-solid: rgb(28 28 31 / 97%);
+  --wa-context-fg: #f5f5f7;
+  --wa-context-divider: rgb(255 255 255 / 12%);
+  /* Mais claro que o `#ff6482` de antes por causa da translucidez: o pior caso
+     é o menu abrir sobre uma FOTO CLARA, quando o material deixa o fundo subir
+     e o vermelho antigo caía para ~3,5:1 — abaixo do AA para texto de 16,5px.
+     Neste tom o pior caso dá 4,65:1, e o caso comum (fundo escuro), 12:1. */
+  --wa-context-danger: #ff7a90;
+  --wa-context-border: rgb(255 255 255 / 10%);
+  --wa-context-active: rgb(255 255 255 / 8%);
+  --wa-context-focus: rgb(255 255 255 / 35%);
+  --wa-context-shadow: 0 18px 48px rgb(0 0 0 / 34%);
+}
+
+/* Tiled doodle pattern reminiscent of WhatsApp's chat backdrop */
+/* Fundo do painel de mensagens: o padrão de doodles do WhatsApp, ladrilhado.
+   Vai no container que NÃO rola — com um ladrilho de 785px, deixar no elemento
+   de scroll faria o desenho deslizar junto com as mensagens. */
+.wa-doodle {
+  background-color: var(--wa-bg);
+  background-image: url("/chat/conversation-canvas-light.webp");
+  background-position: center;
+  background-repeat: repeat;
+}
+.dark .wa-doodle {
+  background-image: url("/chat/conversation-canvas-dark.webp");
+}
+
+/* O sheet vive dentro do conteúdo da conversa. A área segura pertence ao pai,
+   então ele acompanha a mesma cor para não deixar uma faixa diferente no PWA. */
+.chat-page:has([data-chat-sheet]) {
+  background-color: var(--wa-preview-bg);
+}
+/* A tela de dados do contato tem superfície própria (lista agrupada do iOS).
+   Mesma especificidade da regra acima — quem vence é a ordem, então esta fica
+   DEPOIS de propósito. Sem ela, a área segura do PWA no tema claro ficaria
+   branca embaixo de um painel cinza. */
+.chat-page:has([data-chat-sheet="info"]) {
+  background-color: var(--wa-info-bg);
+}
+
+/* Message bubble tails */
+.wa-bubble-out::before,
+.wa-bubble-in::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 13px;
+}
+.wa-bubble-out::before {
+  right: -8px;
+  background: var(--wa-out);
+  clip-path: polygon(0 0, 0 100%, 100% 0);
+}
+.wa-bubble-in::before {
+  left: -8px;
+  background: var(--wa-in);
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+}
+
+/* ⚠️ NÃO devolva `content-visibility: auto` para as linhas do chat.
+   Ver o anti-padrão em UI.md §9, "Adiar renderização de linha em lista rolável".
+
+   As duas listas (mensagens e conversas) já tiveram `content-visibility: auto`
+   + `contain-intrinsic-size`. Economizava layout inicial e destruía a rolagem no
+   iPhone: o conteúdo fora da tela não é renderizado, então cada linha que entra
+   precisa de layout e pintura NAQUELE quadro. Numa rolagem rápida o aparelho não
+   dá conta e a pessoa vê a linha em branco se preenchendo depois — a queixa
+   literal foi "vai quebrando e carregando; quando carrega, fica normal".
+
+   E o WebKit não tem scroll anchoring (chegou só no Safari 27 beta), então toda
+   correção de altura acima da viewport vira solavanco, sem a compensação que
+   Chrome e Firefox fazem sozinhos.
+
+   A troca certa é a inversa da que estava aqui: pagar o layout uma vez, na
+   abertura, e deixar a rolagem ser só composição. Rolagem é gesto contínuo, e o
+   dedo denuncia qualquer quadro perdido; abertura é evento único, onde um
+   atraso da mesma ordem passa despercebido. */
+
+/* Barra de progresso indeterminada. Nasceu na tela de envio de anexo — o upload
+   não reporta porcentagem, então a barra comunica "está acontecendo" sem
+   prometer um número que ninguém mediu — e hoje também move a faixa de
+   navegação da agenda (`agenda-nav-progress.tsx`).
+   ⚠️ O bloco global de movimento reduzido, no topo deste arquivo, zera duração e
+   repetição: quem consome esta animação precisa de um estado parado próprio,
+   senão a faixa some. Ver o `motion-reduce:` em AgendaNavProgress. */
+@keyframes wa-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+/* Pisca a mensagem original ao clicar numa citação — sem isso o scroll leva
+   até lá e o olho não acha qual das bolhas é. */
+.wa-quoted-flash {
+  animation: wa-quoted-flash 1.2s ease-out;
+}
+@keyframes wa-quoted-flash {
+  0%,
+  60% {
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+    border-radius: var(--radius-md);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wa-quoted-flash {
+    animation-duration: 0.01ms;
+  }
+}
+
+/* ─── Menu contextual mobile do chat ────────────────────────────────
+   O backdrop embaça uma vez só. Antes, overlay + popup acumulavam blur e o
+   painel (uma div comum) esperava por um `data-open` que nunca existia. O
+   estado agora vem do próprio Popup do Base UI e preserva também a saída. */
+.wa-context-overlay {
+  background: rgb(11 20 26 / 28%) !important;
+  backdrop-filter: blur(10px) saturate(0.78);
+}
+.dark .wa-context-overlay {
+  background: rgb(0 0 0 / 46%) !important;
+}
+
+/* ⚠️ O toque longo do iOS dispara SELEÇÃO DE TEXTO, e `preventDefault` no
+   `contextmenu` não cobre isso: o WebKit ainda pinta as alças azuis e sobe a
+   barra nativa ("Copiar · Pesquisar · Traduzir") POR CIMA do menu. Sem estas
+   duas linhas, segurar a mensagem abria o nosso menu e a seleção do sistema ao
+   mesmo tempo, e a barra do iOS ficava na frente.
+
+   Vale para o painel e para a bolha clonada porque nenhum dos dois é texto
+   para copiar — a bolha ali é uma cópia decorativa, e item de menu ninguém
+   seleciona. O texto da mensagem DE VERDADE continua selecionável (ver
+   `.wa-bubble-touch` abaixo). */
+.wa-context-panel,
+.wa-context-message {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Material do menu, no lugar de cor quase sólida.
+   O painel estava em 94%/92% de opacidade — na prática, opaco. O iOS deixa o
+   fundo atravessar de verdade, com blur forte e saturação alta; é isso que faz
+   parecer vidro em vez de retângulo pintado.
+
+   Fora de `@supports`, a cor volta a ser quase sólida: sem `backdrop-filter` o
+   painel translúcido vira texto ilegível sobre a conversa. Mesmo cuidado que a
+   gaveta já toma. */
+.wa-context-panel {
+  background-color: var(--wa-context-bg-solid);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .wa-context-panel {
+    background-color: var(--wa-context-bg);
+    -webkit-backdrop-filter: blur(30px) saturate(1.7);
+    backdrop-filter: blur(30px) saturate(1.7);
+  }
+}
+
+/* Na bolha real a seleção só morre onde o toque é o ponteiro primário: no
+   desktop, selecionar um trecho da mensagem para copiar é uso legítimo e tirar
+   isso seria regressão. `pointer: coarse` separa os dois sem checar navegador. */
+@media (hover: none) and (pointer: coarse) {
+  .wa-bubble-touch {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+.wa-context-message-clipped {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+.wa-context-overlay[data-open] {
+  animation: wa-context-overlay-in 220ms ease-out both !important;
+}
+.wa-context-overlay[data-closed] {
+  animation: wa-context-overlay-out 170ms ease-in both !important;
+}
+.wa-context-dialog[data-open] {
+  animation: wa-context-dialog-in 180ms ease-out both !important;
+}
+.wa-context-dialog[data-closed] {
+  animation: wa-context-dialog-out 170ms ease-in both !important;
+}
+.wa-context-dialog[data-open] .wa-context-message {
+  animation: wa-context-message-in 240ms cubic-bezier(0.2, 0.82, 0.2, 1) both;
+}
+.wa-context-dialog[data-open] .wa-context-panel {
+  animation: wa-context-panel-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.wa-context-dialog[data-open] .wa-context-action {
+  animation: wa-context-action-in 180ms ease-out both;
+}
+.wa-context-dialog[data-closed] .wa-context-message {
+  animation: wa-context-message-out 150ms ease-in both;
+}
+.wa-context-dialog[data-closed] .wa-context-panel {
+  animation: wa-context-panel-out 150ms ease-in both;
+}
+.wa-context-dialog[data-closed] .wa-context-action {
+  animation: none;
+  animation-delay: 0ms !important;
+}
+
+@keyframes wa-context-overlay-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0) saturate(1);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(10px) saturate(0.78);
+  }
+}
+@keyframes wa-context-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes wa-context-dialog-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes wa-context-dialog-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes wa-context-message-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes wa-context-message-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@keyframes wa-context-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.92);
+  }
+  68% { opacity: 1; }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes wa-context-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.96);
+  }
+}
+@keyframes wa-context-action-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Custom scrollbars (design-system aware) ──────────────────────── */
+:root {
+  /* Derived from the muted-foreground neutral (hue 300) */
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: oklch(0.47 0.03 300 / 0.3);
+  --scrollbar-thumb-hover: oklch(0.47 0.03 300 / 0.5);
+}
+.dark {
+  --scrollbar-thumb: oklch(1 0 0 / 0.16);
+  --scrollbar-thumb-hover: oklch(1 0 0 / 0.32);
+}
+
+/* WebKit / Blink — Chrome, Edge, Brave, Safari */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  transition: background-color 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox only — scoped so it never overrides the WebKit pill above */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+
+/* Opt-out helper for surfaces that should hide the scrollbar entirely */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::-webkit-scrollbar-thumb {
+    transition: none;
+  }
+}

@@ -1,0 +1,31 @@
+# Dependências
+node_modules
+.pnpm-store/
+
+# Build Next.js
+.next
+out
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Ambiente / segredos (NUNCA versionar) — só os *.example são versionados
+.env
+.env*.local
+.env.staging
+.env.production
+.env.registry
+
+# Deploy
+.vercel
+
+# Supabase local (temporários — migrations/seed/config SÃO versionados)
+supabase/.branches
+supabase/.temp
+
+# Sistema operacional
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+npm-debug.log*

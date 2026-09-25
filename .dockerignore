@@ -1,0 +1,25 @@
+node_modules
+.pnpm-store
+.turbo
+.next
+.git
+.gitignore
+# Segredos — NUNCA na imagem (todos os .env*, inclusive .staging/.registry)
+.env
+.env.*
+backups
+tsconfig.tsbuildinfo
+npm-debug.log*
+*.log
+.DS_Store
+.vercel
+# Não relevantes ao runtime do app
+.claude
+docs
+coverage
+supabase/.branches
+supabase/.temp
+scripts/logs
+Dockerfile
+Dockerfile.production
+docker-compose*.yml
