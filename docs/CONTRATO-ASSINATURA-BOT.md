@@ -1,5 +1,7 @@
 # Assinatura das mensagens da IA — contrato CRM ↔ agente
 
+> ⚠️ **Parcialmente desatualizado (Fase 1).** O push da assinatura ao agente continua; a leitura por `GET /api/integracao/bot-signature` foi removida junto com a API antiga e volta na API v1 (Fase 5).
+
 Contexto: as respostas da **IA saem pelo agente direto no WhatsApp (uazapi)** — o
 CRM **não** envia essas mensagens, só faz o relay do inbound e registra o echo.
 Por isso a assinatura (prefixar um apelido antes do texto) **tem que ser aplicada

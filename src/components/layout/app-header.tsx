@@ -192,7 +192,7 @@ function ProfileMenu({ viewer }: { viewer: AppHeaderUser }) {
             <span className="block truncate font-display text-sm font-semibold">{viewer.displayName}</span>
             <span className="block truncate text-xs font-normal text-muted-foreground">{viewer.email}</span>
           </DropdownMenuLabel>
-          {viewer.role !== "paid_traffic" ? <DropdownMenuItem render={<Link href="/app/perfil" />} className="h-11 gap-3 px-2.5"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CircleUserRoundIcon className="size-[18px] stroke-[1.75]" /></span>Meu perfil</DropdownMenuItem> : null}
+          <DropdownMenuItem render={<Link href="/app/perfil" />} className="h-11 gap-3 px-2.5"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><CircleUserRoundIcon className="size-[18px] stroke-[1.75]" /></span>Meu perfil</DropdownMenuItem>
           {viewer.role === "admin" ? <DropdownMenuItem render={<Link href="/app/equipe" />} className="h-11 gap-3 px-2.5"><span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><UsersRoundIcon className="size-[18px] stroke-[1.75]" /></span>Gerenciar equipe</DropdownMenuItem> : null}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

@@ -1,5 +1,7 @@
 # Especificação de Front-end — Dashboard Principal
 
+> ⚠️ **Obsoleto (Fase 1).** Especifica o dashboard comercial da clínica, que saiu. As métricas de suporte são definidas na Fase 9 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md).
+
 ## 1. Objetivo
 
 Desenvolver a **tela principal do dashboard** seguindo visualmente o layout de referência fornecido.

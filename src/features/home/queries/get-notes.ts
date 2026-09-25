@@ -10,7 +10,7 @@ function toColor(value: unknown): NoteColor {
 
 /**
  * Notas do usuário logado. Leitura resiliente: erro loga e devolve vazio em vez
- * de derrubar a tela inteira de Início (padrão de `getDeals`).
+ * de derrubar a tela inteira de Início (padrão das leituras do app).
  */
 export async function getNotes(userId: string): Promise<HomeNotes> {
   if (!hasSupabaseServerEnv()) return EMPTY;

@@ -1,9 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode, type RefObject } from "react";
-import Link from "next/link";
 import {
-  CalendarClockIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CopyIcon,
@@ -26,13 +24,11 @@ import {
   contactTelHref,
   notesAreDirty,
 } from "@/features/chat/lib/contact-info";
-import { getLeadSourceLabel, getLeadStatusLabel } from "@/features/leads/schemas/status";
-import { formatDate, formatDateTime } from "@/lib/formatters/date";
-import { formatMoney } from "@/lib/formatters/money";
-import { formatPhoneBR, normalizePhone } from "@/lib/formatters/phone";
+import { formatDate } from "@/lib/formatters/date";
+import { formatPhoneBR } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";
 import type { ChatConversation } from "@/features/chat/types";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * Tela de informações do contato — **sheet lateral contido na conversa**.
@@ -43,7 +39,7 @@ import type { Tag } from "@/features/leads/types";
  * WhatsApp mostra perfil comercial (horário, categoria, site, mapa) e este banco
  * não tem nada disso — `chat_conversations.metadata` só carrega `avatar_key`.
  * Inventar esses campos seria mentir na tela (UI.md §1). O que entra é o que o
- * CRM sabe de verdade: o lead, a etapa do funil e o próximo agendamento.
+ * CRM sabe de verdade: o cadastro do contato e a conversa.
  *
  * O portal nasce dentro do `ChatView`, como o sheet de anexo: assim ele ocupa
  * exatamente a coluna da conversa em qualquer largura, e a lista fica fora da
@@ -264,9 +260,9 @@ export function ContactInfoSheet({
               onSave={saveNotes}
             />
 
-            {/* Bloco do CRM: só existe quando há lead. Sem lead, a tela diz isso
-                em vez de mostrar campos vazios que parecem defeito. */}
-            <InfoGroup title="Lead">
+            {/* Bloco do CRM: só existe quando há cadastro. Sem ele, a tela diz
+                isso em vez de mostrar campos vazios que parecem defeito. */}
+            <InfoGroup title="Contato">
               {loading ? (
                 <>
                   <SkeletonRow />
@@ -277,7 +273,7 @@ export function ContactInfoSheet({
                 // forma de recarregar era fechar e reabrir a tela.
                 <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
                   <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
-                    Não foi possível carregar o lead.
+                    Não foi possível carregar o contato.
                   </span>
                   <button
                     type="button"
@@ -289,41 +285,13 @@ export function ContactInfoSheet({
                 </div>
               ) : lead ? (
                 <>
-                  <InfoRow label="Etapa" value={getLeadStatusLabel(lead.status)} />
-                  <InfoRow
-                    label="Origem"
-                    value={lead.source ? getLeadSourceLabel(lead.source) : "Não informada"}
-                  />
                   {lead.email && <InfoRow label="E-mail" value={lead.email} />}
-                  {lead.valor_estimado !== null && (
-                    <InfoRow
-                      label="Valor estimado"
-                      value={formatMoney(lead.valor_estimado)}
-                    />
-                  )}
-                  <InfoRow label="Lead desde" value={formatDate(lead.created_at)} />
-                  {info?.nextAppointment ? (
-                    <InfoRow
-                      icon={<CalendarClockIcon />}
-                      label="Próximo agendamento"
-                      value={formatDateTime(info.nextAppointment.scheduled_at)}
-                    />
-                  ) : null}
-                  {/* O termo é o telefone NORMALIZADO, não o cru.
-                      `getLeadsPage` procura em `name`, `phone` e
-                      `normalized_phone`; o número cru do WhatsApp vem com DDI
-                      (`5586…`) e não casa com `normalized_phone` (`86…`), o que
-                      levava a uma lista vazia. O normalizado casa nos dois:
-                      exato em `normalized_phone` e como sufixo em `phone`. */}
-                  <LinkRow
-                    href={`/app/leads?q=${encodeURIComponent(normalizePhone(conversation.contact_phone ?? ""))}`}
-                    label="Ver lead completo"
-                  />
+                  <InfoRow label="Contato desde" value={formatDate(lead.created_at)} />
                 </>
               ) : (
                 <InfoRow
-                  label="Sem lead vinculado"
-                  value="Nenhum lead com este número"
+                  label="Sem cadastro vinculado"
+                  value="Nenhum contato com este número"
                 />
               )}
             </InfoGroup>
@@ -493,27 +461,6 @@ function InfoRow({
       </span>
       <span className="truncate text-right text-[15px]">{value}</span>
     </div>
-  );
-}
-
-/**
- * Linha que navega — leva o chevron do iOS, como manda a referência.
- *
- * `next/link` e não `<a>`: sair do chat por documento inteiro recarrega a
- * aplicação e, no PWA, pisca branco antes de pintar a tela de leads.
- */
-function LinkRow({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5 text-[15px] text-[var(--wa-green-deep)] transition-colors hover:bg-[var(--wa-info-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <span className="truncate">{label}</span>
-      <ChevronRightIcon
-        aria-hidden
-        className="size-[18px] shrink-0 text-[var(--wa-info-label)]"
-      />
-    </Link>
   );
 }
 

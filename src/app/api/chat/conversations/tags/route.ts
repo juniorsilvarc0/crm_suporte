@@ -24,7 +24,7 @@ const EMPTY = { tags: [], pairs: [] };
  * role enxerga. Isso é deliberado (ver a migration): a etiqueta não passa por
  * Realtime e não justifica ampliar a superfície do `anon`.
  *
- * Erro devolve vazio e loga, como `getDeals`: sem etiqueta a lista de conversas
+ * Erro devolve vazio e loga, como `getNotes`: sem etiqueta a lista de conversas
  * continua inteira e utilizável, e derrubá-la por causa do enfeite seria pior.
  */
 export async function GET() {

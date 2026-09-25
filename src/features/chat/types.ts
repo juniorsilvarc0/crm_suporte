@@ -27,26 +27,10 @@ export type ChatIntegration = {
   created_at: string;
 };
 
-/** Etapa do funil oferecida como filtro rápido. Espelho enxuto de `board_columns`. */
-export type ChatStageOption = {
-  /** `board_columns.key` — o mesmo valor que mora em `leads.status`. */
-  key: string;
-  label: string;
-};
-
 export type ChatConversation = {
   id: string;
   integration_id: string | null;
   lead_id: string;
-  /**
-   * Etapa do funil do lead (`leads.status`), resolvida no embed da listagem.
-   *
-   * ⚠️ **Não é coluna de `chat_conversations`.** Vem junto do nome e do telefone,
-   * na mesma consulta — a etapa é do LEAD, e duplicá-la aqui no banco criaria
-   * duas verdades para a mesma informação. Ausente no payload cru do Realtime,
-   * por isso opcional: o merge preserva o valor que já estava na lista.
-   */
-  lead_status?: string | null;
   external_id: string;
   contact_name: string | null;
   contact_phone: string | null;

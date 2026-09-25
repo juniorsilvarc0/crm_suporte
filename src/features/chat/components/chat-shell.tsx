@@ -19,7 +19,6 @@ import { useMessages } from "@/features/chat/hooks/use-messages";
 import { useViewportHeight } from "@/lib/use-viewport-height";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
-import type { ChatStageOption } from "@/features/chat/types";
 
 // Compara dois telefones de forma tolerante: normaliza para só dígitos e casa
 // pela cauda comum. Comparar os últimos 8 dígitos (número do assinante) absorve
@@ -33,7 +32,7 @@ function phonesMatch(a: string, b: string): boolean {
   return da.slice(-8) === db.slice(-8);
 }
 
-export function ChatShell({ stages = [] }: { stages?: readonly ChatStageOption[] }) {
+export function ChatShell() {
   // Um objeto só para os quatro filtros. Separados em quatro `useState`, a
   // combinação vira quatro fontes que precisam concordar — e "limpar tudo"
   // vira quatro chamadas que podem ficar pela metade.
@@ -67,7 +66,6 @@ export function ChatShell({ stages = [] }: { stages?: readonly ChatStageOption[]
     lastPromotion,
     archivedCount,
     loading,
-    refetch,
     updateConversation,
     addConversation,
     markAsRead,
@@ -93,24 +91,6 @@ export function ChatShell({ stages = [] }: { stages?: readonly ChatStageOption[]
       ),
     [allConversations, filters, tagsController.tagsByConversation]
   );
-
-  /**
-   * A etapa do funil é do LEAD, e o Realtime desta tela só escuta
-   * `chat_conversations` — mover um card no Kanban (outra aba, outro operador)
-   * não chega aqui. Reconsultar quando a janela volta ao foco é o preço honesto
-   * disso: uma consulta, só enquanto há filtro de etapa ligado.
-   */
-  const stageFilterActive = filters.stages.length > 0;
-  useEffect(() => {
-    if (!stageFilterActive) return;
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void refetch();
-    };
-    // No `document`, que é onde o evento nasce — no `window` ele só chega por
-    // propagação, e é o tipo de detalhe que quebra em silêncio.
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [stageFilterActive, refetch]);
 
   const {
     selectedConversationId,
@@ -392,7 +372,6 @@ export function ChatShell({ stages = [] }: { stages?: readonly ChatStageOption[]
           focusSearchToken={focusContacts}
           filters={filters}
           onFiltersChange={setFilters}
-          stages={stages}
           onConversationAction={handleConversationAction}
           tagsController={tagsController}
           archivedCount={archivedCount}

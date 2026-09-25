@@ -15,10 +15,7 @@ export async function GET(request: Request) {
     const supabase = createSupabaseAdminClient();
     let query = supabase
       .from("chat_conversations")
-      // `status` do lead entra no embed que JÁ existia: é a etapa do funil, e é
-      // o que alimenta os filtros por etapa da lista. Custo zero — mesma linha,
-      // mesma consulta, sem N+1 e sem uma segunda ida ao banco.
-      .select("*, lead:leads(name, phone, status)")
+      .select("*, lead:leads(name, phone)")
       .is("removed_at", null)
       // Precisa casar com `compareByLastMessage`; divergência aqui reordena a
       // lista no primeiro evento de Realtime.
@@ -47,7 +44,6 @@ export async function GET(request: Request) {
       ...conversation,
       contact_name: lead?.name ?? conversation.contact_name,
       contact_phone: lead?.phone ?? conversation.contact_phone,
-      lead_status: lead?.status ?? null,
     }));
 
     return NextResponse.json({ conversations });

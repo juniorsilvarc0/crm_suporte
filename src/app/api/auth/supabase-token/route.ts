@@ -32,7 +32,7 @@ export async function GET() {
 
   // O papel vai no token porque a RLS precisa dele: todos recebem o mesmo papel
   // de banco (`authenticated`), e é o claim que separa quem opera o chat de
-  // quem só vê Rastreamento. Vem do BANCO, então rebaixar alguém tem efeito no
+  // qualquer outro papel. Vem do BANCO, então rebaixar alguém tem efeito no
   // próximo token — no máximo 15 minutos.
   const { token, expiresAt } = await createSupabaseAccessToken(viewer.id, viewer.role);
 

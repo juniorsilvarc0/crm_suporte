@@ -40,7 +40,7 @@ import {
 } from "@/features/chat/lib/conversation-swipe";
 import { stripWhatsappFormat } from "@/features/chat/lib/whatsapp-format";
 import type { ChatConversation } from "@/features/chat/types";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 type ConversationItemProps = {
   conversation: ChatConversation;

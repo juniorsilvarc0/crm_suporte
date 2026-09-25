@@ -1,13 +1,6 @@
 import type { ComponentType } from "react";
 import {
   ActivityIcon,
-  BellRingIcon,
-  CalendarHeartIcon,
-  ChartLineIcon,
-  Columns3Icon,
-  ContactRoundIcon,
-  HeartPulseIcon,
-  RadarIcon,
   SlidersHorizontalIcon,
   SmartphoneIcon,
   UsersRoundIcon,
@@ -18,7 +11,6 @@ import type { AppUserRole } from "@/features/settings/types";
 
 const OPERATION_ROLES: ReadonlyArray<AppUserRole> = ["admin", "member"];
 const ADMIN_ROLES: ReadonlyArray<AppUserRole> = ["admin"];
-const TRACKING_ROLES: ReadonlyArray<AppUserRole> = ["admin", "paid_traffic"];
 
 /**
  * Grupo do item no menu completo. Existe só para dar título de seção à gaveta
@@ -44,22 +36,13 @@ export type NavItem = {
 };
 
 /**
- * Ícones escolhidos pelo que a tela FAZ na clínica, não pelo genérico do setor:
- * batimento para o painel de vida do negócio, agenda com coração para consulta,
- * radar para rastrear anúncio. O WhatsApp mantém o ícone da própria marca.
+ * O núcleo que sobrou da poda do CRM de origem. Tickets, clientes, agenda,
+ * financeiro e métricas de suporte entram nas fases de
+ * `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém o ícone da própria marca.
  */
 export const dashboardNavigation: NavItem[] = [
   { title: "Início", href: "/app", icon: ActivityIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Leads", href: "/app/leads", icon: ContactRoundIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  // Paciente vem logo depois do lead porque é o mesmo percurso da pessoa: a
-  // entrada é lead, o cadastro clínico é o passo seguinte.
-  { title: "Pacientes", href: "/app/pacientes", icon: HeartPulseIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Funil", href: "/app/funil", icon: Columns3Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Agenda", href: "/app/agendamentos", icon: CalendarHeartIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "WhatsApp", href: "/app/chat", icon: WhatsAppIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Follow-ups", href: "/app/follow-ups", icon: BellRingIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Métricas", href: "/app/metricas", icon: ChartLineIcon, group: "Análise", allowedRoles: OPERATION_ROLES },
-  { title: "Rastreamento", href: "/app/rastreamento", icon: RadarIcon, group: "Análise", allowedRoles: TRACKING_ROLES },
   { title: "Conexão", href: "/app/conexao", icon: SmartphoneIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Configurações", href: "/app/configuracoes", icon: SlidersHorizontalIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
@@ -78,9 +61,6 @@ export const dashboardNavigation: NavItem[] = [
  */
 export const mobileTabHrefs: ReadonlyArray<string> = [
   "/app",
-  "/app/leads",
-  "/app/funil",
-  "/app/agendamentos",
   "/app/chat",
 ];
 
@@ -98,9 +78,9 @@ export function getMobileTabs(role: AppUserRole): NavItem[] {
 }
 
 /**
- * A barra superior do desktop mostra seis entradas, não dez: o que se usa o dia
- * inteiro fica a um clique, o resto entra em dois menus. Sem isso, dez rótulos
- * lado a lado viram uma régua de texto que ninguém varre.
+ * A barra superior do desktop deixa a um clique o que se usa o dia inteiro e
+ * agrupa o resto em menus. Sem isso, cada módulo novo vira mais um rótulo lado
+ * a lado, até a barra virar uma régua de texto que ninguém varre.
  */
 export type TopNavEntry<T = NavItem> =
   | { kind: "link"; item: T }
@@ -117,11 +97,7 @@ const TOP_NAV_SPEC: ReadonlyArray<
   { kind: "link"; href: string } | { kind: "menu"; title: string; hrefs: ReadonlyArray<string> }
 > = [
   { kind: "link", href: "/app" },
-  { kind: "menu", title: "Pessoas", hrefs: ["/app/leads", "/app/pacientes", "/app/funil", "/app/follow-ups"] },
-  { kind: "link", href: "/app/agendamentos" },
   { kind: "link", href: "/app/chat" },
-  { kind: "link", href: "/app/metricas" },
-  { kind: "link", href: "/app/rastreamento" },
   { kind: "menu", title: "Ajustes", hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes"] },
 ];
 

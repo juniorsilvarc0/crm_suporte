@@ -4,8 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 import { ConversationFilters } from "@/features/chat/components/conversation-filters";
 import { EMPTY_FILTERS, type ChatFilters } from "@/features/chat/lib/chat-filters";
-import type { ChatStageOption } from "@/features/chat/types";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * ⚠️ Este arquivo existe por causa de um defeito real: `DropdownMenuLabel` é o
@@ -16,11 +15,6 @@ import type { Tag } from "@/features/leads/types";
  * Por isso o teste principal aqui **abre o painel**. Renderizar o componente
  * fechado não teria pego nada.
  */
-
-const STAGES: ChatStageOption[] = [
-  { key: "novo", label: "Novo" },
-  { key: "em_atendimento", label: "Em atendimento" },
-];
 
 const TAGS: Tag[] = [
   { id: "t1", name: "VIP", color: "amber", created_at: "2026-01-01T00:00:00Z" },
@@ -35,7 +29,6 @@ function setup(filters: Partial<ChatFilters> = {}) {
     <ConversationFilters
       filters={{ ...EMPTY_FILTERS, ...filters }}
       onFiltersChange={onFiltersChange}
-      stages={STAGES}
       tags={TAGS}
     />
   );
@@ -43,27 +36,25 @@ function setup(filters: Partial<ChatFilters> = {}) {
 }
 
 describe("ConversationFilters", () => {
-  it("abre o painel sem quebrar e lista etapas e etiquetas", async () => {
+  it("abre o painel sem quebrar e lista as etiquetas", async () => {
     const { user } = setup();
 
     await user.click(screen.getByRole("button", { name: /filtros/i }));
 
-    expect(await screen.findByText("Etapa do funil")).toBeTruthy();
-    expect(screen.getByText("Etiquetas")).toBeTruthy();
-    expect(screen.getByText("Em atendimento")).toBeTruthy();
+    expect(await screen.findByText("Etiquetas")).toBeTruthy();
     expect(screen.getByText("VIP")).toBeTruthy();
     // Etiqueta com cor fora da paleta continua desenhando (fallback da paleta).
     expect(screen.getByText("Urgente")).toBeTruthy();
   });
 
-  it("marcar uma etapa no painel envia a etapa para o filtro", async () => {
+  it("marcar uma etiqueta no painel envia a etiqueta para o filtro", async () => {
     const { user, onFiltersChange } = setup();
 
     await user.click(screen.getByRole("button", { name: /filtros/i }));
-    await user.click(await screen.findByText("Em atendimento"));
+    await user.click(await screen.findByText("VIP"));
 
     expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ stages: ["em_atendimento"] })
+      expect.objectContaining({ tags: ["t1"] })
     );
   });
 
@@ -80,27 +71,27 @@ describe("ConversationFilters", () => {
   });
 
   it("filtro escolhido vira chip removível, e o chip remove", async () => {
-    const { user, onFiltersChange } = setup({ stages: ["novo"], tags: ["t1"] });
+    const { user, onFiltersChange } = setup({ tags: ["t1", "t2"] });
 
-    const chip = screen.getByRole("button", { name: "Remover filtro Novo" });
-    expect(screen.getByRole("button", { name: "Remover filtro VIP" })).toBeTruthy();
+    const chip = screen.getByRole("button", { name: "Remover filtro VIP" });
+    expect(screen.getByRole("button", { name: "Remover filtro Urgente" })).toBeTruthy();
 
     await user.click(chip);
 
     expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ stages: [], tags: ["t1"] })
+      expect.objectContaining({ tags: ["t2"] })
     );
   });
 
   it("limpar devolve os filtros ao estado inicial", async () => {
-    const { user, onFiltersChange } = setup({ status: "bot", unread: true, stages: ["novo"] });
+    const { user, onFiltersChange } = setup({ status: "bot", unread: true, tags: ["t1"] });
 
     await user.click(screen.getByRole("button", { name: "Limpar" }));
 
     expect(onFiltersChange).toHaveBeenCalledWith(EMPTY_FILTERS);
   });
 
-  it("sem etapa nem etiqueta escolhida, a segunda linha não existe", () => {
+  it("sem etiqueta escolhida, a segunda linha não existe", () => {
     setup({ status: "bot" });
 
     expect(screen.queryByRole("button", { name: /^Remover filtro/ })).toBeNull();

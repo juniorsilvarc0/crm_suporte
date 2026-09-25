@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { isColorName, type ColorName } from "@/features/leads/schemas/colors";
+import { isColorName, type ColorName } from "@/features/tags/schemas/colors";
 import { appUserRoleLabel, type AppUser } from "@/features/settings/types";
 
 export function ProfileEditor({ user }: { user: AppUser }) {

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
-import { sendEvolutionText } from "@/features/chat/lib/senders/evolution";
 import { sendUazapiText } from "@/features/chat/lib/senders/uazapi";
-import { sendMetaText } from "@/features/chat/lib/senders/meta";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { CLIENT_ID_PATTERN } from "@/features/chat/lib/outgoing-message";
 import { resolveSignature, signMessage } from "@/features/chat/lib/signature";
@@ -191,12 +189,10 @@ export async function POST(request: Request, { params }: Params) {
           })
           .eq("id", msg.id);
         if (idErr) console.error("[send] gravar external_id falhou:", idErr, msg.id);
-      } else if (integration.provider === "evolution") {
-        const { apiUrl, apiKey, instance } = intConfig;
-        await sendEvolutionText(apiUrl, apiKey, instance, { number: phone, text: outboundContent });
-      } else if (integration.provider === "meta") {
-        const { phoneNumberId, accessToken } = intConfig;
-        await sendMetaText(phoneNumberId, accessToken, phone, outboundContent);
+      } else {
+        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
+        // enviada sem ter saído para lugar nenhum.
+        throw new Error(`provedor não suportado: ${integration.provider}`);
       }
       // delivery_status → 'sent' de forma MONÓTONA: não regride um delivered/read
       // que um messages_update pode ter gravado durante o await do envio.

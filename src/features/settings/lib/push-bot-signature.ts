@@ -3,8 +3,9 @@ import type { BotSignatureConfig } from "@/features/settings/lib/get-bot-signatu
 export type AgentPushResult = {
   // O agente confirmou o recebimento (respondeu 2xx).
   delivered: boolean;
-  // Não há endpoint do agente configurado (BOT_SIGNATURE_AGENT_URL vazio). Não é
-  // erro: o agente reconcilia sozinho via GET /api/integracao/bot-signature.
+  // Não há endpoint do agente configurado (BOT_SIGNATURE_AGENT_URL vazio). A
+  // config fica só no CRM: a leitura pelo agente (GET) saiu na Fase 1 e volta
+  // na API v1 (Fase 5 de docs/PLANO-IMPLANTACAO.md).
   skipped: boolean;
   // Motivo da falha, quando delivered=false e skipped=false.
   error?: string;
@@ -15,7 +16,7 @@ const TIMEOUT_MS = 5000;
 // "Push on save": avisa o endpoint do agente sempre que a config muda, para ele
 // aplicar a assinatura sem depender do CRM em tempo real. Best-effort — NUNCA
 // lança; devolve o resultado para a UI decidir o aviso. A falha aqui não desfaz
-// o save no CRM (o agente ainda pode reconciliar via GET).
+// o save no CRM; até a API v1, o push é o único caminho até o agente.
 export async function pushBotSignatureToAgent(
   config: BotSignatureConfig
 ): Promise<AgentPushResult> {

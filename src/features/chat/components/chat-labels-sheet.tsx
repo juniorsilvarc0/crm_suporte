@@ -9,9 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DEFAULT_TAG_COLOR, TagForm } from "@/features/chat/components/tag-form";
 import { countConversationsByTag } from "@/features/chat/lib/conversation-tags";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
-import { getColorStyle, isColorName, type ColorName } from "@/features/leads/schemas/colors";
+import { getColorStyle, isColorName, type ColorName } from "@/features/tags/schemas/colors";
 import { cn } from "@/lib/utils";
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /**
  * Tela de etiquetas — **sheet contido na coluna da lista**.

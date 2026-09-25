@@ -5,8 +5,9 @@ chamados pelo WhatsApp; uma IA externa faz a triagem e alimenta o CRM por API; o
 CRM guarda e gerencia tickets, empresas, contatos, contratos e SLA.
 
 > ⚠️ **Em conversão.** O código nasceu de um CRM de clínica feito sobre o mesmo
-> template e ainda carrega módulos herdados (leads, funil, pacientes, rastreamento
-> Meta). O caminho até o produto-alvo está em
+> template. Os módulos herdados (leads, funil, pacientes, agenda, financeiro de
+> vendas, métricas, rastreamento Meta) saíram na Fase 1; hoje o app é o núcleo
+> de chat, conexão, equipe e configurações. O caminho até o produto-alvo está em
 > **[`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md)**.
 
 > **Agente de IA lendo isto:** comece por **[`AGENTS.md`](AGENTS.md)**. Ele é normativo
@@ -59,8 +60,8 @@ Se o `pnpm` global falhar com "packages field missing or empty", use
 
 **Referência técnica:**
 
-- [`docs/API.md`](docs/API.md) — referência da API herdada (endpoints internos + webhooks do n8n + API de Integração); a API v1 vem na Fase 5
-- [`docs/GUIA-AGENTE-IA.md`](docs/GUIA-AGENTE-IA.md) — guia para agentes de IA externos (sobre a API herdada)
+- [`docs/API.md`](docs/API.md) — referência da API herdada; a integração antiga saiu na Fase 1 e a API v1 vem na Fase 5
+- [`docs/GUIA-AGENTE-IA.md`](docs/GUIA-AGENTE-IA.md) — guia para agentes de IA externos (desatualizado; reescrito na Fase 5)
 - [`DB.md`](DB.md) — modelo de dados herdado (reescrito na Fase 2)
 - [`SETUP.md`](SETUP.md) — setup do ambiente local
 

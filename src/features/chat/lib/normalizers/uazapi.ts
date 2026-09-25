@@ -1,4 +1,4 @@
-import type { NormalizedMessage } from "@/features/chat/lib/normalizers/evolution";
+import type { NormalizedMessage } from "@/features/chat/lib/normalizers/types";
 import { buildMessageLinkPreview } from "@/features/chat/lib/message-content";
 import type { MessageType } from "@/features/chat/types";
 import { cleanContactName } from "@/lib/formatters/clean-name";

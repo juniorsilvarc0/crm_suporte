@@ -13,13 +13,10 @@ const schema = z.object({ tag_id: z.string().regex(UUID_RE, "Etiqueta inválida.
 /**
  * Vincula e desvincula etiqueta de uma conversa.
  *
- * Espelha `/api/leads/[id]/tags` de propósito: é a mesma tabela `tags` na outra
- * ponta, e duas validações diferentes para o mesmo vínculo divergiriam.
+ * A outra ponta é a tabela `tags`, o vocabulário único de etiquetas.
  *
- * Não chama `revalidatePath` como a rota dos leads: o chat não é renderizado no
- * servidor — a lista vive no cliente e atualiza o próprio estado. Revalidar aqui
- * derrubaria o cache de `/app/leads` a cada etiqueta posta no chat, sem ninguém
- * para aproveitar.
+ * Não chama `revalidatePath`: o chat não é renderizado no servidor — a lista
+ * vive no cliente e atualiza o próprio estado.
  */
 async function readTagId(request: Request) {
   const body = await readJsonBody(request);

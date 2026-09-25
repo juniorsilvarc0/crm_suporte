@@ -1174,7 +1174,7 @@ export type Database = {
         Returns: string | null;
       };
       // Venda em uma transação só: contrato + pagamentos + etapa do funil.
-      // Os valores chegam já calculados de features/financeiro/lib.
+      // RPC herdada da clínica; sem chamador no app desde a Fase 1.
       register_sale: {
         Args: {
           p_idempotency_key: string;

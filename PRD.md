@@ -2,7 +2,7 @@
 
 > **O que o produto é e por quê.** Estável: muda quando o escopo muda, não a cada task.
 >
-> ⚠️ **Produto em conversão (desde 2026-09-25).** Este repositório nasceu de um CRM de clínica feito sobre o mesmo template e está sendo convertido num CRM de suporte técnico. As seções 1–5 descrevem o **produto-alvo**; da seção 6 em diante o documento ainda descreve o **código herdado**, que as fases de [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md) substituem.
+> ⚠️ **Produto em conversão (desde 2026-09-25).** Este repositório nasceu de um CRM de clínica feito sobre o mesmo template e está sendo convertido num CRM de suporte técnico. As seções 1–5 descrevem o **produto-alvo**; da seção 6 em diante, o **estado atual** do código: o núcleo herdado que ficou depois da poda da Fase 1 (o banco ainda é o da clínica). As fases de [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md) levam de um ao outro.
 >
 > Documentos irmãos: [`AGENTS.md`](AGENTS.md) (regras de trabalho) · [`UI.md`](UI.md) (sistema visual) · [`PROGRESS.md`](PROGRESS.md) (histórico) · [`SKILLS.md`](SKILLS.md) (skills por stack) · [`DB.md`](DB.md) (modelo de dados herdado) · [`docs/GUIA-AGENTE-IA.md`](docs/GUIA-AGENTE-IA.md) (API de integração herdada) · [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md) (plano aprovado).
 
@@ -53,61 +53,35 @@ Responder rápido, para analista e gestor:
 - **Não é multi-tenant.** É um deploy por empresa.
 - **Fora da v1:** expediente e feriados no SLA, CSAT, base de conhecimento, portal do cliente, e-mail e mais de um número de WhatsApp. A lista completa está no plano.
 
-## 6. Módulos
+## 6. Módulos (estado atual, depois da Fase 1)
 
-Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`.
+Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os módulos da clínica (leads, funil, pacientes, agenda, follow-ups, financeiro de vendas, métricas comerciais, rastreamento Meta) saíram na Fase 1; o código deles está na tag local `legado-clinica`, de onde as Fases 7 e 8 recuperam telas.
 
 | Módulo | Rota | Papel | O que faz |
 |---|---|---|---|
-| Dashboard | `/app` | member | KPIs, funil resumido, gráficos (recharts), origem/tag, LTV, recuperação, "quem agendou", filtro de período com comparação |
-| Leads | `/app/leads` | member | Tabela com busca global por coluna e paginação server-side, ações em massa, criação manual sincronizada com o funil, conversa via Number Check, detalhe/edição, tags, **exportação CSV** |
-| Funil | `/app/funil` | member | Kanban dnd-kit com colunas dinâmicas (`board_columns`), filtros, densidade persistida, registrar venda, **campanha de origem no card** |
-| Agenda | `/app/agendamentos` | member | Agendamentos por lead, "agendado por", marcar presença (sincroniza status do lead) |
-| WhatsApp | `/app/chat` | member | Conversas ao vivo, texto/áudio/mídia, respostas rápidas compartilhadas, links com preview, telefones/vCards que iniciam conversa após Number Check, ações de arquivar/ler/limpar/apagar com menu e gestos mobile, transcrição, notas internas, takeover bot↔humano, Realtime |
-| Rastreamento | `/app/rastreamento` | **admin** | Relatório por campanha, indicadores, saúde do CAPI, dead-letters, exportação |
-| Follow-ups | `/app/follow-ups` | member | Lista do que o n8n agendou/enviou |
-| Conexão | `/app/conexao` | **admin** | QR e estado da instância de WhatsApp |
-| Equipe | `/app/equipe` | **admin** | Usuários, papéis, avatar, reset de senha |
-| Configurações | `/app/configuracoes` | **admin** | Respostas rápidas da equipe, tokens de API, automação, assinatura do bot |
+| Início | `/app` | member | Mural de notas do usuário. A fila de tickets entra aqui na Fase 4 |
+| WhatsApp | `/app/chat` | member | Conversas ao vivo, texto/áudio/mídia, respostas rápidas compartilhadas, links com preview, telefones/vCards que iniciam conversa após Number Check, ações de arquivar/ler/limpar/apagar com menu e gestos mobile, transcrição, notas internas, etiquetas, takeover bot↔humano, Realtime |
+| Conexão | `/app/conexao` | **admin** | QR e estado da instância de WhatsApp (uazapi) |
+| Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
+| Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
-**Sem tela própria hoje:** `expenses` e `feedback_requests` (só API).
-
-**Venda:** o diálogo "Registrar venda", no menu do card do funil, grava `contracts` + `payments` numa transação (RPC `register_sale`), move o card para a etapa de ganho e alimenta todas as métricas de dinheiro do dashboard. O que foi vendido sai de `procedures`, um catálogo que o próprio usuário mantém dentro do combobox. A venda aparece no bloco "Vendas" do modal do lead. **Ainda não existe UI para editar, cancelar ou estornar** — ver `PROGRESS.md`.
+**Sem API pública hoje:** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 para a IA e para outros sistemas entra na Fase 5.
 
 ## 7. Fluxos centrais
 
-### 7.1 Entrada de lead pelo WhatsApp
+### 7.1 Entrada de mensagem pelo WhatsApp
 
-1. Provedor entrega em `/api/chat/webhook/{provider}` — **cada um com sua própria autenticação**.
-2. O payload é normalizado (`src/features/chat/lib/normalizers/`).
-3. `upsertLeadFromInbound` cria ou atualiza o lead **deduplicando pelo telefone normalizado**.
+1. A uazapi entrega em `/api/chat/webhook/uazapi` (segredo próprio na query string).
+2. O payload é normalizado (`src/features/chat/lib/normalizers/uazapi.ts`).
+3. `upsertLeadFromInbound` cria ou atualiza o cadastro do contato (ainda a tabela `leads`) **deduplicando pelo telefone normalizado**.
 4. `upsertMessage` grava a mensagem e atualiza a conversa.
 5. Supabase Realtime leva para a UI ao vivo.
-6. Se a conversa está em `bot`, a mensagem é repassada ao n8n.
+6. Se a conversa está em `bot`, a mensagem é repassada ao agente externo (URL configurada na tela).
 
-### 7.2 Atribuição de anúncio (CTWA → CAPI)
+### 7.2 Atendimento humano (takeover)
 
-Cadeia completa — ao depurar, **descubra em qual elo parou antes de mudar código**:
-
-```
-clique no anúncio → mensagem com `referral` no webhook da Meta
-  → ingest_meta_webhook_message  → leads.source = 'anuncio'
-                                 → meta_attributions (ctwa_clid, source_id)
-                                 → meta_ad_assets (pending)
-  → worker enrichPendingAssets   → Graph API → snapshots de campanha/conjunto/anúncio
-  → meta_conversion_outbox       → dispatcher (30s) → Conversions API
-```
-
-Regra de exibição: **primeiro toque**. O card responde "de onde esse lead veio", não "qual anúncio ele tocou por último".
-
-### 7.3 Funil e conversão
-
-Lead entra em `novo`. Mover card (arraste ou menu) grava a etapa e registra em `deal_stage_history`. Mudança de status carimba `qualificado_at` / `agendado_at` / `compareceu_at` / `cliente_at`. Um lead pode ter **N deals** — cada oportunidade é um card.
-
-### 7.4 Atendimento humano (takeover)
-
-Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avisa o agente e para o relay ao n8n. Liberar devolve para `bot`.
+Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avisa o agente e para o relay. Liberar devolve para `bot`.
 
 ## 8. Banco de dados
 
@@ -141,19 +115,16 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - Decisão de acesso: `src/lib/auth/route-guard.ts` (isolada do runtime do Next para ser testável).
 - Aplicação: `src/proxy.ts` (o middleware do Next 16).
 - Papéis: `admin` | `member`. O middleware redireciona pelo papel do JWT; **a página confirma com o papel fresco do banco**, cobrindo o caso do admin recém-rebaixado com cookie antigo.
-- Rota nova de admin exige atualizar **os dois lugares**: `ADMIN_PAGE_PREFIXES` e `adminOnly` em `navigation.ts`.
+- Rota nova de admin exige atualizar **os dois lugares**: `ADMIN_PAGE_PREFIXES` e `allowedRoles` em `navigation.ts`.
 
 ## 10. Integrações externas
 
 | Integração | Uso | Código |
 |---|---|---|
-| **uazapi** | WhatsApp — provedor em produção hoje | `src/features/chat/lib/{senders,normalizers,connection}/uazapi.ts` |
-| **Evolution API** | WhatsApp — provedor alternativo | `src/features/chat/lib/*/evolution.ts` |
-| **Meta WhatsApp Cloud API** | WhatsApp + **referral de anúncio (CTWA)** | `src/app/api/chat/webhook/meta`, `src/features/meta/` |
-| **Meta Graph / Conversions API** | Enriquecimento de campanha e envio de conversão | `src/features/meta/{outbox,report,health}.ts` |
-| **n8n** | Orquestra a IA SDR; envia e consome eventos | `src/app/api/webhooks/n8n/*`, `/api/integracao/*` |
+| **uazapi** | WhatsApp — único provedor suportado | `src/features/chat/lib/{senders,normalizers,connection}/uazapi.ts` |
+| **Agente de IA externo** | Recebe o relay das mensagens em modo `bot` e o aviso de takeover | `src/features/settings/lib/get-relay-url.ts`, `src/features/chat/lib/push-takeover.ts` |
 | **OpenAI** | Transcrição de áudio no chat | `src/app/api/chat/transcribe` |
-| **Supabase Storage** | Mídia do chat e avatar | buckets `chat-media`, `feedback-screenshots` |
+| **Supabase Storage** | Mídia do chat e avatar | buckets `chat-media`, `profile-avatars` |
 
 ## 11. Stack e decisões arquiteturais
 
@@ -168,7 +139,6 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 | Formulários | react-hook-form + zod | Validação compartilhada entre form e rota | 2026-08-06 |
 | Testes | Vitest + Testing Library; **sem teste de browser** | Verificação por typecheck + lint + unidade + build | 2026-08-06 |
 | Entrega | VPS + Docker Compose atrás do Traefik | Controle de custo e de dado; **não é Vercel** | 2026-08-06 |
-| Rastreamento | Outbox persistente + worker com lease | Evento de conversão não se perde nem duplica | 2026-08-06 |
 
 ## 12. Infraestrutura
 
@@ -189,32 +159,25 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - **Nada de commit, push ou merge direto na `main`.** Branch + PR.
 - SQL de escrita, alteração de `.env` de produção, deploy e rotação de token exigem **autorização explícita na sessão**.
 - Sem Playwright nem teste de browser.
-- Mudar `/api/integracao/*` quebra agentes externos em produção — trate como contrato público.
+- A API v1 (`/api/v1/*`, Fase 5) é contrato público consumido pela IA e por outros sistemas: mudança só aditiva ou versionada.
 - Interface e documentação em **português do Brasil**.
 
 ## 14. Riscos abertos
 
 | Risco | Impacto | Onde |
 |---|---|---|
-| `META_WEBHOOK_VERIFY_TOKEN` em texto puro no access log do Traefik | Quem lê o log consegue responder ao handshake de verificação | `PROGRESS.md` 2026-08-06 |
-| Token do system user Meta com 13 scopes, quando 5 bastam | Vazamento teria alcance maior que o necessário | `PROGRESS.md` 2026-08-06 |
-| Webhooks de agendamento/follow-up sem idempotência real | Reenvio do n8n duplica linha (`idempotency_key` é aceito e não usado) | `DB.md` |
-| Deploy de produção manual e não roteirizado | Passo esquecido derruba o app; `deploy.sh production` ainda é `exit 1` | `PROGRESS.md` |
-| Schema anterior às migrations versionadas | Não dá para recriar o banco do zero só com o repositório | `DB.md` |
-| Nomenclatura amarrada ao domínio original (`tipo_ensaio`) | Confunde quem lê só o schema ao reaplicar o template | `DB.md` |
-| Dependência de um único provedor de WhatsApp em produção (uazapi) | Sessão WhatsApp Web cai e o atendimento para | `SKILLS.md` §Armadilhas |
+| Segredos de integração ainda lidos de env (`UAZAPI_WEBHOOK_SECRET`, `TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`, `N8N_WEBHOOK_URL`) | Contraria "nenhuma credencial no código"; o cofre só é lido para `OPENAI_*` | Fases 2 e 5 do plano |
+| Webhook da uazapi aceita qualquer chamada se o segredo estiver vazio | Mensagem forjada entra no chat e vai ao agente | `src/app/api/chat/webhook/uazapi/route.ts`; Fase 2 |
+| Relay repassa o envelope cru com o token da instância | URL de relay errada vaza a credencial do WhatsApp | Fase 5 |
+| Toda mídia do chat é pública e permanente | Print com dado de cliente acessível por URL | Fase 2 |
+| Schema e `types.ts` ainda são os da clínica | Nomes de venda/clínica no banco (`tipo_ensaio`, `deals`) | Fase 2 (baseline novo) |
+| Dependência de um único provedor de WhatsApp (uazapi) | Sessão WhatsApp Web cai e o atendimento para | `SKILLS.md` §Armadilhas |
 
 ## 15. Glossário de domínio
 
-- **Lead** — contato, único por telefone normalizado. Tem `source` e `status`.
-- **Deal** — card do funil. **N por lead**: cada oportunidade é um card próprio.
-- **Etapa / coluna** — configurável em `board_columns` (cor, posição, `stage_type`), não fixa no código.
+- **Contato (lead)** — a pessoa do outro lado do WhatsApp, única por telefone normalizado. No banco ainda é a tabela `leads`; a Fase 2 renomeia para `contacts`.
 - **Conversa** — thread de WhatsApp com um contato. Status `bot` | `human` | `resolved`.
-- **Takeover** — humano assume a conversa; o relay ao n8n para.
-- **CTWA** — Click-to-WhatsApp: anúncio da Meta que abre uma conversa. Gera `ctwa_clid`.
-- **Atribuição** — linha em `meta_attributions` ligando lead a anúncio/campanha. **Primeiro toque manda.**
-- **Enriquecimento** — busca no Graph API dos nomes de campanha/conjunto/anúncio a partir do `source_id`.
-- **Outbox** — fila persistente de conversões a enviar ao Meta, com lease, retry e dead-letter.
-- **CAPI** — Conversions API. Devolve ao Meta que o lead virou conversa e depois oportunidade qualificada.
-- **Follow-up** — tentativa agendada de retomar lead silencioso, disparada pelo n8n.
-- **Token de API** — credencial Bearer de `/api/integracao/*`. O banco guarda **hash**, nunca o valor.
+- **Takeover** — humano assume a conversa; o relay ao agente para.
+- **Etiqueta** — marcação livre de conversa, do vocabulário único `tags`.
+- **Token de API** — credencial gerada na tela, para integradores. O banco guarda **hash**, nunca o valor. Volta a ter uso com a API v1 (Fase 5).
+- **Ticket, empresa, contrato, SLA** — entidades do produto-alvo, definidas em `docs/PLANO-IMPLANTACAO.md`; entram nas Fases 3 e 4.

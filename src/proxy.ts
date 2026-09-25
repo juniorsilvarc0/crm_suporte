@@ -28,8 +28,6 @@ export async function proxy(request: NextRequest) {
     }
     case "redirect-app":
       return NextResponse.redirect(new URL("/app", request.url));
-    case "redirect-tracking":
-      return NextResponse.redirect(new URL("/app/rastreamento", request.url));
     case "allow":
       return;
   }

@@ -8,14 +8,10 @@ export type GuardDecision =
   | { type: "unauthorized" }
   | { type: "forbidden" }
   | { type: "redirect-login"; redirectTo: string }
-  | { type: "redirect-app" }
-  | { type: "redirect-tracking" };
+  | { type: "redirect-app" };
 
 // Páginas que exigem sessão do dashboard.
 const PROTECTED_PAGE_PREFIXES = ["/app", "/admin", "/definir-senha"];
-
-const TRACKING_PAGE_PREFIX = "/app/rastreamento";
-const TRACKING_EXPORT_PATH = "/api/meta/tracking/export";
 
 // Páginas restritas a administradores. O proxy redireciona rápido pelo
 // papel do JWT (307 no edge); a página confirma com o papel FRESCO do banco
@@ -27,21 +23,16 @@ const ADMIN_PAGE_PREFIXES = [
   "/app/configuracoes",
 ];
 
-// Rotas de /api com autenticação PRÓPRIA (segredo/token) — não passam pelo
-// guard de sessão do dashboard:
-//   - /api/webhooks/*    → n8n, valida `x-webhook-secret`
-//   - /api/chat/webhook/* → Evolution/UAZAPI/Meta, verificação própria
-//   - /api/integracao/*  → API de Integração (agentes de IA), token de API
+// Rotas de /api com autenticação PRÓPRIA — não passam pelo guard de sessão do
+// dashboard:
+//   - /api/chat/webhook/* → uazapi, verificação própria
 //   - /api/auth/*        → login e logout
-//   - /api/internal/meta/* → worker interno, segredo próprio e bloqueio no Caddy
-//   - /api/meta/conversions/* → sessão validada na própria rota para responder 403
+// A API de integração para agentes e sistemas externos volta como /api/v1/*
+// (token com escopo) na Fase 5 de docs/PLANO-IMPLANTACAO.md. Prefixo novo
+// aqui = handler que PRECISA autenticar sozinho.
 const PUBLIC_API_PREFIXES = [
-  "/api/webhooks/",
   "/api/chat/webhook/",
-  "/api/integracao/",
   "/api/auth/",
-  "/api/internal/meta/",
-  "/api/meta/conversions/",
 ];
 
 export function isPublicApiRoute(pathname: string) {
@@ -58,11 +49,6 @@ export function decideRouteAccess(
   if (pathname.startsWith("/api/")) {
     if (isPublicApiRoute(pathname)) return { type: "allow" };
     if (!hasValidSession) return { type: "unauthorized" };
-    if (role === "paid_traffic") {
-      return pathname === TRACKING_EXPORT_PATH || pathname === `${TRACKING_EXPORT_PATH}/`
-        ? { type: "allow" }
-        : { type: "forbidden" };
-    }
     return { type: "allow" };
   }
 
@@ -72,24 +58,6 @@ export function decideRouteAccess(
   );
   if (isProtectedPage && !hasValidSession) {
     return { type: "redirect-login", redirectTo: pathname };
-  }
-
-  const isTrackingPage =
-    pathname === TRACKING_PAGE_PREFIX ||
-    pathname.startsWith(`${TRACKING_PAGE_PREFIX}/`);
-
-  // Tráfego pago tem uma superfície deliberadamente mínima. A definição de
-  // senha é a única exceção necessária para concluir o primeiro acesso.
-  if (hasValidSession && role === "paid_traffic") {
-    if (isTrackingPage || pathname === "/definir-senha") {
-      return { type: "allow" };
-    }
-    if (isProtectedPage) return { type: "redirect-tracking" };
-  }
-
-  // Rastreamento é compartilhado por administradores e tráfego pago.
-  if (isTrackingPage && hasValidSession && role !== "admin") {
-    return { type: "redirect-app" };
   }
 
   // Página administrativa acessada por não-admin → volta para o app.
@@ -102,9 +70,7 @@ export function decideRouteAccess(
 
   // Já autenticado tentando ver /login → manda para o app.
   if (pathname === "/login" && hasValidSession) {
-    return role === "paid_traffic"
-      ? { type: "redirect-tracking" }
-      : { type: "redirect-app" };
+    return { type: "redirect-app" };
   }
 
   return { type: "allow" };

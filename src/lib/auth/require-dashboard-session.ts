@@ -51,26 +51,6 @@ export async function requireDashboardAdmin(): Promise<
   return { viewer };
 }
 
-// Rastreamento é a única área compartilhada entre admin e tráfego pago.
-// A leitura fresca do banco faz uma troca de papel valer nesta própria rota.
-export async function requireDashboardTracking(): Promise<
-  { viewer: AppUser } | { error: NextResponse }
-> {
-  const viewer = await getDashboardViewer();
-  if (!viewer) {
-    return { error: NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 }) };
-  }
-  if (viewer.role !== "admin" && viewer.role !== "paid_traffic") {
-    return {
-      error: NextResponse.json(
-        { ok: false, message: "Seu perfil não possui acesso ao Rastreamento." },
-        { status: 403 }
-      ),
-    };
-  }
-  return { viewer };
-}
-
 // Exige apenas um usuário ATIVO — sem exigir papel. É o guard das ações que
 // pertencem a quem atende, não a quem administra (respostas rápidas). Diferente
 // de `hasDashboardSession`, o estado vem do BANCO: um usuário desativado com
@@ -82,14 +62,6 @@ export async function requireDashboardUser(): Promise<
   if (!viewer) {
     return { error: NextResponse.json({ ok: false, message: "Sessão inválida." }, { status: 401 }) };
   }
-  if (viewer.role === "paid_traffic") {
-    return {
-      error: NextResponse.json(
-        { ok: false, message: "Seu perfil possui acesso somente ao Rastreamento." },
-        { status: 403 }
-      ),
-    };
-  }
   return { viewer };
 }
 
@@ -99,14 +71,6 @@ export async function requireDashboardUser(): Promise<
 export async function requireAdminPage(): Promise<AppUser> {
   const viewer = await getDashboardViewer();
   if (!viewer) redirect("/api/auth/logout");
-  if (viewer.role === "paid_traffic") redirect("/app/rastreamento");
   if (viewer.role !== "admin") redirect("/app");
-  return viewer;
-}
-
-export async function requireTrackingPage(): Promise<AppUser> {
-  const viewer = await getDashboardViewer();
-  if (!viewer) redirect("/api/auth/logout");
-  if (viewer.role !== "admin" && viewer.role !== "paid_traffic") redirect("/app");
   return viewer;
 }

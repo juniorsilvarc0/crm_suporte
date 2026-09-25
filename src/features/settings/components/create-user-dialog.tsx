@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSelect } from "@/components/forms/form-select";
 import { ColorSwatchPicker } from "@/components/forms/color-swatch-picker";
-import type { ColorName } from "@/features/leads/schemas/colors";
+import type { ColorName } from "@/features/tags/schemas/colors";
 import {
   appUserRoleOptions,
   isAppUserRole,
@@ -197,7 +197,6 @@ export function CreateUserDialog() {
               </span>
             </label>
 
-            {role !== "paid_traffic" ? <>
             <div className="grid gap-1.5">
               <Label htmlFor="new-user-apelido">
                 Apelido para atendimento{" "}
@@ -242,7 +241,6 @@ export function CreateUserDialog() {
                 </span>
               </span>
             </label>
-            </> : null}
           </div>
         </ModalShell>
       </Dialog>

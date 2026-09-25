@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendEvolutionAudio } from "@/features/chat/lib/senders/evolution";
 import { sendUazapiAudio } from "@/features/chat/lib/senders/uazapi";
 import { putMedia } from "@/lib/storage/put-media";
 import { resolveQuotedExternalId } from "@/features/chat/queries/resolve-quoted";
-import { sendMetaAudio } from "@/features/chat/lib/senders/meta";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
 import { resolveConversationChannelAddress } from "@/features/chat/lib/conversation-channel-address";
 
@@ -102,13 +100,10 @@ export async function POST(request: Request, { params }: Params) {
           })
           .eq("id", msg.id);
         if (idErr) console.error("[send-audio] gravar external_id falhou:", idErr, msg.id);
-      } else if (integration.provider === "evolution") {
-        const { apiUrl, apiKey, instance } = intConfig;
-        await sendEvolutionAudio(apiUrl, apiKey, instance, phone, audioBase64);
-      } else if (integration.provider === "meta") {
-        const { phoneNumberId, accessToken } = intConfig;
-        const blob = new Blob([new Uint8Array(bytes)], { type: mime });
-        await sendMetaAudio(phoneNumberId, accessToken, phone, blob);
+      } else {
+        // Só a uazapi é suportada. Sem este erro, a mensagem seria marcada como
+        // enviada sem ter saído para lugar nenhum.
+        throw new Error(`provedor não suportado: ${integration.provider}`);
       }
       // delivery_status → 'sent' monótono (não regride delivered/read de corrida).
       const { error: stErr } = await supabase

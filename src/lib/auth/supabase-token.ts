@@ -67,8 +67,9 @@ export type SupabaseAccessToken = {
  *
  * ⚠️ O `app_role` NÃO é decoração. Todo mundo aqui recebe o mesmo papel de
  * banco (`authenticated`), então sem este claim a RLS não teria como separar
- * um `paid_traffic` — que no app só enxerga Rastreamento — de um `member`, que
- * opera o WhatsApp. Sem ele, qualquer usuário logado leria todas as conversas
+ * papéis com acessos diferentes — a policy de chat só aceita `admin` e
+ * `member`, e deixa de fora qualquer papel novo por padrão. Sem ele, qualquer
+ * usuário logado leria todas as conversas
  * chamando o PostgREST direto, contornando o guard de rota do app. As policies
  * de chat leem exatamente este claim.
  */

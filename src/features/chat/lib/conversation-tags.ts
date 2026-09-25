@@ -1,4 +1,4 @@
-import type { Tag } from "@/features/leads/types";
+import type { Tag } from "@/features/tags/types";
 
 /** Vínculo cru vindo de `GET /api/chat/conversations/tags`. */
 export type ConversationTagPair = {

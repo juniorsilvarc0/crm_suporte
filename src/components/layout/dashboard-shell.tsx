@@ -31,8 +31,6 @@ export function DashboardShell({ children, viewer }: { children: React.ReactNode
       allowedRoles: ["admin", "member"],
     };
     const visible = getDashboardNavigation(viewer.role);
-    // Tráfego pago não recebe Perfil: essa role acessa somente Rastreamento.
-    if (viewer.role === "paid_traffic") return visible;
     // Perfil entra antes das áreas administrativas para admin, ou no fim para membro.
     const equipeIdx = visible.findIndex((item) => item.href === "/app/equipe");
     return equipeIdx === -1
@@ -86,7 +84,6 @@ export function DashboardShell({ children, viewer }: { children: React.ReactNode
           open={menuOpen}
           onOpenChange={setMenuOpen}
           items={menuItems}
-          role={viewer.role}
           isActive={isActive}
         />
       ) : null}

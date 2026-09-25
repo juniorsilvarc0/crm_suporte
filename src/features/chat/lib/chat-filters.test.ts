@@ -35,7 +35,6 @@ function conversation(
     id,
     integration_id: "int-1",
     lead_id: `lead-${id}`,
-    lead_status: "em_atendimento",
     external_id: `55119999${id}`,
     contact_name: id,
     contact_phone: `55119999${id}`,
@@ -96,43 +95,15 @@ describe("matchesChatFilters — não lidas", () => {
   });
 });
 
-describe("matchesChatFilters — etapa do funil", () => {
-  it("compara com a etapa do LEAD", () => {
-    const atendimento = conversation("a", { lead_status: "em_atendimento" });
-    expect(
-      matchesChatFilters(atendimento, filters({ stages: ["em_atendimento"] }), NO_TAGS_MAP)
-    ).toBe(true);
-    expect(
-      matchesChatFilters(atendimento, filters({ stages: ["agendado"] }), NO_TAGS_MAP)
-    ).toBe(false);
-  });
-
-  it("várias etapas valem OU — o lead está numa só", () => {
-    const agendado = conversation("a", { lead_status: "agendado" });
-    expect(
-      matchesChatFilters(agendado, filters({ stages: ["novo", "agendado"] }), NO_TAGS_MAP)
-    ).toBe(true);
-  });
-
-  it("conversa sem etapa some quando se filtra por etapa", () => {
-    const semLead = conversation("a", { lead_status: null });
-    expect(matchesChatFilters(semLead, filters({ stages: ["novo"] }), NO_TAGS_MAP)).toBe(false);
-    // ...mas continua na lista quando não há filtro de etapa.
-    expect(matchesChatFilters(semLead, filters(), NO_TAGS_MAP)).toBe(true);
-  });
-});
-
 describe("matchesChatFilters — combinação", () => {
-  it("entre grupos é E: IA + não lidas + etapa + etiqueta", () => {
+  it("entre grupos é E: IA + não lidas + etiqueta", () => {
     const alvo = conversation("vip", {
       status: "bot",
       unread_count: 2,
-      lead_status: "em_atendimento",
     });
     const combinado = filters({
       status: "bot",
       unread: true,
-      stages: ["em_atendimento"],
       tags: ["t1"],
     });
 
@@ -145,31 +116,28 @@ describe("matchesChatFilters — combinação", () => {
     expect(
       matchesChatFilters({ ...alvo, status: "human" }, combinado, TAGS)
     ).toBe(false);
-    expect(
-      matchesChatFilters({ ...alvo, lead_status: "agendado" }, combinado, TAGS)
-    ).toBe(false);
     // Mesma conversa, mas etiquetada com outra coisa (`urgente` tem só `t2`).
     expect(matchesChatFilters({ ...alvo, id: "urgente" }, combinado, TAGS)).toBe(false);
   });
 });
 
 describe("countActiveFilters", () => {
-  it("conta responsável, não lidas, cada etapa e cada etiqueta", () => {
+  it("conta responsável, não lidas e cada etiqueta", () => {
     expect(countActiveFilters(filters())).toBe(0);
     // A caixa de arquivadas não é um "filtro aplicado" — é onde se está.
     expect(countActiveFilters(filters({ status: "archived" }))).toBe(0);
     expect(
       countActiveFilters(
-        filters({ status: "bot", unread: true, stages: ["novo", "agendado"], tags: ["t1"] })
+        filters({ status: "bot", unread: true, tags: ["t1", "t2"] })
       )
-    ).toBe(5);
+    ).toBe(4);
   });
 });
 
 describe("clearChatFilters", () => {
   it("zera tudo e volta para Tudo", () => {
     const limpo = clearChatFilters(
-      filters({ status: "bot", unread: true, stages: ["novo"], tags: ["t1"] })
+      filters({ status: "bot", unread: true, tags: ["t1"] })
     );
     expect(limpo).toEqual(EMPTY_FILTERS);
   });

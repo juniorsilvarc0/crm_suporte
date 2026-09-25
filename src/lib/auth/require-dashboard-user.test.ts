@@ -17,10 +17,7 @@ vi.mock("@/features/settings/queries/get-app-users", () => ({
   getAppUser: getAppUserMock,
 }));
 
-import {
-  requireDashboardTracking,
-  requireDashboardUser,
-} from "@/lib/auth/require-dashboard-session";
+import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -46,18 +43,6 @@ describe("requireDashboardUser", () => {
     expect("viewer" in (await requireDashboardUser())).toBe(true);
   });
 
-  it("recusa tráfego pago fora do rastreamento", async () => {
-    getAppUserMock.mockResolvedValue({
-      id: "user-1",
-      role: "paid_traffic",
-      is_active: true,
-    });
-
-    const result = await requireDashboardUser();
-
-    expect("error" in result && result.error.status).toBe(403);
-  });
-
   it("recusa usuário desativado, mesmo com cookie válido", async () => {
     // O papel vem do BANCO, não do JWT: desativar tem efeito imediato.
     getAppUserMock.mockResolvedValue({ id: "user-1", role: "admin", is_active: false });
@@ -75,21 +60,5 @@ describe("requireDashboardUser", () => {
 
     expect("error" in result && result.error.status).toBe(401);
     expect(getAppUserMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("requireDashboardTracking", () => {
-  it.each(["admin", "paid_traffic"] as const)("libera %s ativo", async (role) => {
-    getAppUserMock.mockResolvedValue({ id: "user-1", role, is_active: true });
-
-    expect("viewer" in (await requireDashboardTracking())).toBe(true);
-  });
-
-  it("recusa membro ativo", async () => {
-    getAppUserMock.mockResolvedValue({ id: "user-1", role: "member", is_active: true });
-
-    const result = await requireDashboardTracking();
-
-    expect("error" in result && result.error.status).toBe(403);
   });
 });

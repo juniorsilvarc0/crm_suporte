@@ -10,7 +10,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Este documento é **normativo**. Ele vence suposições, hábitos do modelo e "boas práticas" genéricas da internet. Se você é um agente de IA (Claude Code, Codex, Cursor, qualquer um) lendo isto: você **não está autorizado a editar arquivo** antes de cumprir o §0 e o §2.
 
-**Produto:** **CRM Suporte** — CRM de atendimento de suporte técnico para software house: chamados pelo WhatsApp, triagem por IA externa via API, tickets, empresas, contatos, contratos e SLA. ⚠️ **Em conversão** a partir de um CRM de clínica: o código ainda carrega módulos herdados (leads, funil, pacientes, rastreamento Meta), que saem nas fases de [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md).
+**Produto:** **CRM Suporte** — CRM de atendimento de suporte técnico para software house: chamados pelo WhatsApp, triagem por IA externa via API, tickets, empresas, contatos, contratos e SLA. ⚠️ **Em conversão** a partir de um CRM de clínica: os módulos da clínica saíram na Fase 1 (ver §4.2); banco e tipos herdados mudam nas fases seguintes de [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md).
 
 **Documentos irmãos (leitura obrigatória, §2):** [`PRD.md`](PRD.md) · [`UI.md`](UI.md) · [`PROGRESS.md`](PROGRESS.md) · [`SKILLS.md`](SKILLS.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
@@ -25,14 +25,14 @@ Este documento é **normativo**. Ele vence suposições, hábitos do modelo e "b
 ```
 TASK ENQUADRADA
 - Objetivo: <o resultado esperado, 1–2 frases — não a implementação>
-- Área: <dashboard | leads | funil | agenda | chat | follow-ups | financeiro |
-         rastreamento Meta | conexão | equipe/config | API de integração |
-         webhook | banco/Supabase | infra/deploy> + arquivos prováveis
+- Área: <início | chat | conexão | equipe/config | perfil | webhook |
+         banco/Supabase | infra/deploy | (fases seguintes: tickets, clientes,
+         API v1, agenda, financeiro, métricas)> + arquivos prováveis
 - Camadas tocadas: <front | back (route handler) | banco (migration)> — ver CONTRIBUTING §Escopo
 - Fora de escopo: <o que você NÃO vai tocar>
 - Toca dado sensível, produção ou banco? <sim/não — qual tabela; lembrar §3>
 - Pronto quando: <critério observável: "webhook uazapi não duplica lead ao reenviar",
-                  "tela de rastreamento mostra campanha do primeiro toque">
+                  "mensagem enviada pelo chat aparece com tick de entregue">
 - Orçamento de arquivos: "deve tocar N arquivos: X, Y, Z"
 - Reuso encontrado: <o que já existe (§5)> | nenhum (grep: "<termos>")
 - Skills lidas: SKILLS.md ✓   (obrigatório — diz quais valem e quais quebram a stack)
@@ -141,7 +141,7 @@ Se não puder preencher isso honestamente, **pare e pergunte**.
 
 O navegador **não usa mais a chave anônima**. Ele pede um JWT curto (15 min) em `GET /api/auth/supabase-token`, emitido de `src/lib/auth/supabase-token.ts` a partir do cookie `crm-suporte-session`, com `role: authenticated` e o claim **`app_role`**. O `supabase-js` o injeta em REST e Realtime pela opção `accessToken` (`src/lib/supabase/client.ts`).
 
-- As policies de chat **filtram por `app_role`** (`admin`/`member`), repetindo no banco a regra que `src/config/navigation.ts` aplica na navegação. Sem esse filtro, um usuário `paid_traffic` — que no app só vê Rastreamento — leria todas as conversas chamando o PostgREST direto.
+- As policies de chat **filtram por `app_role`** (`admin`/`member`), repetindo no banco a regra que `src/config/navigation.ts` aplica na navegação. Sem esse filtro, um papel fora de `admin`/`member` (ex.: `paid_traffic`, que o app removeu mas a constraint do banco ainda aceita) leria todas as conversas chamando o PostgREST direto.
 - Todo o resto passa por **`createSupabaseServerClient()` / `createSupabaseAdminClient()`**, que usam a **service role** e rodam **somente no servidor** (`src/lib/supabase/server.ts`, `src/lib/supabase/admin.ts`).
 
 **Regras derivadas:**
@@ -160,7 +160,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) num cookie `crm-suport
 - `src/lib/auth/session.ts` — assina/verifica o token.
 - `src/lib/auth/route-guard.ts` — decisão de acesso por rota, **isolada do runtime do Next para ser testável**.
 - `src/proxy.ts` — traduz a decisão em resposta HTTP (é o middleware; o arquivo se chama `proxy.ts` no Next 16).
-- Papéis: `admin` | `member`. O menu esconder um item **não é segurança** — a página confirma o papel fresco no banco (`getDashboardViewer`). Ao adicionar rota de admin, atualize **os dois**: `ADMIN_PAGE_PREFIXES` no guard e `adminOnly` em `src/config/navigation.ts`.
+- Papéis: `admin` | `member`. O menu esconder um item **não é segurança** — a página confirma o papel fresco no banco (`getDashboardViewer`). Ao adicionar rota de admin, atualize **os dois**: `ADMIN_PAGE_PREFIXES` no guard e `allowedRoles` em `src/config/navigation.ts`.
 
 Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não invoque).
 
@@ -171,8 +171,8 @@ Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não 
 - Siga **estritamente** o padrão existente: nomenclatura, estrutura de pastas, tratamento de erro, estilo de tipagem, forma de exportação, camadas.
 - **Feature-slice.** Domínio novo mora em `src/features/<dominio>/` com `components/`, `queries/`, `schemas/`, `types.ts`. Não espalhe lógica de domínio em `src/app`.
 - **Página é fina.** `src/app/**/page.tsx` busca dados (server), compõe e passa para o componente da feature. Lógica não mora na página.
-- **Server por padrão, client só quando precisa.** `"use client"` exige interação, estado ou browser API. Server component não importa módulo que puxa `supabase/server` para dentro do bundle do cliente — se um client component precisa de um tipo/helper de um módulo de servidor, **extraia o tipo/helper para um arquivo neutro** (ver `src/features/meta/lead-attribution.ts`).
-- **Leitura resiliente.** Query de listagem retorna vazio e loga o erro em vez de derrubar a página — é o padrão de `getDeals`, `getLeadAttributions`. Mantenha.
+- **Server por padrão, client só quando precisa.** `"use client"` exige interação, estado ou browser API. Server component não importa módulo que puxa `supabase/server` para dentro do bundle do cliente — se um client component precisa de um tipo/helper de um módulo de servidor, **extraia o tipo/helper para um arquivo neutro** (ver `src/features/chat/lib/contact-info.ts`, que a rota de servidor e o painel client compartilham).
+- **Leitura resiliente.** Query de listagem retorna vazio e loga o erro em vez de derrubar a página — é o padrão de `getNotes`, `getAppUsers`. Mantenha.
 - Menor diff possível que resolve o problema **completo**. Elegância > engenhosidade.
 - Mudança que atravessa camadas (UI → domínio → banco) exige pausa e confirmação (§7) e **commits separados por camada** (`CONTRIBUTING.md`).
 - Ao alterar contrato público, liste **todos** os call sites afetados antes de editar.
@@ -181,20 +181,17 @@ Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não 
 
 ```
 src/app/
-  (dashboard)/app/*      # telas autenticadas: dashboard, leads, funil, agendamentos,
-                         #   chat, follow-ups, rastreamento, conexao, equipe,
-                         #   configuracoes, perfil
+  (dashboard)/app/*      # telas autenticadas: início (notas), chat, conexao,
+                         #   equipe, configuracoes, perfil
   api/                   # route handlers, agrupados por finalidade:
     auth/                #   login/logout/definir-senha (cookie de sessão)
-    chat/webhook/{evolution,uazapi,meta}/   # entrada de mensagem, auth PRÓPRIA
-    integracao/          #   API pública p/ agentes de IA — token Bearer
-    webhooks/n8n/        #   entrada do n8n — header x-webhook-secret
-    internal/meta/       #   worker do CAPI — segredo próprio + bloqueio no proxy
+    chat/webhook/uazapi/ #   entrada de mensagem, auth PRÓPRIA
     <resto>              #   CRUD do app, protegido pela sessão
+                         #   (a API v1 para integradores entra na Fase 5)
   login, definir-senha, politica-de-privacidade, offline
-src/features/<dominio>/  # appointments, auth, board, chat, connection, dashboard,
-                         #   deals, financeiro, followups, integrations, leads,
-                         #   meta, settings
+src/features/<dominio>/  # auth, chat, connection, home, integrations (logs),
+                         #   leads (só identidade por telefone), quick-replies,
+                         #   settings, tags
 src/components/
   ui/                    # primitivos (Base UI) — reuse antes de criar
   data-display/          # data-toolbar, empty-state, page-skeletons
@@ -206,7 +203,7 @@ src/lib/
   supabase/              # server (service role), admin, client (anon/Realtime), types
   security/              # api-token, rate-limit, verify-webhook
   formatters/            # phone, date, money, numbers, percentage, clean-name
-src/config/              # navigation.ts (menu + adminOnly), site.ts
+src/config/              # navigation.ts (menu + allowedRoles), site.ts (marca)
 supabase/migrations/     # fonte da verdade do schema
 ```
 
@@ -216,14 +213,13 @@ Arquivos grandes e acoplados. Abrir e ler a região inteira antes de mudar:
 
 | Arquivo | ~linhas | Por quê é sensível |
 |---|---|---|
-| `src/lib/supabase/types.ts` | 921 | Tipos do banco escritos à mão. Mudou coluna? Atualize aqui. |
+| `src/lib/supabase/types.ts` | 1411 | Tipos do banco escritos à mão. Mudou coluna? Atualize aqui. Ainda descreve o banco herdado (a Fase 2 troca). |
+| `src/features/chat/components/chat-view.tsx` | 1052 | Conversa aberta: bolhas, envio, anexos, áudio, citação. |
 | `src/features/connection/components/connection-panel.tsx` | 870 | QR, estado da instância, ciclo de conexão. |
-| `src/features/leads/components/lead-detail-dialog.tsx` | 720 | Modo leitura + modo edição no mesmo componente. |
-| `src/features/leads/components/funnel-board.tsx` | 598 | Kanban com dnd-kit, filtros, densidade, otimismo local. |
-| `src/features/appointments/components/appointment-dialog.tsx` | 554 | Criação/edição de agendamento com regras de data. |
-| `src/features/dashboard/queries/get-dashboard-data.ts` | 525 | Agregações; mudança aqui move todos os números da home. |
-| `src/features/leads/components/leads-table.tsx` | 514 | Tabela desktop + cards mobile + ações em massa. |
-| `src/features/meta/outbox.ts` | 373 | Claim/lease/retry do CAPI. Mexer errado gera evento duplicado no Meta. |
+| `src/features/chat/components/contact-info-sheet.tsx` | 541 | Painel do contato e etiquetas, com geometria própria do chat. |
+| `src/app/api/chat/webhook/uazapi/route.ts` | 328 | Entrada de toda mensagem: eco, mídia, ticks, identidade, relay. |
+
+Os módulos da clínica (leads, funil, agenda, financeiro, métricas, rastreamento Meta) saíram na Fase 1; o código deles está na tag local `legado-clinica`.
 
 ---
 

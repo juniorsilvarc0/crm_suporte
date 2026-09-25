@@ -20,8 +20,8 @@ import type { ChatConversation, StatusFilter } from "@/features/chat/types";
  * ninguém precisar reconsultar nada.
  *
  * ⚠️ Isto vale porque a lista vem inteira do banco (não há paginação na barra
- * lateral). Quando ela ganhar `.range()`, `stages` e `unread` viram filtro de
- * query — os dois têm coluna indexável (`leads.status`, `unread_count`).
+ * lateral). Quando ela ganhar `.range()`, `unread` vira filtro de query — tem
+ * coluna indexável (`unread_count`).
  *
  * ## O que combina com o quê
  *
@@ -29,21 +29,17 @@ import type { ChatConversation, StatusFilter } from "@/features/chat/types";
  * |---|---|---|
  * | `status` (Tudo/IA/Humano/Resolvidos) | **exclusivo** | com todos os demais |
  * | `unread` | alternável | sim |
- * | `stages` (etapa do funil) | multi, **OU** entre etapas | sim |
  * | `tags` (etiquetas) | multi, **OU** entre etiquetas | sim |
  *
- * Entre grupos é **E**: `IA + Não lidas + Atendimento + VIP` devolve o que
- * satisfaz os quatro. Dentro de `stages` e `tags` é **OU**, porque exigir duas
- * etapas ao mesmo tempo é impossível (o lead está numa só) e exigir duas
- * etiquetas quase sempre devolveria nada — uma lista vazia que parece defeito.
+ * Entre grupos é **E**: `IA + Não lidas + VIP` devolve o que satisfaz os três.
+ * Dentro de `tags` é **OU**, porque exigir duas etiquetas quase sempre
+ * devolveria nada — uma lista vazia que parece defeito.
  */
 export type ChatFilters = {
   /** Exclusivo. `archived` é a caixa; os demais são o responsável. */
   status: StatusFilter;
   /** Só conversas com mensagem não lida. */
   unread: boolean;
-  /** Chaves de `board_columns.key` (= `leads.status`). Vazio = todas. */
-  stages: string[];
   /** Ids de etiqueta. Vazio = todas. */
   tags: string[];
 };
@@ -51,7 +47,6 @@ export type ChatFilters = {
 export const EMPTY_FILTERS: ChatFilters = {
   status: "all",
   unread: false,
-  stages: [],
   tags: [],
 };
 
@@ -71,7 +66,7 @@ export function matchesChatFilters(
   filters: ChatFilters,
   tagsByConversation: TagsByConversation
 ): boolean {
-  const { status, unread, stages, tags } = filters;
+  const { status, unread, tags } = filters;
 
   // `archived` é caixa, não responsável: dentro dela valem todos os status.
   if (status !== "all" && status !== "archived" && conversation.status !== status) {
@@ -79,13 +74,6 @@ export function matchesChatFilters(
   }
 
   if (unread && conversation.unread_count <= 0) return false;
-
-  if (stages.length > 0) {
-    // Conversa sem lead resolvido (ou lead sem etapa) não pertence a etapa
-    // nenhuma — filtrar por etapa a esconde, em vez de deixá-la passar batido.
-    if (!conversation.lead_status) return false;
-    if (!stages.includes(conversation.lead_status)) return false;
-  }
 
   // A regra de etiqueta mora no módulo de etiquetas, e é a MESMA que a lista já
   // usava — aqui ela só ganhou mais de um valor.
@@ -100,7 +88,7 @@ export function matchesChatFilters(
 export function countActiveFilters(filters: ChatFilters): number {
   const responsible =
     filters.status !== "all" && filters.status !== "archived" ? 1 : 0;
-  return responsible + (filters.unread ? 1 : 0) + filters.stages.length + filters.tags.length;
+  return responsible + (filters.unread ? 1 : 0) + filters.tags.length;
 }
 
 /**

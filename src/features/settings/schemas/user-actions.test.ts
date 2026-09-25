@@ -23,7 +23,7 @@ describe("createUserSchema", () => {
     }
   });
 
-  it("aceita o papel de tráfego pago", () => {
+  it("recusa o papel de tráfego pago, que deixou de existir", () => {
     const result = createUserSchema.safeParse({
       name: "Marina Tráfego",
       email: "marina@exemplo.com",
@@ -31,7 +31,7 @@ describe("createUserSchema", () => {
       role: "paid_traffic",
       avatar_color: "violet",
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   it("rejeita email inválido", () => {

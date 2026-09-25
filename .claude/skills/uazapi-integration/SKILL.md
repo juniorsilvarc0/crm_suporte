@@ -51,7 +51,7 @@ OUTBOUND (nós → WhatsApp)
 | Realtime | `hooks/use-chat-realtime.ts` | INSERT+UPDATE de mensagens; INSERT+UPDATE de conversas |
 | UI composer | `components/chat-footer.tsx` · `emoji-picker.tsx` | texto/áudio/anexo + menu "+" + emojis |
 
-`NormalizedMessage` (em `normalizers/evolution.ts`) é o tipo comum; mantenha provedores convergindo a ele.
+`NormalizedMessage` (em `normalizers/types.ts`) é o tipo comum; mantenha provedores convergindo a ele.
 
 ## 2. Contrato uazapi — REAL (confirmado)
 
