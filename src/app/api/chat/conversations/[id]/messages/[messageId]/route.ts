@@ -313,6 +313,10 @@ function previewFor(message: ChatMessage, text: string): string {
  *
  * Sem isto, apagar a última mensagem deixa o texto apagado à mostra na lista
  * lateral — que é justamente onde ele fica mais tempo na tela.
+ *
+ * Nota interna não conta como "última": ela não vira prévia (trigger de
+ * `chat_messages`), então uma nota depois da mensagem não pode impedir a
+ * prévia de ser corrigida.
  */
 async function refreshPreviewIfLatest(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
@@ -324,6 +328,7 @@ async function refreshPreviewIfLatest(
     .from("chat_messages")
     .select("id")
     .eq("conversation_id", conversationId)
+    .neq("type", "note")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
