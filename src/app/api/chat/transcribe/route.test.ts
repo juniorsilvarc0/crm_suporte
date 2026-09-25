@@ -22,7 +22,8 @@ vi.mock("@/lib/auth/require-dashboard-session", () => ({
   requireDashboardUser: userGuardMock,
 }));
 
-vi.mock("@/features/settings/lib/get-runtime-environment", () => ({
+vi.mock("@/features/settings/lib/get-runtime-environment", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/settings/lib/get-runtime-environment")>()),
   getOpenAiTranscriptionConfig: getConfigMock,
 }));
 
@@ -75,6 +76,19 @@ beforeEach(() => {
       headers: { "Content-Type": "application/json" },
     })
   );
+});
+
+describe("POST /api/chat/transcribe — cofre", () => {
+  it("responde 503 quando o cofre não responde", async () => {
+    const { RuntimeEnvironmentUnavailableError } = await import(
+      "@/features/settings/lib/get-runtime-environment"
+    );
+    getConfigMock.mockRejectedValue(new RuntimeEnvironmentUnavailableError("timeout"));
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(503);
+  });
 });
 
 describe("POST /api/chat/transcribe", () => {

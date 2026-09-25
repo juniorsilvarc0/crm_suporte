@@ -1,10 +1,8 @@
 import {
   DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
-  ENVIRONMENT_VARIABLE_NAME_PATTERN,
   OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODELS,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
-  type EnvironmentVariableSource,
   type OpenAiTranscriptionModel,
   type TranscriptionModelConfig,
 } from "@/features/settings/types";
@@ -13,67 +11,83 @@ import {
   hasSupabaseServerEnv,
 } from "@/lib/supabase/server";
 
+/**
+ * Configuração de integração que o app lê do cofre (Vault).
+ *
+ * - **Catálogo:** só estes nomes são lidos. Ler outro é erro de tipo, não
+ *   uma consulta ao cofre com nome montado em tempo de execução.
+ * - **Sem env:** a regra do produto é "nenhuma credencial no código"; o env
+ *   guarda só o bootstrap (Supabase, JWT). Variável de integração no env é
+ *   ignorada, não usada como reserva.
+ * - **Falha fechada:** cofre ilegível LANÇA `RuntimeEnvironmentUnavailableError`
+ *   (quem chama responde 503). "Não consegui ler" não vira "não configurado".
+ * - **Cache de 60 s**, zerado pela rota que grava no cofre. Com mais de uma
+ *   instância, a outra enxerga a mudança em até 60 s.
+ */
+export const RUNTIME_ENVIRONMENT_CATALOG = [
+  OPENAI_API_KEY_NAME,
+  OPENAI_TRANSCRIPTION_MODEL_NAME,
+] as const;
+
+export type RuntimeEnvironmentName = (typeof RUNTIME_ENVIRONMENT_CATALOG)[number];
+
 type RuntimeEnvironmentValue = {
   value: string | null;
-  source: EnvironmentVariableSource | "none";
+  source: "vault" | "none";
 };
+
+export class RuntimeEnvironmentUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`cofre indisponível: ${reason}`);
+    this.name = "RuntimeEnvironmentUnavailableError";
+  }
+}
+
+const CACHE_TTL_MS = 60_000;
+let cache: { values: Map<string, string>; expiresAt: number } | null = null;
+
+/** Zera o cache. A rota que grava/apaga no cofre chama depois de gravar. */
+export function invalidateRuntimeEnvironmentCache() {
+  cache = null;
+}
+
+async function loadCatalog(): Promise<Map<string, string>> {
+  if (cache && cache.expiresAt > Date.now()) return cache.values;
+  if (!hasSupabaseServerEnv()) {
+    throw new RuntimeEnvironmentUnavailableError("Supabase não configurado");
+  }
+
+  // Uma ida ao banco para o catálogo inteiro.
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_app_environment_variables", {
+    p_names: [...RUNTIME_ENVIRONMENT_CATALOG],
+  });
+  if (error) throw new RuntimeEnvironmentUnavailableError(error.message);
+
+  const values = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (typeof row.value === "string" && row.value.length > 0) values.set(row.name, row.value);
+  }
+  cache = { values, expiresAt: Date.now() + CACHE_TTL_MS };
+  return values;
+}
+
+export async function getRuntimeEnvironmentVariable(
+  name: RuntimeEnvironmentName
+): Promise<RuntimeEnvironmentValue> {
+  const value = (await loadCatalog()).get(name) ?? null;
+  return value ? { value, source: "vault" } : { value: null, source: "none" };
+}
 
 const transcriptionModelNames = new Set<string>(
   OPENAI_TRANSCRIPTION_MODELS.map((model) => model.value)
 );
 
-function normalizeName(name: string) {
-  const normalized = name.trim().toUpperCase();
-  return ENVIRONMENT_VARIABLE_NAME_PATTERN.test(normalized) ? normalized : null;
-}
-
-export async function getManagedEnvironmentVariable(
-  name: string
-): Promise<string | null> {
-  const normalized = normalizeName(name);
-  if (!normalized || !hasSupabaseServerEnv()) return null;
-
-  try {
-    const supabase = createSupabaseServerClient();
-    const { data, error } = await supabase.rpc("get_app_environment_variable", {
-      p_name: normalized,
-    });
-    if (error) {
-      console.error("getManagedEnvironmentVariable failed", error.message);
-      return null;
-    }
-    return typeof data === "string" && data.length > 0 ? data : null;
-  } catch (error) {
-    console.error("getManagedEnvironmentVariable threw", error);
-    return null;
-  }
-}
-
-export async function getRuntimeEnvironmentVariable(
-  name: string
-): Promise<RuntimeEnvironmentValue> {
-  const normalized = normalizeName(name);
-  if (!normalized) return { value: null, source: "none" };
-
-  const managed = await getManagedEnvironmentVariable(normalized);
-  if (managed !== null) return { value: managed, source: "vault" };
-
-  const environment = process.env[normalized];
-  if (environment) return { value: environment, source: "environment" };
-
-  return { value: null, source: "none" };
-}
-
 export async function getTranscriptionModelConfig(): Promise<TranscriptionModelConfig> {
-  const configured = await getRuntimeEnvironmentVariable(
-    OPENAI_TRANSCRIPTION_MODEL_NAME
-  );
+  const configured = await getRuntimeEnvironmentVariable(OPENAI_TRANSCRIPTION_MODEL_NAME);
 
   if (configured.value && transcriptionModelNames.has(configured.value)) {
-    return {
-      value: configured.value as OpenAiTranscriptionModel,
-      source: configured.source === "none" ? "default" : configured.source,
-    };
+    return { value: configured.value as OpenAiTranscriptionModel, source: "vault" };
   }
 
   return { value: DEFAULT_OPENAI_TRANSCRIPTION_MODEL, source: "default" };

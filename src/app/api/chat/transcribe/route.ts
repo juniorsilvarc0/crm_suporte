@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getOpenAiTranscriptionConfig } from "@/features/settings/lib/get-runtime-environment";
+import {
+  getOpenAiTranscriptionConfig,
+  RuntimeEnvironmentUnavailableError,
+} from "@/features/settings/lib/get-runtime-environment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 
@@ -24,7 +27,7 @@ export async function POST(request: Request) {
     const { apiKey, model } = await getOpenAiTranscriptionConfig();
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Transcrição indisponível: configure OPENAI_API_KEY." },
+        { error: "Transcrição indisponível: cadastre OPENAI_API_KEY no cofre (Configurações)." },
         { status: 503 }
       );
     }
@@ -87,6 +90,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ transcription: text });
   } catch (err) {
     console.error("[POST transcribe]", err);
+    if (err instanceof RuntimeEnvironmentUnavailableError) {
+      return NextResponse.json({ error: "Transcrição indisponível no momento." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
