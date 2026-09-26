@@ -4,10 +4,11 @@ import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/a
 /**
  * Produtos (filas) ATIVOS, por nome — as opções do formulário de contrato.
  * Produto arquivado só aparece no contrato que já o cobria. Leitura
- * resiliente: erro loga e devolve vazio em vez de derrubar a ficha da empresa.
+ * resiliente: erro loga e devolve `null` (não `[]`) — a ficha não cai, e o
+ * combobox diz "não foi possível carregar" em vez de "nenhum cadastrado".
  */
-export async function getProducts(): Promise<ProductOption[]> {
-  if (!hasSupabaseAdminEnv()) return [];
+export async function getProducts(): Promise<ProductOption[] | null> {
+  if (!hasSupabaseAdminEnv()) return null;
 
   try {
     const supabase = createSupabaseAdminClient();
@@ -18,11 +19,11 @@ export async function getProducts(): Promise<ProductOption[]> {
       .order("name", { ascending: true });
     if (error) {
       console.error("getProducts failed", error.message);
-      return [];
+      return null;
     }
     return data ?? [];
   } catch (error) {
     console.error("getProducts threw", error);
-    return [];
+    return null;
   }
 }

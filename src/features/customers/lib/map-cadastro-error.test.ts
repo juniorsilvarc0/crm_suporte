@@ -103,7 +103,7 @@ describe("mapCadastroError — code", () => {
     ).toEqual({ status: 500, message: "Não foi possível concluir a operação." });
   });
 
-  it.each(["22P02", "22003", "23502"])("%s → 400", (code) => {
+  it.each(["22P02", "22003", "22008", "23502"])("%s → 400", (code) => {
     expect(mapCadastroError({ code, message: "qualquer" })).toEqual({
       status: 400,
       message: "Revise os campos destacados.",

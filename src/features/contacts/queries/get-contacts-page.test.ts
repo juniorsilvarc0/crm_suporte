@@ -184,7 +184,7 @@ describe("getContactsPage", () => {
   });
 
   it("pagina de 25 em 25", async () => {
-    const [calls] = queueQueries(ok([], 80));
+    const [calls] = queueQueries(ok([row()], 80));
 
     const result = await getContactsPage(params({ page: 3 }));
 
@@ -236,6 +236,17 @@ describe("getContactsPage", () => {
 
     expect((await getContactsPage(params())).failed).toBe(true);
     expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("offset igual ao total (206 com lista vazia) abre a última página", async () => {
+    const [first, retry] = queueQueries(ok([], 25), ok([row()], 25));
+
+    const result = await getContactsPage(params({ page: 2 }));
+
+    expect(first.at(-1)).toEqual(["range", 25, 49]);
+    expect(retry.at(-1)).toEqual(["range", 0, 24]);
+    expect(result).toMatchObject({ page: 1, total: 25, pageCount: 1, failed: false });
+    expect(result.items).toHaveLength(1);
   });
 
   it("página além do fim (PGRST103) abre a última página que existe", async () => {

@@ -127,6 +127,17 @@ export async function getCustomersPage(params: CustomerListParams): Promise<Cust
       }
     }
 
+    // Offset exatamente igual ao total (ex.: 26 itens, página 2, o 26º sai):
+    // o PostgREST responde 206 com lista VAZIA e o total na contagem, não 416.
+    // Mesmo destino: a última página que existe — senão a tela diria
+    // "nenhum cadastrado" com o contador mostrando o total.
+    const emptyPastEnd =
+      !result.error && page > 1 && (result.data?.length ?? 0) === 0 && (result.count ?? 0) > 0;
+    if (emptyPastEnd) {
+      page = Math.max(1, Math.ceil((result.count ?? 0) / pageSize));
+      result = await fetchPage(page);
+    }
+
     if (result.error) {
       console.error("getCustomersPage failed", result.error.message);
       return failed(page);

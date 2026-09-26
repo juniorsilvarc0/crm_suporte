@@ -150,7 +150,7 @@ describe("getCustomersPage", () => {
   });
 
   it("pagina de 25 em 25", async () => {
-    const [calls] = queueQueries(ok([], 80));
+    const [calls] = queueQueries(ok([row()], 80));
 
     const result = await getCustomersPage(params({ page: 3 }));
 
@@ -224,6 +224,17 @@ describe("getCustomersPage", () => {
     ]);
     expect(retry.at(-1)).toEqual(["range", 25, 49]);
     expect(result).toMatchObject({ page: 2, total: 30, pageCount: 2, failed: false });
+    expect(result.items).toHaveLength(1);
+  });
+
+  it("offset igual ao total (206 com lista vazia) abre a última página", async () => {
+    const [first, retry] = queueQueries(ok([], 25), ok([row()], 25));
+
+    const result = await getCustomersPage(params({ page: 2 }));
+
+    expect(first.at(-1)).toEqual(["range", 25, 49]);
+    expect(retry.at(-1)).toEqual(["range", 0, 24]);
+    expect(result).toMatchObject({ page: 1, total: 25, pageCount: 1, failed: false });
     expect(result.items).toHaveLength(1);
   });
 

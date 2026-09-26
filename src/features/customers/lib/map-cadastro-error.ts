@@ -123,7 +123,9 @@ const CONSTRAINT_ERRORS: ReadonlyArray<readonly [string, MappedCadastroError]> =
 
 // Entrada que o banco não aceitou pelo tipo: texto em uuid/date (22P02), número
 // fora da faixa (22003), obrigatório nulo (23502). O zod deveria ter barrado.
-const INVALID_INPUT_CODES = new Set(["22P02", "22003", "23502"]);
+// 22008: data fora do intervalo do Postgres (ex.: ano 0000, que o z.iso.date()
+// aceita) — entrada inválida, não bug.
+const INVALID_INPUT_CODES = new Set(["22P02", "22003", "22008", "23502"]);
 
 export function mapCadastroError(error: DatabaseErrorLike | null | undefined): MappedCadastroError {
   const message = error?.message ?? "";
