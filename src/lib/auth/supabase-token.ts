@@ -10,7 +10,7 @@ import type { AppUserRole } from "@/features/settings/types";
  * qualquer pessoa a lê no DevTools. Como a RLS do chat concede `select` a `anon`
  * com `using (true)` — exceção deliberada para o Realtime funcionar —, expor o
  * PostgREST na internet com essa chave entregaria o histórico de conversas de
- * todos os pacientes a quem pedisse.
+ * todos os clientes a quem pedisse.
  *
  * A saída é o navegador deixar de ser `anon` e passar a ser `authenticated`,
  * com um token curto emitido a partir do cookie de sessão. Aí a RLS pode fechar

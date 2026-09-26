@@ -207,7 +207,7 @@ export function CreateUserDialog() {
                 name="apelido_atendimento"
                 autoComplete="off"
                 maxLength={40}
-                placeholder="Ex.: Dra. Ana, Recepção"
+                placeholder="Ex.: Ana, Suporte N1"
                 aria-invalid={errors.apelido_atendimento ? true : undefined}
                 aria-describedby={
                   errors.apelido_atendimento

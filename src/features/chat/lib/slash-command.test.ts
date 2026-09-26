@@ -33,7 +33,7 @@ describe("readSlashCommand", () => {
   it("devolve o termo digitado depois da barra", () => {
     expect(readSlashCommand("/teste")).toBe("teste");
     expect(readSlashCommand("/bom-dia")).toBe("bom-dia");
-    expect(readSlashCommand("/exame_2")).toBe("exame_2");
+    expect(readSlashCommand("/boleto_2")).toBe("boleto_2");
   });
 
   it("normaliza para minúsculas", () => {
@@ -43,14 +43,14 @@ describe("readSlashCommand", () => {
   // O falso positivo que justifica a regra: barra no meio do texto é barra.
   it("não abre com barra fora do começo", () => {
     expect(readSlashCommand("das 8/9h")).toBeNull();
-    expect(readSlashCommand("1/2 comprimido")).toBeNull();
-    expect(readSlashCommand("a/c Dra. Ana")).toBeNull();
+    expect(readSlashCommand("1/2 hora")).toBeNull();
+    expect(readSlashCommand("a/c Ana Lima")).toBeNull();
   });
 
   it("fecha assim que o texto deixa de ser um comando", () => {
     expect(readSlashCommand("/teste ")).toBeNull();
     expect(readSlashCommand("/teste agora")).toBeNull();
-    expect(readSlashCommand("/exame!")).toBeNull();
+    expect(readSlashCommand("/boleto!")).toBeNull();
     expect(readSlashCommand("/linha\nquebrada")).toBeNull();
   });
 

@@ -101,7 +101,7 @@ export function ProfileEditor({ user }: { user: AppUser }) {
               onChange={(event) => setApelido(event.target.value)}
               maxLength={40}
               autoComplete="off"
-              placeholder="Ex.: Dra. Ana, Recepção"
+              placeholder="Ex.: Ana, Suporte N1"
             />
             <p className="text-xs text-muted-foreground">
               Nome que assina suas mensagens no chat. Em branco, usa seu primeiro nome.

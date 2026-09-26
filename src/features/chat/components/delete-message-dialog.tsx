@@ -16,7 +16,7 @@ import {
  * Confirmação de apagar.
  *
  * Existe porque a ação é **irreversível e sai da nossa mão**: o WhatsApp apaga
- * a mensagem do celular do paciente e não há como desfazer. Um item de menu que
+ * a mensagem do celular do contato e não há como desfazer. Um item de menu que
  * dispara isso no primeiro clique é um erro esperando acontecer — e o próprio
  * WhatsApp confirma antes.
  *
@@ -30,7 +30,7 @@ export function DeleteMessageDialog({
   onConfirm,
 }: {
   deleting: boolean;
-  /** Anotação interna: nunca foi ao paciente, então a promessa é outra. */
+  /** Anotação interna: nunca foi ao contato, então a promessa é outra. */
   isNote?: boolean;
   onCancel: () => void;
   onConfirm: () => void;

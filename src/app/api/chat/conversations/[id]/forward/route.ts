@@ -25,7 +25,7 @@ import type { Json } from "@/lib/supabase/types";
 // nada é movido.
 //
 // As mensagens são carregadas com `conversation_id = [id]`: sem esse filtro, um
-// id vindo do cliente encaminharia mensagem de outro paciente.
+// id vindo do cliente encaminharia mensagem de outro contato.
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -209,7 +209,7 @@ async function forwardOne({
       sender_type: "agent",
       type: isText ? "text" : messageTypeOf(payload),
       // A assinatura do operador NÃO entra: encaminhar reproduz o que foi
-      // escrito, e assinar mudaria o texto que o paciente original mandou.
+      // escrito, e assinar mudaria o texto que o contato original mandou.
       content: isText ? payload.text : payload.caption ?? null,
       metadata,
       ...(privateMedia

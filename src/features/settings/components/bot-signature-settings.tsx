@@ -101,7 +101,7 @@ export function BotSignatureSettings({ config }: { config: BotSignatureConfig })
             onChange={(e) => setApelido(e.target.value)}
             maxLength={40}
             autoComplete="off"
-            placeholder="Ex.: Dra. Ana, Recepção"
+            placeholder="Ex.: Ana, Suporte N1"
             disabled={!enabled}
             aria-invalid={missingApelido}
             className="h-10"

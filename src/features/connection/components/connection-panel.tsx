@@ -815,7 +815,7 @@ function QrBlock({
       ) : null}
 
       <ol className="grid w-full gap-1.5 text-left text-xs text-muted-foreground">
-        <li>1. Abra o WhatsApp no celular da clínica.</li>
+        <li>1. Abra o WhatsApp no celular do suporte.</li>
         <li>2. Toque em Mais opções → Aparelhos conectados.</li>
         <li>3. Toque em Conectar um aparelho e aponte para este código.</li>
       </ol>

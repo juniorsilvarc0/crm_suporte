@@ -19,7 +19,7 @@ export function isNoteMessage(message: Pick<ChatMessage, "type">): boolean {
 
 /**
  * **Só o autor.** Nota é registro de equipe: deixar qualquer pessoa reescrever
- * o que a colega anotou destrói o histórico de quem falou o quê com o paciente.
+ * o que a colega anotou destrói o histórico de quem falou o quê com o cliente.
  *
  * Sem janela de tempo — anotação de três dias atrás continua sendo corrigível,
  * porque não há um celular do outro lado mostrando a versão antiga.

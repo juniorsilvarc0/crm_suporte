@@ -52,7 +52,7 @@ export function ChatShell() {
    *
    * Mora AQUI, e não no compositor, porque o `ChatView` é desmontado a cada
    * troca de conversa (enquanto a nova carrega, o painel volta a ser o vazio).
-   * Com o estado lá dentro, meia frase digitada para um paciente evaporava ao
+   * Com o estado lá dentro, meia frase digitada para um cliente evaporava ao
    * espiar outra conversa — ou, pior, sobraria no campo da errada.
    *
    * `Map` mutável de propósito: escrever a cada tecla num `useState` re-renderia

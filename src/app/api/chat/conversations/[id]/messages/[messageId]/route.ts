@@ -23,11 +23,11 @@ import type { Json } from "@/lib/supabase/types";
 //
 // Regra que vale para os dois: **o banco só é tocado depois do 200 do
 // provedor**. Gravar antes deixaria o CRM afirmando uma coisa e o celular do
-// paciente mostrando outra — e não há como saber, depois, qual das duas é a
+// contato mostrando outra — e não há como saber, depois, qual das duas é a
 // verdade.
 //
 // A mensagem é sempre carregada com `conversation_id = [id]`. Sem esse filtro,
-// um id vindo do cliente editaria ou apagaria mensagem de outro paciente —
+// um id vindo do cliente editaria ou apagaria mensagem de outro contato —
 // mesma defesa de `resolveQuotedExternalId`.
 
 type Params = { params: Promise<{ id: string; messageId: string }> };

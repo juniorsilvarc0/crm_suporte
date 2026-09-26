@@ -14,7 +14,7 @@ const PILL =
  * Imagem da conversa, ampliável.
  *
  * A miniatura é um `<button>`, não um `<img>` com `onClick`: sem isso não há
- * foco nem tecla, e ver uma foto de exame exigia abrir outra aba na mão.
+ * foco nem tecla, e ver um print do erro exigia abrir outra aba na mão.
  *
  * O diálogo só monta quando abre — 123 imagens em produção, e um `DialogContent`
  * por bolha seria peso morto em toda conversa.

@@ -69,7 +69,7 @@ describe("notesAreDirty", () => {
   });
 
   it("espaço nas pontas não é alteração", () => {
-    expect(notesAreDirty("  paciente prefere manhã  ", "paciente prefere manhã")).toBe(
+    expect(notesAreDirty("  cliente prefere manhã  ", "cliente prefere manhã")).toBe(
       false
     );
   });

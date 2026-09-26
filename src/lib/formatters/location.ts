@@ -60,8 +60,8 @@ export function ufFromPhone(phone: string | null | undefined): string | null {
   return ddd ? (DDD_TO_UF[ddd] ?? null) : null;
 }
 
-// Rótulo curto para a UI: "SP · DDD 11". Para uma clínica que anuncia num raio
-// fechado, o DDD diz mais que a UF — 11 é capital, 19 é Campinas.
+// Rótulo curto para a UI: "SP · DDD 11". Para uma base de clientes regional,
+// o DDD diz mais que a UF — 11 é capital, 19 é Campinas.
 export function formatPhoneLocation(phone: string | null | undefined): string | null {
   const ddd = dddFromPhone(phone);
   if (!ddd) return null;

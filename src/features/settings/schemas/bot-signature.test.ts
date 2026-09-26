@@ -4,9 +4,9 @@ import { botSignatureSchema } from "@/features/settings/schemas/bot-signature";
 
 describe("botSignatureSchema", () => {
   it("liga com apelido preenchido → válido", () => {
-    const r = botSignatureSchema.safeParse({ enabled: true, apelido: "Dra. Ana" });
+    const r = botSignatureSchema.safeParse({ enabled: true, apelido: "Ana Lima" });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data).toEqual({ enabled: true, apelido: "Dra. Ana" });
+    if (r.success) expect(r.data).toEqual({ enabled: true, apelido: "Ana Lima" });
   });
 
   it("liga sem apelido → inválido (apelido obrigatório)", () => {
@@ -29,7 +29,7 @@ describe("botSignatureSchema", () => {
   });
 
   it("desligado com apelido → válido (guarda o nome, só não assina)", () => {
-    const r = botSignatureSchema.safeParse({ enabled: false, apelido: "Dra. Ana" });
+    const r = botSignatureSchema.safeParse({ enabled: false, apelido: "Ana Lima" });
     expect(r.success).toBe(true);
   });
 
@@ -39,8 +39,8 @@ describe("botSignatureSchema", () => {
   });
 
   it("faz trim do apelido", () => {
-    const r = botSignatureSchema.safeParse({ enabled: true, apelido: "  Dra. Ana  " });
+    const r = botSignatureSchema.safeParse({ enabled: true, apelido: "  Ana Lima  " });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.apelido).toBe("Dra. Ana");
+    if (r.success) expect(r.data.apelido).toBe("Ana Lima");
   });
 });

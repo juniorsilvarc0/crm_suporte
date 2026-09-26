@@ -276,7 +276,7 @@ export function extractUazapiStatuses(payload: UazapiEnvelope): UazapiStatusUpda
  *
  * A uazapi emite `Type: "Deleted"` tanto quando NÓS chamamos `/message/delete`
  * quanto quando o contato apaga do celular dele. Sem tratar isto, a mensagem
- * que o paciente apagou continua na nossa tela — `mapEventType` devolve null
+ * que o contato apagou continua na nossa tela — `mapEventType` devolve null
  * para "Deleted" e o evento era engolido em silêncio.
  */
 export function extractUazapiDeletion(payload: UazapiEnvelope): string[] | null {

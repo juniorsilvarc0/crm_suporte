@@ -10,7 +10,7 @@ describe("escapeLikePattern", () => {
   });
 
   it("texto comum passa intacto", () => {
-    expect(escapeLikePattern("rezum")).toBe("rezum");
+    expect(escapeLikePattern("pdv")).toBe("pdv");
     expect(escapeLikePattern("consulta às 9h")).toBe("consulta às 9h");
   });
 });
@@ -20,9 +20,9 @@ describe("highlightSlices", () => {
     slices.map((s) => s.text).join("");
 
   it("marca a ocorrência e preserva o texto original", () => {
-    const slices = highlightSlices("Quero saber do Rezum", "rezum");
-    expect(texto(slices)).toBe("Quero saber do Rezum");
-    expect(slices.filter((s) => s.match).map((s) => s.text)).toEqual(["Rezum"]);
+    const slices = highlightSlices("Quero saber do PDV", "pdv");
+    expect(texto(slices)).toBe("Quero saber do PDV");
+    expect(slices.filter((s) => s.match).map((s) => s.text)).toEqual(["PDV"]);
   });
 
   it("ignora acento nos DOIS lados, sem deslocar o recorte", () => {
@@ -33,13 +33,13 @@ describe("highlightSlices", () => {
   });
 
   it("acha várias ocorrências", () => {
-    const slices = highlightSlices("exame, exame e exame", "exame");
+    const slices = highlightSlices("erro, erro e erro", "erro");
     expect(slices.filter((s) => s.match)).toHaveLength(3);
-    expect(texto(slices)).toBe("exame, exame e exame");
+    expect(texto(slices)).toBe("erro, erro e erro");
   });
 
   it("sem ocorrência devolve o texto inteiro sem marca", () => {
-    const slices = highlightSlices("bom dia", "rezum");
+    const slices = highlightSlices("bom dia", "pdv");
     expect(slices).toEqual([{ text: "bom dia", match: false }]);
   });
 

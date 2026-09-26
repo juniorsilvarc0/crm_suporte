@@ -32,26 +32,26 @@ describe("getDocumentMessagePresentation", () => {
   it("separa nome, extensão, tamanho e legenda gravados no envio", () => {
     const presentation = getDocumentMessagePresentation(
       documentMessage({
-        content: "Resultado dos exames",
+        content: "Logs do servidor",
         media_mime_type: "application/pdf",
-        metadata: { fileName: "exame final.pdf", fileSize: 1_572_864 },
+        metadata: { fileName: "log final.pdf", fileSize: 1_572_864 },
       })
     );
 
     expect(presentation).toEqual({
-      fileName: "exame final.pdf",
+      fileName: "log final.pdf",
       extension: "PDF",
       sizeLabel: "1.5 MB",
-      caption: "Resultado dos exames",
+      caption: "Logs do servidor",
     });
   });
 
   it("usa o conteúdo legado como nome sem duplicá-lo como legenda", () => {
     const presentation = getDocumentMessagePresentation(
-      documentMessage({ content: "pedido médico.docx", media_mime_type: null })
+      documentMessage({ content: "ordem de serviço.docx", media_mime_type: null })
     );
 
-    expect(presentation.fileName).toBe("pedido médico.docx");
+    expect(presentation.fileName).toBe("ordem de serviço.docx");
     expect(presentation.extension).toBe("DOCX");
     expect(presentation.caption).toBeNull();
   });
@@ -95,7 +95,7 @@ describe("getDocumentMessagePresentation", () => {
 });
 
 const presentation: DocumentMessagePresentation = {
-  fileName: "laudo.pdf",
+  fileName: "nota-fiscal.pdf",
   extension: "PDF",
   sizeLabel: "820 KB",
   caption: null,
@@ -106,12 +106,12 @@ describe("DocumentMessageCard", () => {
     render(
       <DocumentMessageCard
         presentation={presentation}
-        url="https://media.example.com/laudo.pdf"
+        url="https://media.example.com/nota-fiscal.pdf"
       />
     );
 
-    const link = screen.getByRole("link", { name: "Abrir arquivo laudo.pdf" });
-    expect(link).toHaveAttribute("href", "https://media.example.com/laudo.pdf");
+    const link = screen.getByRole("link", { name: "Abrir arquivo nota-fiscal.pdf" });
+    expect(link).toHaveAttribute("href", "https://media.example.com/nota-fiscal.pdf");
     expect(link).toHaveAttribute("target", "_blank");
     expect(screen.getByText("PDF")).toBeInTheDocument();
     expect(screen.getByText("820 KB")).toBeInTheDocument();

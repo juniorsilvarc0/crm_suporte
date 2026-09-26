@@ -72,8 +72,8 @@ function PreviewHarness() {
   const conversationRef = useRef<HTMLDivElement>(null);
   const [attachments, setAttachments] = useState<AttachmentDraft[]>(() => [
     {
-      id: "exame",
-      file: new File(["conteúdo"], "exame.pdf", {
+      id: "relatorio",
+      file: new File(["conteúdo"], "relatorio.pdf", {
         type: "application/pdf",
       }),
       caption: "",
@@ -117,8 +117,8 @@ function MultiplePreviewHarness({
       caption: "",
     },
     {
-      id: "exame",
-      file: new File(["exame"], "exame.pdf", { type: "application/pdf" }),
+      id: "relatorio",
+      file: new File(["relatorio"], "relatorio.pdf", { type: "application/pdf" }),
       caption: "",
     },
   ]);
@@ -153,7 +153,7 @@ describe("FilePreviewDialog", () => {
     render(<PreviewHarness />);
 
     const sheet = screen.getByRole("dialog", {
-      name: "Enviar exame.pdf para Maria",
+      name: "Enviar relatorio.pdf para Maria",
     });
 
     await waitFor(() => expect(focus).toHaveBeenCalled());
@@ -181,15 +181,15 @@ describe("FilePreviewDialog", () => {
 
     finishAnimation?.();
     const caption = screen.getByRole("textbox", { name: "Legenda do anexo" });
-    await user.type(caption, "Pedido médico");
-    await user.click(screen.getByRole("button", { name: "Selecionar exame.pdf" }));
-    await user.type(caption, "Exame recente");
+    await user.type(caption, "Ordem de serviço");
+    await user.click(screen.getByRole("button", { name: "Selecionar relatorio.pdf" }));
+    await user.type(caption, "Relatório recente");
     await user.click(screen.getByRole("button", { name: "Enviar 2 anexos" }));
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend.mock.calls[0]?.[0]).toEqual([
-      expect.objectContaining({ id: "pedido", caption: "Pedido médico" }),
-      expect.objectContaining({ id: "exame", caption: "Exame recente" }),
+      expect.objectContaining({ id: "pedido", caption: "Ordem de serviço" }),
+      expect.objectContaining({ id: "relatorio", caption: "Relatório recente" }),
     ]);
   });
 });
