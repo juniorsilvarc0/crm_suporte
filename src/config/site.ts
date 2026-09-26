@@ -8,4 +8,6 @@ export const siteConfig = {
   name: "CRM Suporte",
   description: "CRM de atendimento de suporte técnico — chamados pelo WhatsApp, triagem por IA e integração por API.",
   slug: "crm-suporte",
+  // Protocolo do ticket na tela: SUP-1024 (<ticketPrefix>-<tickets.number>).
+  ticketPrefix: "SUP",
 } as const;
