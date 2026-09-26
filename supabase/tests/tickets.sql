@@ -1333,6 +1333,8 @@ declare
   v_att   uuid;
   v_cat   uuid;
   v_cat1  uuid;
+  v_cat2  uuid;
+  v_q3    uuid;
   v_prod  uuid;
   v_s1    uuid;
   v_s2    uuid;
@@ -1409,6 +1411,28 @@ begin
   perform pg_temp.expect_fail('T92d arquivar mãe com filha ativa',
     format('update public.ticket_categories set archived_at = now() where id = %L', v_cat),
     'P0001', 'CATEGORY_HAS_ACTIVE_CHILDREN');
+  -- T92e–g: 20260926120000_categoria_trava_mae (a corrida R6 exige duas sessões:
+  -- prova no PROGRESS). Aqui, as regras em série.
+  update public.ticket_categories set archived_at = now() where id = v_cat1;
+  update public.ticket_categories set archived_at = now() where id = v_cat;
+  perform pg_temp.expect_fail('T92e filha nova sob mãe arquivada',
+    format('insert into public.ticket_categories (name, product_id, parent_id) values (''Carnê'', %L, %L)', v_q1, v_cat),
+    'P0001', 'CATEGORY_ARCHIVED');
+  perform pg_temp.expect_fail('T92f reativar filha de mãe arquivada',
+    format('update public.ticket_categories set archived_at = null where id = %L', v_cat1),
+    'P0001', 'CATEGORY_ARCHIVED');
+  insert into public.products (name) values ('Fila Tickets Gama') returning id into v_q3;
+  insert into public.ticket_categories (name, product_id) values ('Relatórios Gama', v_q3) returning id into v_cat2;
+  update public.ticket_categories set archived_at = now() where id = v_cat2;
+  update public.products set archived_at = now() where id = v_q3;
+  perform pg_temp.expect_fail('T92g reativar categoria de fila arquivada',
+    format('update public.ticket_categories set archived_at = null where id = %L', v_cat2),
+    'P0001', 'PRODUCT_ARCHIVED');
+  update public.ticket_categories set archived_at = null where id = v_cat;
+  update public.ticket_categories set archived_at = null where id = v_cat1;
+  insert into r values (
+    (select count(*) from public.ticket_categories c where c.id in (v_cat, v_cat1) and c.archived_at is null) = 2,
+    'T92h reativar a mãe e depois a filha', '');
 
   -- T93 (substitui o P01c de cadastros.sql)
   insert into public.products (name) values ('Fila Tickets Gama') returning id into v_prod;
