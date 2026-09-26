@@ -53,14 +53,16 @@ Responder rápido, para analista e gestor:
 - **Não é multi-tenant.** É um deploy por empresa.
 - **Fora da v1:** expediente e feriados no SLA, CSAT, base de conhecimento, portal do cliente, e-mail e mais de um número de WhatsApp. A lista completa está no plano.
 
-## 6. Módulos (estado atual, depois da Fase 1)
+## 6. Módulos (estado atual, depois da Fase 3)
 
 Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os módulos da clínica (leads, funil, pacientes, agenda, follow-ups, financeiro de vendas, métricas comerciais, rastreamento Meta) saíram na Fase 1; o código deles está na tag local `legado-clinica`, de onde as Fases 7 e 8 recuperam telas.
 
 | Módulo | Rota | Papel | O que faz |
 |---|---|---|---|
 | Início | `/app` | member | Mural de notas do usuário. A fila de tickets entra aqui na Fase 4 |
-| WhatsApp | `/app/chat` | member | Conversas ao vivo, texto/áudio/mídia, respostas rápidas compartilhadas, links com preview, telefones/vCards que iniciam conversa após Number Check, ações de arquivar/ler/limpar/apagar com menu e gestos mobile, transcrição, notas internas, etiquetas, takeover bot↔humano, Realtime |
+| WhatsApp | `/app/chat` | member | Conversas ao vivo, texto/áudio/mídia, respostas rápidas compartilhadas, links com preview, telefones/vCards que iniciam conversa após Number Check, ações de arquivar/ler/limpar/apagar com menu e gestos mobile, transcrição, notas internas, etiquetas, takeover bot↔humano, Realtime. O painel do contato mostra a **empresa** e o **selo do contrato** e liga/troca/desliga a empresa (Fase 3) |
+| Clientes | `/app/clientes`, `/app/clientes/[id]` | member (ações de admin marcadas) | Empresas (razão social, fantasia, CNPJ alfanumérico opcional), busca e filtro por situação do contrato. Na ficha: contatos da empresa, contrato vigente e histórico. Member cria e edita empresa; **admin** arquiva/reativa e cria, edita, suspende, reativa e encerra contrato. **Valor e vencimento só para admin** |
+| Contatos | `/app/contatos` | member | Contatos do WhatsApp, busca por nome ou telefone, filtro com/sem empresa, vincular/trocar/desvincular empresa |
 | Conexão | `/app/conexao` | **admin** | QR e estado da instância de WhatsApp (uazapi) |
 | Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
 | Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
@@ -87,11 +89,12 @@ Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avi
 
 **Projeto Supabase:** `crm-suporte` (`supabase/config.toml`) — **produção ainda não definida**; por enquanto só Docker local (ver [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md)); o banco nasce aplicando `supabase/migrations/` do zero.
 
-**Inventário do schema (baseline da Fase 2, medido no banco local em 2026-09-25):** 16 tabelas públicas · 2 policies · 33 funções · 18 triggers. As 45 migrations da clínica ficam só como referência em `supabase/legado-clinica/`.
+**Inventário do schema (depois da Fase 3, medido no banco local em 2026-09-25):** 21 tabelas públicas · 2 policies · 42 funções. A Fase 3 somou `products`, `support_plans`, `customers`, `support_contracts` e `support_contract_products`. As 45 migrations da clínica ficam só como referência em `supabase/legado-clinica/`.
 
 | Domínio | Tabelas |
 |---|---|
-| Contatos | `contacts`, `contact_phone_identities`, `contact_events` (append-only), `tags`, `contact_tags` |
+| Contatos | `contacts` (+ `customer_id` → empresa), `contact_phone_identities`, `contact_events` (append-only; inclui ligar/trocar/desligar empresa), `tags`, `contact_tags` |
+| Cadastros | `customers` (empresa; `contract_status` é o selo, derivado por trigger), `products` (a fila), `support_plans`, `support_contracts` (no máximo 1 vigente por empresa; escrita só por RPC de admin; **`monthly_amount` ilegível para o service_role**, sai só por `get_support_contract_amounts`), `support_contract_products` |
 | Atendimento | `chat_conversations`, `chat_messages`, `chat_integrations`, `chat_quick_replies`, `conversation_tags` |
 | Plataforma | `app_users`, `api_tokens`, `app_settings`, `app_environment_variables`, `integration_logs`, `user_notes` |
 
@@ -116,6 +119,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - Aplicação: `src/proxy.ts` (o middleware do Next 16).
 - Papéis: `admin` | `member`. O middleware redireciona pelo papel do JWT; **a página confirma com o papel fresco do banco**, cobrindo o caso do admin recém-rebaixado com cookie antigo.
 - Rota nova de admin exige atualizar **os dois lugares**: `ADMIN_PAGE_PREFIXES` e `allowedRoles` em `navigation.ts`.
+- **Cadastros (Fase 3):** Clientes e Contatos são páginas de member; o que é de admin são **ações**, e a fronteira é a rota (`requireDashboardAdmin`) mais o banco (as RPCs de contrato conferem admin ativo de novo). A ficha decide o papel no servidor: o payload do member não leva valor nem vencimento.
 
 ## 10. Integrações externas
 
@@ -177,4 +181,8 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - **Takeover** — humano assume a conversa; o relay ao agente para.
 - **Etiqueta** — marcação livre de conversa, do vocabulário único `tags`.
 - **Token de API** — credencial gerada na tela, para integradores. O banco guarda **hash**, nunca o valor. Volta a ter uso com a API v1 (Fase 5).
-- **Ticket, empresa, contrato, SLA** — entidades do produto-alvo, definidas em `docs/PLANO-IMPLANTACAO.md`; entram nas Fases 3 e 4.
+- **Empresa (cliente)** — pessoa jurídica atendida (`customers`), com N contatos e no máximo 1 contrato vigente. Arquiva, nunca apaga.
+- **Fila (produto)** — cada software da casa (`products`); os tickets da Fase 4 entram numa fila.
+- **Contrato de suporte** — `ativo` | `suspenso` | `encerrado` (terminal), com vigência, plano, filas cobertas, valor mensal e dia de vencimento (1..28). **Vigente** = ativo ou suspenso.
+- **Selo** — a situação do contrato mostrada para quem atende ("Contrato suspenso"), sem valor.
+- **Ticket, SLA** — entidades do produto-alvo, definidas em `docs/PLANO-IMPLANTACAO.md`; entram na Fase 4.

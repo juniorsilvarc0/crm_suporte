@@ -27,6 +27,128 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Fase 3 — cadastros: empresas, filas, planos, contratos e o selo no chat
+
+**Agente/Modelo:** Claude Opus 5.5 (orquestrando workflows de subagentes: desenho com leitores + 3 arquitetos + juiz; back e front em ondas; revisão adversarial em 5 lentes com verificação independente)
+**Objetivo:** O analista liga um contato do WhatsApp a uma empresa e vê no chat o selo do contrato ("Contrato suspenso"); há telas de Clientes e Contatos e cadastro de filas (produtos), planos e contratos de suporte.
+**Arquivos alterados:** branch `feat/fase3-cadastros`, commits separados por camada (`git log 856b404..HEAD`). Por camada:
+- **Infra:** app local na porta **3200** do host (decisão do dono; o container segue na 3000).
+- **Banco:** `supabase/migrations/20260925120700_cadastros.sql`, `…120800_encerrar_contrato_futuro.sql` e `supabase/tests/cadastros.sql`.
+- **Back:**
+  - `src/lib/formatters/{cnpj,search-text}.ts`;
+  - `src/features/{contracts,customers,products,contacts}/*`;
+  - rotas `/api/{customers,products,support-plans,contracts}/**`, mais `PATCH /api/contacts/[id]` e a rota de contato do chat.
+- **Front:**
+  - `/app/clientes`, `/app/clientes/[id]` e `/app/contatos`;
+  - painel do contato do chat;
+  - `ListPagination`, `CatalogCombobox`, `CustomerPicker` e `ContractStatusBadge`;
+  - navegação.
+
+**O que foi feito:**
+- **Modelo:**
+  - empresa (`customers`) com CNPJ alfanumérico opcional e único entre ativas;
+  - fila (`products`) e plano (`support_plans`);
+  - contrato de suporte com filas cobertas;
+  - `contacts.customer_id` com FK;
+  - ligar, trocar e desligar empresa viram `contact_events`.
+- **Invariantes no banco:**
+  - no máximo 1 contrato **vigente** (ativo ou suspenso) por empresa;
+  - encerrado é terminal;
+  - vencimento 1..28;
+  - empresa arquivada não recebe contrato nem vínculo novo e não arquiva com vigente;
+  - o selo (`customers.contract_status`) é derivado por trigger.
+- **Valor protegido na estrutura:**
+  - o `service_role` não tem SELECT em `monthly_amount`;
+  - a única leitura é `get_support_contract_amounts`, que confere admin ativo;
+  - contrato só é escrito pelas RPCs, que conferem admin de novo;
+  - um `select('*')` em contrato falha com 42501, de propósito.
+- **Papéis (decisão do dono):**
+  - member cria e edita empresa e liga ou desliga contato;
+  - admin arquiva e reativa, cria fila e plano e escreve contrato.
+- **Onde aparece o quê:**
+  - a ficha decide o papel no servidor, e o payload do member não leva valor nem vencimento;
+  - o painel do chat mostra empresa + selo e nunca valor.
+- **react-hook-form + zod compartilhado com a rota:** primeiro uso real (UI.md §5.23).
+
+**Decisões tomadas:**
+- **Com o dono:**
+  - 1 contrato vigente, e não "1 ativo" do plano;
+  - vencimento 1..28;
+  - só CNPJ, sem CPF;
+  - os papéis acima.
+- **Minhas:**
+  - encerrar sem data um contrato futuro usa o maior entre hoje e o início (migration `…120800`);
+  - `cadastroErrorResponse` para o bloco que se repetia em 5 rotas;
+  - `isColorName`/`getColorStyle` com `Object.hasOwn` (antes, `"constructor"` passava);
+  - catálogo que falha devolve `null` e o combobox diz "não foi possível carregar" (a spec pedia `[]`).
+- **Rotas além do plano:** `POST /api/support-plans`, `POST /api/customers/[id]/restore` e `POST /api/contracts/[id]/status`.
+
+**Verificação:**
+
+| Check | Resultado |
+|---|---|
+| typecheck | ✓ |
+| lint | ✓ 0 erros; 9 avisos que já existiam |
+| test | ✓ 100 arquivos, 1081 testes |
+| build | ✓ |
+| SQL | ✓ cadastros 63/63; baseline 52/52; segredo 7/7; reaplicar = 0 migrations; tipos gerados sem diff |
+
+- **Testes que pegam regressão:** uma cópia de `cadastros.sql` com grants injetados (valor, anon, helper como RPC) reprova os casos certos.
+- **Corridas provadas em duas sessões psql**, como service_role:
+  - dois `create_support_contract` simultâneos: o 2º espera a trava e recebe `CURRENT_CONTRACT_EXISTS`;
+  - contrato × arquivar, nas duas ordens: nunca empresa arquivada com contrato vigente;
+  - ligar × arquivar: só estados permitidos. As travas não conflitam; o resultado equivale a ligar e depois arquivar.
+- **Ponta a ponta com o app em container na porta 3200** (admin e member reais):
+  - fila e plano pelo admin; empresa com CNPJ alfanumérico pelo member;
+  - 409 de CNPJ repetido apontando a existente; DV errado → 400;
+  - member não cria contrato nem fila (403);
+  - contrato criado e suspenso; 2º vigente → 409;
+  - webhook cria o contato, o member liga, e o painel mostra `suspenso` (**pronto quando**);
+  - sem valor nem vencimento no painel, na busca e no HTML da ficha do member (conferido com padrões que resistem aos comentários do React);
+  - o admin vê "R$ 1.234,56" e "Todo dia 10";
+  - arquivar com vigente → 409.
+
+  Os dados de teste foram apagados.
+- **Revisão adversarial**, 5 lentes com verificação independente: 5 achados confirmados, todos corrigidos:
+  - **média:** listas liam sem confirmar o usuário. Veio junto o teste de contrato `pages-guard.test.ts`;
+  - **média:** página exatamente no fim (206 com lista vazia);
+  - **baixas:** ano 0000 → 500; produto criado em voo apagava o escolhido; selo empurrava o "Atual" para fora do seletor.
+
+  Nenhum achado alto.
+
+**Pendências / próximos passos:**
+- **Push e PR** (sem merge).
+- **Conferir no navegador antes do merge** (sem Playwright, por regra):
+  - Esc voltando um passo no painel do chat;
+  - combobox e select dentro da gaveta (< 640px);
+  - barra com 3 abas;
+  - selo e "Empresa arquivada" no tema escuro;
+  - arquivar em dois toques no Safari do iOS;
+  - `type="date"` no iOS.
+- **Limites conhecidos:**
+  - o seletor de empresa mostra as 20 primeiras;
+  - "Contatos (N)" da ficha para em 200;
+  - o filtro "Todas" não inclui arquivadas;
+  - a busca não normaliza NFD;
+  - trecho de telefone com menos de 4 dígitos vira busca por nome;
+  - o selo não é ao vivo (sem Realtime em `customers`).
+- **Fora da fase, anotados:**
+  - `api/chat/conversations/route.ts` monta `.or()` com termo cru (injeção de filtro PostgREST);
+  - `api/tags` devolve `error.message`;
+  - `dialog.tsx` passa `undefined as never` no ramo gaveta;
+  - `@aws-sdk/client-s3` sem uso.
+- **Próxima fase:** Fase 4 (tickets).
+
+**Armadilhas descobertas:**
+- **`select('*')` em `support_contracts` dá 42501 para TODOS**, admin inclusive. Isso também vale para `.select()` sem argumento e para o embed `support_contracts(*)`. É a falha fechada escolhida. Colunas sempre por constante, e o `Row` gerado (que traz `monthly_amount`) nunca vira tipo de tela.
+- **Página server que lê dado precisa do guard própria.** O layout de `(dashboard)` não roda na navegação pelo cliente.
+- **O PostgREST responde 206 com `[]` quando o offset é igual ao total**, e 416 (`PGRST103`) só depois dele. Paginação precisa tratar os dois.
+- **`z.iso.date()` aceita o ano 0000**, que o Postgres recusa (22008).
+- **`in` num objeto de lookup aceita chaves do protótipo.** Use `Object.hasOwn`.
+- **RHF:** o `field.value` do `Controller` é o valor da renderização. Callback que termina depois de um `await` deve ler `getValues()`.
+- **`<div>` dentro de `<button>` é HTML inválido.** Envoltório de badge em linha-botão é `span`.
+- **Comentários do React quebram regex de texto no HTML** (`Todo dia <!-- -->10`). Checagem de vazamento procura o rótulo e o valor separados.
+
 ## [2026-09-25] Fase 2 — baseline novo, contato no lugar de lead, segredos no Vault e mídia privada
 
 **Agente/Modelo:** Claude Opus 5.5

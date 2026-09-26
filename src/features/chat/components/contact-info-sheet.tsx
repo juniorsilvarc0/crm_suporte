@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode, type RefObject } from "react";
+import Link from "next/link";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContactAvatar } from "@/features/chat/components/contact-avatar";
@@ -24,6 +26,11 @@ import {
   contactTelHref,
   notesAreDirty,
 } from "@/features/chat/lib/contact-info";
+import { ContractStatusBadge } from "@/features/contracts/components/contract-status-badge";
+import { CustomerPicker } from "@/features/customers/components/customer-picker";
+import { customerDisplayName } from "@/features/customers/lib/customer-display";
+import type { CustomerSummary } from "@/features/customers/types";
+import { formatCnpj } from "@/lib/formatters/cnpj";
 import { formatDate } from "@/lib/formatters/date";
 import { formatPhoneBR } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";
@@ -68,10 +75,13 @@ export function ContactInfoSheet({
 }) {
   const [open, setOpen] = useState(true);
   const [pending, setPending] = useState<PendingAction>(null);
-  // Etiquetar troca o miolo DESTE sheet, com "Voltar" — abrir uma gaveta por
-  // cima seria modal sobre modal (UI.md §9).
-  const [view, setView] = useState<"info" | "tags">("info");
+  // Etiquetar e escolher a empresa trocam o miolo DESTE sheet, com "Voltar" —
+  // abrir uma gaveta por cima seria modal sobre modal (UI.md §9).
+  const [view, setView] = useState<"info" | "tags" | "customer">("info");
   const [busyTagId, setBusyTagId] = useState<string | null>(null);
+  // Alvo da escrita de empresa; só vale enquanto `linking` (o hook é o dono do
+  // "em voo"). Ao desligar é a empresa atual, que é o que o seletor espera.
+  const [linkTargetId, setLinkTargetId] = useState<string | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
   const assignedTags = tagsController.tagsByConversation.get(conversation.id) ?? NO_TAGS;
@@ -83,13 +93,45 @@ export function ContactInfoSheet({
     if (!ok) toast.error("Não foi possível atualizar a etiqueta.");
   };
 
-  const { info, loading, failed, savingNotes, saveNotes, retry } = useContactInfo(
-    conversation.id
-  );
+  const {
+    info,
+    loading,
+    failed,
+    savingNotes,
+    saveNotes,
+    linking,
+    linkCustomer,
+    retry,
+  } = useContactInfo(conversation.id);
 
   const displayName = contactDisplayName(conversation);
   const telHref = contactTelHref(conversation.contact_phone);
   const contact = info?.contact ?? null;
+  const customer = info?.customer ?? null;
+
+  // Sem mensagem = nada foi enviado (outra escrita já está em voo): silêncio.
+  const pickCustomer = async (next: CustomerSummary) => {
+    setLinkTargetId(next.id);
+    const result = await linkCustomer(next);
+    if (!result.ok) {
+      if (result.message) toast.error(result.message);
+      return;
+    }
+    toast.success(`Contato ligado a ${customerDisplayName(next)}.`);
+    setView("info");
+  };
+
+  const unlinkCustomer = async () => {
+    if (!customer) return;
+    setLinkTargetId(customer.id);
+    const result = await linkCustomer(null);
+    if (!result.ok) {
+      if (result.message) toast.error(result.message);
+      return;
+    }
+    toast.success(`Contato desligado de ${customerDisplayName(customer)}.`);
+    setView("info");
+  };
 
   const close = (action: PendingAction = null) => {
     if (!open) return;
@@ -111,7 +153,14 @@ export function ContactInfoSheet({
     <Dialog
       variant="dialog"
       open={open}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
+        // Esc numa vista interna volta um passo, não fecha o painel: cada Esc
+        // desfaz uma coisa só (UI.md §5.7.18).
+        if (!next && view !== "info" && details.reason === "escape-key") {
+          details.cancel();
+          setView("info");
+          return;
+        }
         if (!next) close();
       }}
       onOpenChangeComplete={(next) => {
@@ -135,9 +184,9 @@ export function ContactInfoSheet({
         aria-describedby={undefined}
       >
         <header className="flex h-14 shrink-0 items-center gap-1 border-b border-[var(--wa-info-divider)] px-1 sm:px-2">
-          {/* Na vista de etiquetas o mesmo botão volta um passo, em vez de
-              fechar: fechar dali perderia a tela de contato inteira. */}
-          {view === "tags" ? (
+          {/* Nas vistas de etiquetas e de empresa o mesmo botão volta um passo,
+              em vez de fechar: fechar dali perderia a tela de contato inteira. */}
+          {view !== "info" ? (
             <button
               type="button"
               onClick={() => setView("info")}
@@ -160,7 +209,7 @@ export function ContactInfoSheet({
             </DialogClose>
           )}
           <DialogTitle className="font-sans min-w-0 flex-1 truncate text-center text-[17px] font-semibold tracking-[-0.01em]">
-            {view === "tags" ? "Etiquetas" : "Dados do contato"}
+            {view === "tags" ? "Etiquetas" : view === "customer" ? "Empresa" : "Dados do contato"}
           </DialogTitle>
           {/* Equilibra o botão da esquerda para o título ficar centrado. */}
           <span className="size-11 shrink-0" aria-hidden />
@@ -183,6 +232,20 @@ export function ContactInfoSheet({
               }}
               onRetry={tagsController.retry}
             />
+          </div>
+        ) : view === "customer" ? (
+          // Sem foco automático: o teclado subiria no meio da troca de vista.
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+            <div className="mx-auto w-full max-w-xl">
+              <CustomerPicker
+                appearance="chat"
+                currentCustomerId={customer?.id ?? null}
+                currentCustomerName={customer ? customerDisplayName(customer) : null}
+                busyId={linking ? linkTargetId : null}
+                onPick={(next) => void pickCustomer(next)}
+                onUnlink={() => void unlinkCustomer()}
+              />
+            </div>
           </div>
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
@@ -230,6 +293,14 @@ export function ContactInfoSheet({
                 disabledReason={onSearch ? undefined : "Busca indisponível"}
               />
             </section>
+
+            <CustomerGroup
+              customer={customer}
+              hasContact={contact !== null}
+              loading={loading}
+              failed={failed}
+              onChange={() => setView("customer")}
+            />
 
             {/* Etiquetas vêm antes das notas: é o dado que se lê de relance e
                 o que a pessoa mais mexe durante o atendimento. */}
@@ -314,6 +385,114 @@ export function ContactInfoSheet({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Empresa do contato, com o selo do contrato — é o que o analista precisa ver
+ * de relance ("Contrato suspenso"). Nunca valor nem vencimento: a rota do painel
+ * não os traz, e esta tela é de quem atende.
+ *
+ * Na falha o grupo some: o "Tentar de novo" do grupo Contato já recarrega os
+ * dois, e duas saídas para a mesma leitura seriam ruído. Sem cadastro também
+ * some — não há contato para ligar a empresa.
+ */
+function CustomerGroup({
+  customer,
+  hasContact,
+  loading,
+  failed,
+  onChange,
+}: {
+  customer: CustomerSummary | null;
+  hasContact: boolean;
+  loading: boolean;
+  failed: boolean;
+  onChange: () => void;
+}) {
+  if (loading) {
+    return (
+      <InfoGroup title="Empresa">
+        <SkeletonRow />
+        <SkeletonRow />
+      </InfoGroup>
+    );
+  }
+  if (failed || !hasContact) return null;
+
+  if (!customer) {
+    return (
+      <InfoGroup title="Empresa">
+        <div className="flex min-h-11 items-center px-4 py-2.5">
+          <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
+            Sem empresa vinculada
+          </span>
+        </div>
+        <GroupActionButton label="Ligar a uma empresa" onClick={onChange} />
+      </InfoGroup>
+    );
+  }
+
+  const name = customerDisplayName(customer);
+  const secondary = [
+    customer.legal_name !== name ? customer.legal_name : null,
+    customer.cnpj ? formatCnpj(customer.cnpj) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <InfoGroup title="Empresa">
+      <div className="flex min-h-11 min-w-0 flex-col justify-center px-4 py-2.5">
+        <span className="text-[15px] break-words">{name}</span>
+        {secondary ? (
+          <span className="truncate text-[13px] text-[var(--wa-info-label)] tabular-nums">
+            {secondary}
+          </span>
+        ) : null}
+      </div>
+      <div className="grid min-h-11 grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-center gap-3 px-4 py-2.5">
+        <span className="truncate text-[15px] text-[var(--wa-info-label)]">Contrato</span>
+        {/* `div min-w-0`: o `shrink-0` do selo venceria a linha (UI.md §5.6.1). */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+          <ContractStatusBadge status={customer.contract_status} />
+          {customer.archived_at ? (
+            <Badge variant="outline" title="Empresa arquivada" className="max-w-full">
+              <span className="min-w-0 truncate">Empresa arquivada</span>
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+      {/* `next/link`, não `<a>`: sair do chat por documento inteiro pisca
+          branco no PWA. */}
+      <Link
+        href={`/app/clientes/${customer.id}`}
+        className={GROUP_ACTION_CLASS}
+      >
+        <span className="truncate">Abrir empresa</span>
+        <ChevronRightIcon
+          aria-hidden
+          className="size-[18px] shrink-0 text-[var(--wa-green-deep)]"
+        />
+      </Link>
+      <GroupActionButton label="Trocar empresa" onClick={onChange} />
+    </InfoGroup>
+  );
+}
+
+/** Linha de ação do grupo: verde, com chevron — o molde de "Adicionar etiqueta". */
+const GROUP_ACTION_CLASS =
+  "flex min-h-11 w-full items-center justify-between gap-3 px-4 py-2.5 text-[15px] text-[var(--wa-green-deep)] transition-colors hover:bg-[var(--wa-info-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+
+function GroupActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={GROUP_ACTION_CLASS}>
+      <span className="truncate">{label}</span>
+      <ChevronRightIcon
+        aria-hidden
+        className="size-[18px] shrink-0 text-[var(--wa-info-label)]"
+      />
+    </button>
   );
 }
 

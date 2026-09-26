@@ -20,7 +20,7 @@ Guia completo em **[`SETUP.md`](SETUP.md)**. Resumo:
 ```bash
 git clone https://github.com/juniorsilvarc0/crm_suporte.git && cd crm_suporte
 cp .env.local.example .env.local     # já vem pronto para o stack local
-docker compose up -d --build --wait   # banco + API + app em http://localhost:3000
+docker compose up -d --build --wait   # banco + API + app em http://localhost:3200
 ./scripts/db-local-apply.sh           # aplica migrations + seed (login admin@local / 123456)
 ```
 

@@ -1,6 +1,8 @@
 import type { ComponentType } from "react";
 import {
   ActivityIcon,
+  Building2Icon,
+  ContactRoundIcon,
   SlidersHorizontalIcon,
   SmartphoneIcon,
   UsersRoundIcon,
@@ -36,13 +38,16 @@ export type NavItem = {
 };
 
 /**
- * O núcleo que sobrou da poda do CRM de origem. Tickets, clientes, agenda,
- * financeiro e métricas de suporte entram nas fases de
- * `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém o ícone da própria marca.
+ * O núcleo que sobrou da poda do CRM de origem, mais os cadastros da Fase 3
+ * (Clientes e Contatos). Tickets, agenda, financeiro e métricas de suporte
+ * entram nas fases seguintes de `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém
+ * o ícone da própria marca.
  */
 export const dashboardNavigation: NavItem[] = [
   { title: "Início", href: "/app", icon: ActivityIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "WhatsApp", href: "/app/chat", icon: WhatsAppIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Clientes", href: "/app/clientes", icon: Building2Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Contatos", href: "/app/contatos", icon: ContactRoundIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Conexão", href: "/app/conexao", icon: SmartphoneIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Configurações", href: "/app/configuracoes", icon: SlidersHorizontalIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
@@ -57,11 +62,13 @@ export const dashboardNavigation: NavItem[] = [
  * não um `slice`.
  *
  * O que não está aqui não desaparece — vive no menu completo, que é uma gaveta
- * de tela cheia com seções, não um popover apertado em cima da barra.
+ * de tela cheia com seções, não um popover apertado em cima da barra (é onde
+ * Contatos mora no celular).
  */
 export const mobileTabHrefs: ReadonlyArray<string> = [
   "/app",
   "/app/chat",
+  "/app/clientes",
 ];
 
 export function getDashboardNavigation(role: AppUserRole): NavItem[] {
@@ -98,6 +105,8 @@ const TOP_NAV_SPEC: ReadonlyArray<
 > = [
   { kind: "link", href: "/app" },
   { kind: "link", href: "/app/chat" },
+  { kind: "link", href: "/app/clientes" },
+  { kind: "link", href: "/app/contatos" },
   { kind: "menu", title: "Ajustes", hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes"] },
 ];
 

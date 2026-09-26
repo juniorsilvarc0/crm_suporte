@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { notesPatchValue, type ContactInfo } from "@/features/chat/lib/contact-info";
+import { linkContactToCustomer } from "@/features/contacts/lib/link-customer";
+import type { CustomerSummary } from "@/features/customers/types";
+
+/** `message` só vem na falha: é a do servidor, pronta para o toast. */
+export type LinkCustomerOutcome = { ok: boolean; message?: string };
 
 type State = {
   info: ContactInfo | null;
@@ -22,6 +27,7 @@ const INITIAL: State = { info: null, loading: true, failed: false };
 export function useContactInfo(conversationId: string) {
   const [state, setState] = useState<State>(INITIAL);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [linking, setLinking] = useState(false);
   /** Incrementar dispara a busca de novo — é o "tentar de novo" da tela. */
   const [attempt, setAttempt] = useState(0);
   /** Some com a resposta que chega depois do desmonte. */
@@ -119,12 +125,43 @@ export function useContactInfo(conversationId: string) {
     [state.info, savingNotes]
   );
 
+  /**
+   * Liga o contato à empresa escolhida, ou desliga com `null`, pelo mesmo
+   * `PATCH /api/contacts/[id]` das notas (`linkContactToCustomer`).
+   */
+  const linkCustomer = useCallback(
+    async (customer: CustomerSummary | null): Promise<LinkCustomerOutcome> => {
+      const contactId = state.info?.contact?.id;
+      if (!contactId || linking) return { ok: false };
+
+      setLinking(true);
+      try {
+        const result = await linkContactToCustomer(contactId, customer?.id ?? null);
+        if (!result.ok) return { ok: false, message: result.message };
+
+        if (alive.current) {
+          // Espelha a empresa escolhida, que já traz o selo do contrato. Buscar
+          // de novo voltaria o painel ao esqueleto e as notas piscariam.
+          setState((current) =>
+            current.info ? { ...current, info: { ...current.info, customer } } : current
+          );
+        }
+        return { ok: true };
+      } finally {
+        if (alive.current) setLinking(false);
+      }
+    },
+    [state.info, linking]
+  );
+
   return {
     info: state.info,
     loading: state.loading,
     failed: state.failed,
     savingNotes,
     saveNotes,
+    linking,
+    linkCustomer,
     retry,
   };
 }

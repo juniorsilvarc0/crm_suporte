@@ -18,5 +18,5 @@ COPY . .
 
 EXPOSE 3000
 
-# next dev já escuta em 0.0.0.0 por padrão (acessível via localhost:3000 no host).
+# next dev já escuta em 0.0.0.0 por padrão (no host, localhost:3200: o compose mapeia 3200 → 3000).
 CMD ["pnpm", "dev"]

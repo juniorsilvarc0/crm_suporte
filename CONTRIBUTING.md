@@ -110,7 +110,7 @@ Guia completo (pré-requisitos por SO) em [`SETUP.md`](SETUP.md). Resumo:
 
 ```bash
 cp .env.local.example .env.local   # já vem pronto p/ o stack local
-docker compose up -d --build        # banco + API + app em http://localhost:3000
+docker compose up -d --build        # banco + API + app em http://localhost:3200
 ./scripts/db-local-apply.sh         # aplica migrations + seed
 # login: admin@local / 123456
 ```

@@ -1,4 +1,5 @@
 import type { ChatConversation } from "@/features/chat/types";
+import type { CustomerSummary } from "@/features/customers/types";
 
 /**
  * Modelo da tela de informações do contato.
@@ -18,8 +19,14 @@ export type ContactRecord = {
   created_at: string;
 };
 
+/**
+ * `customer` é a empresa do contato (`contacts.customer_id`), com o selo do
+ * contrato já derivado em `customers.contract_status`. Nunca traz valor nem
+ * nada de `support_contracts`: o painel do chat é tela de quem atende.
+ */
 export type ContactInfo = {
   contact: ContactRecord | null;
+  customer: CustomerSummary | null;
 };
 
 /**

@@ -164,6 +164,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) num cookie `crm-suport
 - `src/lib/auth/route-guard.ts` — decisão de acesso por rota, **isolada do runtime do Next para ser testável**.
 - `src/proxy.ts` — traduz a decisão em resposta HTTP (é o middleware; o arquivo se chama `proxy.ts` no Next 16).
 - **Toda rota `/api` de sessão confirma o usuário no BANCO na primeira linha** — `requireDashboardUser()` (usuário ativo) ou `requireDashboardAdmin()` — antes de ler o corpo. O proxy só confere a assinatura do cookie: quem foi desativado, ou tem papel que o app não conhece, segue com cookie válido por até 7 dias. `src/app/api/api-guards.test.ts` falha se algum handler ficar sem guard.
+- **Toda página que lê dado no servidor também confirma o usuário no banco** antes da 1ª consulta (`getDashboardViewer()` + redirect, ou `requireAdminPage()`): o layout de `(dashboard)` **não roda de novo na navegação pelo cliente**. `src/app/(dashboard)/pages-guard.test.ts` falha se uma página consultar sem isso.
 - Papéis: `admin` | `member`. O menu esconder um item **não é segurança** — a página confirma o papel fresco no banco (`getDashboardViewer`). Ao adicionar rota de admin, atualize **os dois**: `ADMIN_PAGE_PREFIXES` no guard e `allowedRoles` em `src/config/navigation.ts`.
 
 Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não invoque).
@@ -193,8 +194,9 @@ src/app/
     <resto>              #   CRUD do app, protegido pela sessão
                          #   (a API v1 para integradores entra na Fase 5)
   login, definir-senha, politica-de-privacidade, offline
-src/features/<dominio>/  # auth, chat, connection, home, integrations (logs),
-                         #   leads (só identidade por telefone), quick-replies,
+src/features/<dominio>/  # auth, chat, connection, contacts (identidade, lista,
+                         #   vínculo com empresa), contracts, customers, home,
+                         #   integrations (logs), products (filas), quick-replies,
                          #   settings, tags
 src/components/
   ui/                    # primitivos (Base UI) — reuse antes de criar

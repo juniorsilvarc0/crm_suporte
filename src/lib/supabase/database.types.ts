@@ -225,7 +225,13 @@ isOneToOne: false
                     "anonymized_at"?: string | null,"archived_at"?: string | null,"avatar_bucket"?: string | null,"avatar_key"?: string | null,"created_at"?: string,"customer_id"?: string | null,"email"?: string | null,"id"?: string,"last_message_at"?: string | null,"name"?: string | null,"normalized_phone"?: string,"notes"?: string | null,"phone"?: string,"search_name"?: never,"source"?: string,"updated_at"?: string
                   }
                   Relationships: [
-                    
+                    {
+      foreignKeyName: "contacts_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"conversation_tags": {
                   Row: {
@@ -252,6 +258,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"customers": {
+                  Row: {
+                    "archived_at": string | null,"cnpj": string | null,"contract_status": string | null,"created_at": string,"created_by_user_id": string | null,"id": string,"legal_name": string,"notes": string | null,"search_name": string | null,"trade_name": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "archived_at"?: string | null,"cnpj"?: string | null,"contract_status"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"id"?: string,"legal_name": string,"notes"?: string | null,"search_name"?: never,"trade_name"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "archived_at"?: string | null,"cnpj"?: string | null,"contract_status"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"id"?: string,"legal_name"?: string,"notes"?: string | null,"search_name"?: never,"trade_name"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "customers_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"integration_logs": {
                   Row: {
                     "action": string | null,"api_token_id": string | null,"created_at": string,"direction": string | null,"error": string | null,"http_status": number | null,"id": string,"latency_ms": number | null,"payload": Json | null,"provider": string,"request_id": string | null,"route": string | null,"status": string | null
@@ -270,6 +295,88 @@ isOneToOne: false
       referencedRelation: "api_tokens"
       referencedColumns: ["id"]
     }
+                  ]
+                },"products": {
+                  Row: {
+                    "archived_at": string | null,"color": string,"created_at": string,"id": string,"name": string,"niche": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "archived_at"?: string | null,"color"?: string,"created_at"?: string,"id"?: string,"name": string,"niche"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "archived_at"?: string | null,"color"?: string,"created_at"?: string,"id"?: string,"name"?: string,"niche"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"support_contract_products": {
+                  Row: {
+                    "contract_id": string,"created_at": string,"product_id": string
+                  }
+                  Insert: {
+                    "contract_id": string,"created_at"?: string,"product_id": string
+                  }
+                  Update: {
+                    "contract_id"?: string,"created_at"?: string,"product_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "support_contract_products_contract_id_fkey"
+      columns: ["contract_id"]
+isOneToOne: false
+      referencedRelation: "support_contracts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "support_contract_products_product_id_fkey"
+      columns: ["product_id"]
+isOneToOne: false
+      referencedRelation: "products"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"support_contracts": {
+                  Row: {
+                    "billing_day": number,"created_at": string,"created_by_user_id": string | null,"customer_id": string,"ends_on": string | null,"id": string,"monthly_amount": number,"plan_id": string | null,"starts_on": string,"status": string,"updated_at": string
+                  }
+                  Insert: {
+                    "billing_day": number,"created_at"?: string,"created_by_user_id"?: string | null,"customer_id": string,"ends_on"?: string | null,"id"?: string,"monthly_amount": number,"plan_id"?: string | null,"starts_on": string,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "billing_day"?: number,"created_at"?: string,"created_by_user_id"?: string | null,"customer_id"?: string,"ends_on"?: string | null,"id"?: string,"monthly_amount"?: number,"plan_id"?: string | null,"starts_on"?: string,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "support_contracts_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "support_contracts_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "support_contracts_plan_id_fkey"
+      columns: ["plan_id"]
+isOneToOne: false
+      referencedRelation: "support_plans"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"support_plans": {
+                  Row: {
+                    "archived_at": string | null,"created_at": string,"description": string | null,"id": string,"name": string,"updated_at": string
+                  }
+                  Insert: {
+                    "archived_at"?: string | null,"created_at"?: string,"description"?: string | null,"id"?: string,"name": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "archived_at"?: string | null,"created_at"?: string,"description"?: string | null,"id"?: string,"name"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
                   ]
                 },"tags": {
                   Row: {
@@ -309,7 +416,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "assert_security_baseline":
+            "assert_contract_refs":
+{ Args: { "p_contract_id": string,"p_plan_id": string,"p_product_ids": (string)[] }; Returns: undefined
+                           },
+"assert_security_baseline":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "clear_chat_conversation":
@@ -319,6 +429,9 @@ isOneToOne: false
 { Args: { "p_apelido_atendimento"?: string,"p_assinar_mensagens"?: boolean,"p_avatar_color": string,"p_email": string,"p_must_change_password"?: boolean,"p_name": string,"p_password": string,"p_role": string }; Returns: {
               "avatar_color": string,"avatar_url": string,"created_at": string,"email": string,"id": string,"is_active": boolean,"name": string,"role": string
             }[]
+                           },
+"create_support_contract":
+{ Args: { "p_actor_id": string,"p_billing_day": number,"p_customer_id": string,"p_ends_on"?: string,"p_monthly_amount": number,"p_plan_id"?: string,"p_product_ids": (string)[],"p_starts_on": string,"p_status": string }; Returns: string
                            },
 "delete_app_environment_variable":
 { Args: { "p_name": string }; Returns: boolean
@@ -340,6 +453,11 @@ isOneToOne: false
 "get_chat_integration_secret":
 { Args: { "p_integration_id": string,"p_kind": string }; Returns: string
                            },
+"get_support_contract_amounts":
+{ Args: { "p_actor_id": string,"p_customer_id": string }; Returns: {
+              "contract_id": string,"monthly_amount": number
+            }[]
+                           },
 "normalize_phone":
 { Args: { "p_phone": string }; Returns: string
                            },
@@ -348,6 +466,9 @@ isOneToOne: false
                            },
 "phone_match_key":
 { Args: { "p_phone": string }; Returns: string
+                           },
+"require_active_admin":
+{ Args: { "p_actor_id": string }; Returns: undefined
                            },
 "reset_app_user_password":
 { Args: { "p_actor_id": string,"p_id": string,"p_must_change_password"?: boolean,"p_password": string }; Returns: undefined
@@ -361,10 +482,16 @@ isOneToOne: false
 "set_chat_integration_secret":
 { Args: { "p_integration_id": string,"p_kind": string,"p_value": string }; Returns: boolean
                            },
+"set_support_contract_status":
+{ Args: { "p_actor_id": string,"p_contract_id": string,"p_ends_on"?: string,"p_status": string }; Returns: Json
+                           },
 "update_app_user":
 { Args: { "p_actor_id": string,"p_apelido_atendimento"?: string,"p_assinar_mensagens"?: boolean,"p_avatar_color": string,"p_avatar_url": string,"p_email": string,"p_id": string,"p_is_active": boolean,"p_name": string,"p_role": string }; Returns: {
               "avatar_color": string,"avatar_url": string,"created_at": string,"email": string,"id": string,"is_active": boolean,"name": string,"role": string
             }[]
+                           },
+"update_support_contract":
+{ Args: { "p_actor_id": string,"p_billing_day": number,"p_contract_id": string,"p_ends_on"?: string,"p_monthly_amount": number,"p_plan_id"?: string,"p_product_ids": (string)[],"p_starts_on": string }; Returns: undefined
                            },
 "verify_login":
 { Args: { "p_email": string,"p_password": string }; Returns: {

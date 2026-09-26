@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { mapCadastroError } from "@/features/customers/lib/map-cadastro-error";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -16,10 +17,13 @@ const nullableText = z.preprocess(
 );
 
 // Só as colunas que o banco deixa o app editar (grant de UPDATE em _contatos).
+// `customer_id`: uuid liga à empresa, `null` desliga, ausente não mexe. Empresa
+// arquivada ou inexistente quem recusa é o banco (trigger e FK de _cadastros).
 const updateSchema = z.object({
   name: nullableText,
   email: nullableText,
   notes: nullableText,
+  customer_id: z.string().regex(UUID_RE, "Empresa inválida.").nullable().optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -81,6 +85,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .maybeSingle();
 
   if (error) {
+    // Vínculo recusado pelo banco é erro do campo, não falha: a tela mostra
+    // "Empresa arquivada" ou "Empresa não encontrada" junto do seletor.
+    const mapped = mapCadastroError(error);
+    if (mapped.status === 422 && mapped.field === "customer_id") {
+      return NextResponse.json(
+        { ok: false, message: mapped.message, errors: { customer_id: [mapped.message] } },
+        { status: 422 }
+      );
+    }
     console.error("[PATCH /api/contacts/[id]]", error.message);
     return NextResponse.json(
       { ok: false, message: "Não foi possível atualizar o contato." },
