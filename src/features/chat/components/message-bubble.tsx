@@ -332,7 +332,7 @@ function MessageMenu({
  * Separado do `MessageMenu` porque as regras não têm nada em comum: lá tudo
  * passa pelo WhatsApp (janela de 15 min, `external_id`, provedor que recusa);
  * aqui é o nosso banco e o dono é quem escreveu. Encaminhar e responder não
- * existem — nota não vai para o paciente.
+ * existem — nota não vai para o cliente.
  *
  * Sempre visível, não só no hover: no toque hover não existe, e uma anotação
  * que só a colega consegue corrigir no desktop não serve de registro.
@@ -479,7 +479,7 @@ function MessageBubbleImpl({
     return (
       <div ref={rowRef} data-message-id={message.id} className="group/msg flex w-full justify-end px-2 py-0.5">
         <div className="relative min-w-0 max-w-[85%] rounded-lg border border-amber-300/60 bg-amber-100 px-3 py-2 text-sm text-amber-900 shadow-sm dark:border-amber-700/40 dark:bg-amber-950/60 dark:text-amber-100 sm:max-w-[70%]">
-          {/* Assinatura. Anotação sem autor é bilhete anônimo no prontuário:
+          {/* Assinatura. Anotação sem autor é bilhete anônimo no histórico do atendimento:
               ninguém sabe a quem perguntar depois. O nome só aparece quando
               existe de verdade — nada é inventado para preencher a linha. */}
           {/* `pr-10` é a calha do gatilho de 44px: sem ela o nome do autor

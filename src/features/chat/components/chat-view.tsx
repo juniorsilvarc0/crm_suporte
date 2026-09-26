@@ -983,7 +983,7 @@ export function ChatView({
 
       {deleting && (
         <DeleteMessageDialog
-          // Anotação não vai ao paciente: prometer "apagada para o contato"
+          // Anotação não vai ao contato: prometer "apagada para o contato"
           // seria mentira, e assustaria quem só quer corrigir um lembrete.
           isNote={isNoteMessage(deleting)}
           deleting={deletePending}

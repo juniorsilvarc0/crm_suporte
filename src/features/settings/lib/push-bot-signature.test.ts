@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { pushBotSignatureToAgent } from "@/features/settings/lib/push-bot-signature";
 
-const config = { enabled: true, apelido: "Dra. Ana" };
+const config = { enabled: true, apelido: "Ana Lima" };
 
 afterEach(() => {
   vi.useRealTimers();
@@ -37,7 +37,7 @@ describe("pushBotSignatureToAgent", () => {
     expect(url).toBe("https://agente.exemplo.com/hook");
     expect(init?.method).toBe("POST");
     const sent = JSON.parse(String(init?.body));
-    expect(sent).toMatchObject({ enabled: true, apelido: "Dra. Ana" });
+    expect(sent).toMatchObject({ enabled: true, apelido: "Ana Lima" });
     expect(sent.updated_at).toBeTypeOf("string");
   });
 

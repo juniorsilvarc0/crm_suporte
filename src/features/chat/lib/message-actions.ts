@@ -95,7 +95,7 @@ export function canEditMessage(message: ChatMessage, now: number): boolean {
 /**
  * Apagar é "para todos", e o WhatsApp só apaga para todos o que nós enviamos.
  * Mensagem do contato não ganha o item — um "apagar" que só some da nossa tela
- * ensinaria que a mensagem sumiu do celular do paciente, e não sumiu.
+ * ensinaria que a mensagem sumiu do celular do contato, e não sumiu.
  *
  * Sem janela de tempo: o limite do WhatsApp (≈2 dias) não está documentado no
  * OpenAPI da uazapi, e chutar prazo esconde uma ação que ainda funcionaria.

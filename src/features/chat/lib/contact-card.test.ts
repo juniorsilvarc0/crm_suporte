@@ -59,8 +59,8 @@ describe("parseContactMessage — amostras de produção", () => {
   });
 
   it("nome com ponto e barra não vira outra coisa", () => {
-    const cards = parseContactMessage("Dra. Ana Souza\nPhone: +55 11 99000-0010");
-    expect(cards[0].name).toBe("Dra. Ana Souza");
+    const cards = parseContactMessage("Ana Souza\nPhone: +55 11 99000-0010");
+    expect(cards[0].name).toBe("Ana Souza");
   });
 });
 

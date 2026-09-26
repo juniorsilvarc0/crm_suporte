@@ -23,7 +23,7 @@ describe("extFromMime", () => {
 describe("buildMediaKey", () => {
   // A razão de existir deste arquivo: o caminho antigo era
   // `5511990000024/inbound-<timestamp>.webp` num bucket público.
-  it("não leva telefone nem nada do paciente no caminho", () => {
+  it("não leva telefone nem nada do contato no caminho", () => {
     const key = buildMediaKey("chat", "webp");
     expect(key).not.toMatch(/\d{10,}/);
     expect(key).toMatch(/^chat\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.webp$/);

@@ -43,7 +43,7 @@ describe("PATCH /api/settings/bot-signature", () => {
       error: NextResponse.json({ ok: false, message: "forbidden" }, { status: 403 }),
     });
 
-    const res = await PATCH(patch({ enabled: true, apelido: "Dra. Ana" }));
+    const res = await PATCH(patch({ enabled: true, apelido: "Ana Lima" }));
 
     expect(res.status).toBe(403);
     expect(upsertMock).not.toHaveBeenCalled();
@@ -65,14 +65,14 @@ describe("PATCH /api/settings/bot-signature", () => {
     upsertMock.mockResolvedValue({ error: null });
     pushMock.mockResolvedValue({ delivered: true, skipped: false });
 
-    const res = await PATCH(patch({ enabled: true, apelido: "Dra. Ana" }));
+    const res = await PATCH(patch({ enabled: true, apelido: "Ana Lima" }));
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body).toMatchObject({
       ok: true,
       enabled: true,
-      apelido: "Dra. Ana",
+      apelido: "Ana Lima",
       agent: { delivered: true, skipped: false },
     });
 
@@ -80,12 +80,12 @@ describe("PATCH /api/settings/bot-signature", () => {
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(upsertMock.mock.calls[0][0]).toMatchObject({
       key: "bot_signature",
-      value: { enabled: true, apelido: "Dra. Ana" },
+      value: { enabled: true, apelido: "Ana Lima" },
     });
     expect(upsertMock.mock.calls[0][1]).toEqual({ onConflict: "key" });
 
     // o push recebe a config salva
-    expect(pushMock).toHaveBeenCalledWith({ enabled: true, apelido: "Dra. Ana" });
+    expect(pushMock).toHaveBeenCalledWith({ enabled: true, apelido: "Ana Lima" });
   });
 
   it("erro no upsert → 500, sem tentar avisar o agente", async () => {

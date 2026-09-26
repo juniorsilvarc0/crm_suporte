@@ -65,8 +65,8 @@ export function useMessages({
    * Sem esta guarda, tocar em duas conversas seguidas num 4G ruim deixava a
    * resposta da PRIMEIRA chegar por último e sobrescrever a tela: cabeçalho,
    * nome, telefone e histórico da conversa A, com `selectedConversationId`
-   * apontando para B. Todo envio saía para B enquanto o operador lia A — numa
-   * clínica, isso é resposta sobre exame de um paciente indo para o WhatsApp
+   * apontando para B. Todo envio saía para B enquanto o operador lia A — no
+   * suporte, isso é resposta sobre o chamado de um cliente indo para o WhatsApp
    * de outro.
    */
   const activeConversation = useRef<string | null>(null);
@@ -169,7 +169,7 @@ export function useMessages({
 
       // `prependOlder` recebe a lista ATUAL. Sem esta guarda, trocar de conversa
       // durante a busca fazia as 100 mensagens antigas de A entrarem na tela de
-      // B — histórico de um paciente dentro da conversa de outro.
+      // B — histórico de um cliente dentro da conversa de outro.
       if (activeConversation.current !== conversationId) return;
       setMessages((current) => prependOlder(json.messages, current));
       setHasMoreMessages(Boolean(json.hasMore));
@@ -242,7 +242,7 @@ export function useMessages({
    *
    * ⚠️ A guarda de conversa não é zelo: `sendMessage` resolve DEPOIS que o
    * operador já pode ter trocado de contato, e sem ela a mensagem enviada para
-   * A entrava na lista aberta de B. Numa clínica, é o histórico de um paciente
+   * A entrava na lista aberta de B. No suporte, é o histórico de um cliente
    * aparecendo na conversa de outro.
    */
   const upsertLocal = useCallback((msg: ChatMessage) => {
@@ -263,7 +263,7 @@ export function useMessages({
    * O `clientId` viaja no corpo: é ele que faz a rota reaproveitar a linha em
    * vez de criar outra. Sem isso, tentar de novo depois de uma falha de rede que
    * o servidor **já tinha processado** mandaria a mesma mensagem duas vezes ao
-   * paciente.
+   * cliente.
    */
   const dispatchSend = useCallback(
     async (
@@ -445,7 +445,7 @@ export function useMessages({
    *
    * A rota só grava depois do 200 da uazapi, então o que volta aqui já é a
    * mensagem confirmada nos dois lados — nada de otimismo local, que deixaria a
-   * tela mostrando um texto que o paciente não recebeu.
+   * tela mostrando um texto que o cliente não recebeu.
    */
   const editMessage = useCallback(
     async (messageId: string, text: string) => {

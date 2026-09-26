@@ -1,9 +1,9 @@
 /**
  * Nome do objeto no armazenamento.
  *
- * ⚠️ **Sem o telefone do paciente no caminho.** O layout antigo era
+ * ⚠️ **Sem o telefone do contato no caminho.** O layout antigo era
  * `5511990000024/inbound-1786108413241.webp`: bucket público, pasta nomeada
- * pelo número, e foto de exame dentro. Quem soubesse o telefone tinha metade da
+ * pelo número, e nota fiscal dentro. Quem soubesse o telefone tinha metade da
  * URL. A chave nova é aleatória e não diz nada sobre quem é o dono.
  *
  * O prefixo por ano/mês não é enfeite: é o que deixa uma regra de ciclo de vida

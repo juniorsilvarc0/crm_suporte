@@ -194,7 +194,7 @@ describe("buildForwardPayload", () => {
       message({
         type: "document",
         media_url: "https://x/r.pdf",
-        content: "segue o exame",
+        content: "segue o relatório",
         metadata: { fileName: "relatorio.pdf" },
       })
     );
@@ -202,7 +202,7 @@ describe("buildForwardPayload", () => {
       kind: "media",
       type: "document",
       file: "https://x/r.pdf",
-      caption: "segue o exame",
+      caption: "segue o relatório",
       docName: "relatorio.pdf",
     });
   });

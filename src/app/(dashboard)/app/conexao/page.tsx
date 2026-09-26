@@ -10,7 +10,7 @@ export default async function ConexaoPage() {
     <>
       <PageHeader
         title="Conexão"
-        description="Conecte o WhatsApp da clínica à instância uazapi e acompanhe o status"
+        description="Conecte o WhatsApp do suporte à instância uazapi e acompanhe o status"
       />
       <main className="p-4 sm:p-6 lg:p-8">
         <ConnectionPanel />

@@ -97,7 +97,7 @@ export function ChatFooter({
    *
    * Hoje o `ChatView` é desmontado nessa troca e o compositor já nasce com o
    * rascunho certo; isto garante o mesmo se ele deixar de desmontar. Texto
-   * escrito para um paciente aparecendo no campo de outro é o tipo de erro que
+   * escrito para um cliente aparecendo no campo de outro é o tipo de erro que
    * não se corrige depois de apertar Enter.
    */
   const [syncedConversation, setSyncedConversation] = useState(conversationId);
@@ -136,7 +136,7 @@ export function ChatFooter({
    * MESMA `store`, senão criar uma resposta num lugar não apareceria no outro.
    *
    * Anotação interna não tem comando: a resposta pronta é texto para o
-   * paciente, e oferecer aqui convidaria a colar no lugar errado.
+   * cliente, e oferecer aqui convidaria a colar no lugar errado.
    */
   const quickReplies = useQuickReplies();
   const [slashIndex, setSlashIndex] = useState(0);
@@ -197,7 +197,7 @@ export function ChatFooter({
   /**
    * Responder volta para o modo mensagem: citação não existe em anotação
    * interna, e responder com a aba de nota aberta escreveria a resposta onde o
-   * paciente nunca veria.
+   * cliente nunca veria.
    *
    * Ajuste durante o RENDER, não em efeito — é o padrão do repo (ver
    * `syncedTerm` acima e `syncedConv` no ChatView) e o que o lint exige.
@@ -339,7 +339,7 @@ export function ChatFooter({
    */
   const handleSend = () => {
     // O botão de enviar respeita o menu do `/` igual ao Enter. Sem isto, clicar
-    // no avião com a lista aberta mandava `/teste` como texto para o paciente.
+    // no avião com a lista aberta mandava `/teste` como texto para o cliente.
     if (slashOpen) {
       applyQuickReply(slashMatches[activeIndex].content);
       return;
@@ -821,7 +821,7 @@ export function ChatFooter({
             aria-label={mode === "note" ? "Anotação" : "Mensagem"}
           />
           {/* Anotação interna não recebe resposta pronta: o texto é para o
-              paciente, e um botão inerte ali só ocupava a calha. */}
+              cliente, e um botão inerte ali só ocupava a calha. */}
           {mode !== "note" && (
             <div className="absolute bottom-1 right-1">
               <QuickReplyPicker

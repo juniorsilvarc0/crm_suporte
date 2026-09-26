@@ -93,7 +93,7 @@ export async function POST(request: Request, { params }: Params) {
      *
      * É o que torna o "tentar novamente" seguro: quando a rede cai DEPOIS de o
      * servidor já ter mandado, a tela vê erro e o operador tenta de novo — sem
-     * isto, o paciente receberia a mesma mensagem duas vezes. Também cobre o
+     * isto, o contato receberia a mesma mensagem duas vezes. Também cobre o
      * clique duplo e o retry automático do navegador.
      */
     const findByClientId = async () =>
@@ -120,7 +120,7 @@ export async function POST(request: Request, { params }: Params) {
     // exatamente o que foi enviado. Notas internas nunca são assinadas.
     //
     // No reenvio o texto vem da LINHA, não do corpo: assinar de novo o que já
-    // está assinado poria a assinatura duas vezes na mensagem do paciente.
+    // está assinado poria a assinatura duas vezes na mensagem do contato.
     const outboundContent =
       existing?.content ?? signMessage(content, resolveSignature(viewer));
     const quotedId = existing ? existing.quoted_message_id : quotedMessageId ?? null;
