@@ -1534,6 +1534,24 @@ begin
   insert into r values (v_q.last_inbound_at = now() - interval '5 minutes', 'T95h last_inbound_at',
     coalesce(v_q.last_inbound_at::text, '<null>'));
 
+  -- T95i–k: replied_after_resolve (20260926130000_fila_respondeu_apos_resolver).
+  select * into v_q from public.ticket_queue q where q.id = v_s7;
+  insert into r values (v_q.replied_after_resolve is false, 'T95i resolvido sem resposta do cliente: false, nunca nulo',
+    coalesce(v_q.replied_after_resolve::text, '<null>'));
+  select * into v_q from public.ticket_queue q where q.id = v_s8;
+  insert into r values (v_q.replied_after_resolve is false, 'T95j ativo com mensagem do cliente: false',
+    coalesce(v_q.replied_after_resolve::text, '<null>'));
+  perform public.ticket_transition(v_s8, 'em_atendimento', pg_temp.ver(v_s8), v_ana);
+  perform public.ticket_transition(v_s8, 'resolvido', pg_temp.ver(v_s8), v_ana);
+  reset role;  -- postgres: resolvido há 10 min, antes da mensagem de 5 min atrás
+  update public.tickets
+     set resolved_at = resolved_at - interval '10 minutes', sla_paused_at = sla_paused_at - interval '10 minutes'
+   where id = v_s8;
+  set local role service_role;
+  select * into v_q from public.ticket_queue q where q.id = v_s8;
+  insert into r values (v_q.replied_after_resolve, 'T95k cliente respondeu depois de resolver: true',
+    format('resolvido %s, última do cliente %s', v_q.resolved_at, v_q.last_inbound_at));
+
   -- T99
   select string_agg(t.tgname::text, ',' order by t.tgname::text collate "C") into v_t
     from pg_catalog.pg_trigger t

@@ -23,7 +23,7 @@ function fakeQuery(result: unknown) {
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };
-  for (const method of ["select", "ilike", "eq", "neq", "is", "not", "order", "range", "limit"]) {
+  for (const method of ["select", "ilike", "eq", "neq", "is", "not", "or", "order", "range", "limit"]) {
     builder[method] = (...args: unknown[]) => {
       calls.push([method, ...args]);
       return builder;
@@ -66,6 +66,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   closed_at: null,
   next_due_at: "2026-09-25T13:00:00.123456+00:00",
   last_inbound_at: "2026-09-25T12:05:00.000001+00:00",
+  replied_after_resolve: false,
   created_at: "2026-09-25T12:00:00.123456+00:00",
   updated_at: "2026-09-25T12:00:00.123456+00:00",
   customer: null,
@@ -84,7 +85,10 @@ const failure = () => ({
 
 // Só os filtros, na ordem em que a query os aplica.
 const filters = (calls: Call[]) =>
-  calls.filter(([method]) => ["eq", "neq", "is", "not", "ilike"].includes(method));
+  calls.filter(([method]) => ["eq", "neq", "is", "not", "or", "ilike"].includes(method));
+
+// O grupo "pendentes" da lista: relógio não parado OU resolvido respondido.
+const PENDING: Call = ["or", "sla_mode.neq.stopped,replied_after_resolve.is.true"];
 
 const FAILED = { items: [], total: 0, failed: true };
 
@@ -101,35 +105,30 @@ afterEach(() => {
 });
 
 describe("getTicketQueue", () => {
-  it("mine: do analista e não terminal; unassigned: sem responsável e relógio não parado", async () => {
+  it("as duas seções são o grupo 'pendentes': mine do analista, unassigned sem responsável", async () => {
     const [mine, unassigned] = queueQueries(ok([]), ok([]));
 
     await getTicketQueue(VIEWER);
 
     expect(fromMock.mock.calls).toEqual([["ticket_queue"], ["ticket_queue"]]);
     expect(mine[0]).toEqual(["select", TICKET_LIST_SELECT, { count: "exact" }]);
-    expect(filters(mine)).toEqual([
-      ["eq", "assigned_to_user_id", VIEWER],
-      ["eq", "is_terminal", false],
-    ]);
+    expect(filters(mine)).toEqual([PENDING, ["eq", "assigned_to_user_id", VIEWER]]);
     expect(unassigned[0]).toEqual(["select", TICKET_LIST_SELECT, { count: "exact" }]);
-    expect(filters(unassigned)).toEqual([
-      ["is", "assigned_to_user_id", null],
-      ["neq", "sla_mode", "stopped"],
-    ]);
+    expect(filters(unassigned)).toEqual([PENDING, ["is", "assigned_to_user_id", null]]);
   });
 
-  it("cada seção traz no máximo 8, por prazo", async () => {
+  it("cada seção traz no máximo 8: resolvido respondido primeiro, depois por prazo", async () => {
     const [mine, unassigned] = queueQueries(ok([]), ok([]));
 
     await getTicketQueue(VIEWER);
 
     expect(TICKET_QUEUE_LIMIT).toBe(8);
     for (const calls of [mine, unassigned]) {
-      expect(calls.filter(([method]) => method === "order")[0]).toEqual([
-        "order",
-        "next_due_at",
-        { ascending: true, nullsFirst: false },
+      expect(calls.filter(([method]) => method === "order")).toEqual([
+        ["order", "replied_after_resolve", { ascending: false }],
+        ["order", "next_due_at", { ascending: true, nullsFirst: false }],
+        ["order", "priority_rank", { ascending: false }],
+        ["order", "number", { ascending: true }],
       ]);
       expect(calls.at(-1)).toEqual(["limit", 8]);
     }

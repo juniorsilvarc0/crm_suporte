@@ -68,6 +68,17 @@ describe("ticketListHref", () => {
     );
     expect(ticketListHref(filters({ responsavel: "eu" }))).toBe("/app/tickets?responsavel=eu");
   });
+
+  it("deve levar o grupo 'pendentes' (o do Início) e voltar igual pela allowlist", () => {
+    const chosen = filters({ status: "pendentes", responsavel: "eu" });
+    const href = ticketListHref(chosen);
+
+    expect(href).toBe("/app/tickets?status=pendentes&responsavel=eu");
+    expect(parseTicketListParams(Object.fromEntries(new URLSearchParams(href.split("?")[1])))).toEqual({
+      ...chosen,
+      page: 1,
+    });
+  });
 });
 
 describe("countTicketFilters", () => {

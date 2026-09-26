@@ -73,7 +73,8 @@ import {
 } from "@/features/tickets/components/ticket-status-badge";
 import { useNow } from "@/features/tickets/hooks/use-now";
 import { getSlaState } from "@/features/tickets/lib/sla";
-import { invalidTransitionMessage, ticketStatusLabel } from "@/features/tickets/lib/ticket-actions";
+import { ticketActionErrorMessage } from "@/features/tickets/lib/ticket-action-error";
+import { ticketStatusLabel } from "@/features/tickets/lib/ticket-actions";
 import {
   countTicketFilters,
   DEFAULT_TICKET_LIST_FILTERS,
@@ -82,9 +83,13 @@ import {
 } from "@/features/tickets/lib/ticket-list-url";
 import { formatProtocol, parseProtocolQuery } from "@/features/tickets/lib/protocol";
 import { allowedTargets } from "@/features/tickets/lib/state-machine";
+import {
+  ticketRequest,
+  type TicketRequestFailure,
+  type TicketRequestResult,
+} from "@/features/tickets/lib/ticket-request";
 import { ticketTransitionSchema } from "@/features/tickets/schemas/ticket";
 import type {
-  TicketErrorBody,
   TicketListItem,
   TicketListParams,
   TicketStatusKey,
@@ -102,11 +107,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 // digitado, e o campo não "pula" quando a busca chega.
 const SEARCH_MAX_LENGTH = 100;
 
-const CONFLICT_MESSAGE = "O ticket mudou em outro lugar.";
-const TAKEN_MESSAGE = "Alguém já pegou este ticket.";
-const FAILURE_MESSAGE = "Não foi possível concluir a operação.";
-const NETWORK_MESSAGE = "Não foi possível concluir a operação. Confira a conexão e tente de novo.";
-
 /** O que a lista usa do catálogo (getTicketCatalog). Parte `null` = não carregou. */
 export type TicketsTableCatalog = {
   statuses: TicketStatusOption[] | null;
@@ -114,62 +114,19 @@ export type TicketsTableCatalog = {
   queues: TicketFilterQueue[] | null;
 };
 
-// Corpo de POST /api/tickets/[id]/assign e /transition, como a tela o lê: no
-// sucesso só `ok` importa (a lista relê do servidor); no erro, o TicketErrorBody.
-type TicketActionPayload = { ok?: boolean } & Partial<Omit<TicketErrorBody, "ok">>;
-
-// `status` 0 = a requisição nem chegou (rede).
-type TicketActionResult =
-  | { ok: true }
-  | { ok: false; status: number; payload: TicketActionPayload | null };
-
 type TicketAction = "assign" | "transition";
 
-async function postTicketAction(
+// POST /api/tickets/[id]/assign e /transition: no sucesso só `ok` importa (a
+// lista relê do servidor); no erro, o corpo de erro das rotas de ticket.
+function postTicketAction(
   ticketId: string,
   action: TicketAction,
   body: Record<string, unknown>
-): Promise<TicketActionResult> {
-  try {
-    const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const payload = (await response.json().catch(() => null)) as TicketActionPayload | null;
-    if (response.ok && payload?.ok) return { ok: true };
-    return { ok: false, status: response.status, payload };
-  } catch {
-    return { ok: false, status: 0, payload: null };
-  }
-}
-
-/**
- * Texto do toast de uma ação recusada. Conflito de versão e ticket já pego têm
- * frase própria (a lista relê em seguida); transição fora da matriz lista os
- * destinos com os rótulos do catálogo. O resto usa o que a rota disse.
- */
-function actionErrorMessage(
-  result: Extract<TicketActionResult, { ok: false }>,
-  fromStatus: TicketStatusKey,
-  statuses: TicketStatusOption[] | null
-): string {
-  if (result.status === 0) return NETWORK_MESSAGE;
-  const payload = result.payload;
-  switch (payload?.code) {
-    case "version_conflict":
-      return CONFLICT_MESSAGE;
-    case "already_assigned":
-      return TAKEN_MESSAGE;
-    case "invalid_transition":
-      return invalidTransitionMessage(
-        { message: payload.message ?? FAILURE_MESSAGE, allowed: payload.allowed, current: payload.current },
-        fromStatus,
-        statuses
-      );
-  }
-  const fieldMessage = Object.values(payload?.errors ?? {}).find((messages) => messages?.[0])?.[0];
-  return fieldMessage ?? payload?.message ?? FAILURE_MESSAGE;
+): Promise<TicketRequestResult<unknown>> {
+  return ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}/${action}`, {
+    method: "POST",
+    body,
+  });
 }
 
 function ticketHref(ticket: Pick<TicketListItem, "number">): string {
@@ -313,8 +270,8 @@ export function TicketsTable({
   const [busyId, setBusyId] = useState<string | null>(null);
   const busy = useRef(false);
 
-  function reportFailure(ticket: TicketListItem, result: Extract<TicketActionResult, { ok: false }>) {
-    toast.error(actionErrorMessage(result, ticket.status, catalog.statuses));
+  function reportFailure(ticket: TicketListItem, result: TicketRequestFailure) {
+    toast.error(ticketActionErrorMessage(result, ticket.status, catalog.statuses));
     // 409 = o ticket mudou (versão, status, responsável); 404 = saiu da base.
     // A linha em tela está velha: relê.
     if (result.status === 409 || result.status === 404) refresh();
@@ -834,7 +791,7 @@ type CancelTicketDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCancelled: (ticket: TicketListItem) => void;
-  onFailure: (ticket: TicketListItem, result: Extract<TicketActionResult, { ok: false }>) => void;
+  onFailure: (ticket: TicketListItem, result: TicketRequestFailure) => void;
 };
 
 /**
@@ -897,7 +854,7 @@ function CancelTicketForm({
       onCancelled(ticket);
       return;
     }
-    const reasonError = result.payload?.errors?.reason?.[0];
+    const reasonError = result.body?.errors?.reason?.[0];
     if (reasonError) {
       setError("reason", { type: "server", message: reasonError }, { shouldFocus: true });
       return;

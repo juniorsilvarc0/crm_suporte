@@ -24,7 +24,10 @@ import { ChatFooter } from "@/features/chat/components/chat-footer";
 import { ConversationSearch } from "@/features/chat/components/conversation-search";
 import { DeleteMessageDialog } from "@/features/chat/components/delete-message-dialog";
 import { EditMessageDialog } from "@/features/chat/components/edit-message-dialog";
-import { ContactInfoSheet } from "@/features/chat/components/contact-info-sheet";
+import {
+  ContactInfoSheet,
+  type ContactInfoInitialView,
+} from "@/features/chat/components/contact-info-sheet";
 import { FilePreviewDialog } from "@/features/chat/components/file-preview-dialog";
 import { ForwardDialog } from "@/features/chat/components/forward-dialog";
 import { MessageBubble } from "@/features/chat/components/message-bubble";
@@ -48,6 +51,14 @@ import { signMessage } from "@/features/chat/lib/signature";
 import { useTeamDirectory } from "@/features/settings/hooks/use-team-directory";
 import { findFirstUnreadId } from "@/features/chat/lib/unread-divider";
 import { stripWhatsappFormat } from "@/features/chat/lib/whatsapp-format";
+import {
+  ConversationTicketChip,
+  focusTicketSummary,
+} from "@/features/tickets/components/conversation-ticket-chip";
+import { TakeOverDialog } from "@/features/tickets/components/take-over-dialog";
+import { useConversationTakeOver } from "@/features/tickets/hooks/use-conversation-take-over";
+import { useConversationTickets } from "@/features/tickets/hooks/use-conversation-tickets";
+import { useTicketCatalog } from "@/features/tickets/hooks/use-ticket-catalog";
 import { cn } from "@/lib/utils";
 import type { ChatConversation, ChatMessage } from "@/features/chat/types";
 
@@ -87,6 +98,8 @@ type ChatViewProps = {
   conversations: ChatConversation[];
   onTakeover: () => Promise<void> | void;
   takeoverLoading?: boolean;
+  /** A conversa que o take-over do ticket gravou: a lista e o cabeçalho, sem esperar o Realtime. */
+  onConversationUpdate: (updated: Partial<ChatConversation> & { id: string }) => void;
   /** Há histórico anterior ao que está carregado. */
   hasMore?: boolean;
   loadingOlder?: boolean;
@@ -191,6 +204,7 @@ export function ChatView({
   conversations,
   onTakeover,
   takeoverLoading,
+  onConversationUpdate,
   hasMore = false,
   loadingOlder = false,
   onLoadOlder,
@@ -209,6 +223,27 @@ export function ChatView({
   // e a bolha cresce debaixo do olho de quem enviou.
   const { names: teamNames, currentUserId, signature } = useTeamDirectory();
 
+  // Os tickets da conversa: UMA leitura por conversa aberta, para o cabeçalho
+  // e para o painel do contato, que a recebe pronta. Duas leituras dobrariam as
+  // buscas a cada mudança de foco ou de status, e a ação feita no painel não
+  // chegaria ao chip.
+  const tickets = useConversationTickets(
+    conversation.id,
+    conversation.active_ticket_id,
+    conversation.status
+  );
+  // Rótulos e matriz do chip; o `ChatView` remonta a cada conversa aberta.
+  const ticketCatalog = useTicketCatalog();
+  // "Assumir": com ticket em foco, o take-over do ticket; sem, o PATCH de hoje.
+  const ticketTakeOver = useConversationTakeOver({
+    status: conversation.status,
+    activeTicketId: conversation.active_ticket_id,
+    activeTicket: tickets.activeTicket,
+    onTakeover,
+    onConversationUpdate,
+    refresh: tickets.refresh,
+  });
+
   // O anexo vive AQUI, não no rodapé: assim o arquivo solto sobre a conversa
   // cai no mesmo fluxo do clipe, com a mesma tela de envio.
   const [pendingAttachments, setPendingAttachments] = useState<AttachmentDraft[]>([]);
@@ -221,9 +256,11 @@ export function ChatView({
   const dragDepth = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const chatRootRef = useRef<HTMLDivElement | null>(null);
-  // A tela de dados do contato só monta quando abre: ela busca lead e
-  // agendamento, e manter isso vivo em toda conversa seria rede à toa.
-  const [contactOpen, setContactOpen] = useState(false);
+  // A tela de dados do contato só monta quando abre: ela busca o contato e a
+  // empresa, e manter isso vivo em toda conversa seria rede à toa. O valor é a
+  // vista em que ela abre (o chip do ticket abre direto nos tickets).
+  const [contactView, setContactView] = useState<ContactInfoInitialView | null>(null);
+  const contactOpen = contactView !== null;
   const [showJump, setShowJump] = useState(false);
   const atBottomRef = useRef(true);
   // Ligado no instante do envio, consumido pela próxima mensagem que entra na
@@ -541,12 +578,14 @@ export function ChatView({
     editing !== null ||
     deleting !== null ||
     forwardOpen ||
-    contextMenu !== null;
+    contextMenu !== null ||
+    ticketTakeOver.conflict !== null;
 
   useEffect(() => {
     // Com um diálogo aberto o Ctrl+V pertence ao campo de lá (legenda, texto da
-    // edição, busca do encaminhar).
-    if (anyDialogOpen || selection !== null) return;
+    // edição, busca do encaminhar). O painel do contato também: o print colado
+    // na Descrição do "Novo ticket" não é anexo para o cliente.
+    if (anyDialogOpen || contactOpen || selection !== null) return;
 
     const onPaste = (event: ClipboardEvent) => {
       // Só intercepta quando há ARQUIVO. Colar texto no compositor segue
@@ -570,7 +609,7 @@ export function ChatView({
 
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [addPendingFiles, anyDialogOpen, selection, conversation.status]);
+  }, [addPendingFiles, anyDialogOpen, contactOpen, selection, conversation.status]);
 
   /**
    * Esc em camadas, como no WhatsApp Web: cada Esc desfaz **uma** coisa, da mais
@@ -736,6 +775,32 @@ export function ChatView({
     else setShowJump(true);
   }, [messages.length, scrollToBottom]);
 
+  // Mensagem nova do cliente pode mudar o ticket em foco (a retomada tira de
+  // "aguardando cliente"): relê os tickets, com o debounce do hook. Carga não
+  // conta (a 1ª, o pulo da busca e o "ir para a última" trocam a lista inteira
+  // pelo que já estava lá), e sem foco não há o que retomar.
+  const latestInboundId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.direction === "inbound") return message.id;
+    }
+    return null;
+  }, [messages]);
+  const seenInboundRef = useRef<string | null | undefined>(undefined);
+  const hasFocusTicket = conversation.active_ticket_id !== null;
+  const { notifyInbound } = tickets;
+
+  useEffect(() => {
+    if (messagesLoading) {
+      seenInboundRef.current = undefined;
+      return;
+    }
+    const seen = seenInboundRef.current;
+    seenInboundRef.current = latestInboundId;
+    if (seen === undefined || latestInboundId === null || latestInboundId === seen) return;
+    if (hasFocusTicket) notifyInbound();
+  }, [latestInboundId, messagesLoading, hasFocusTicket, notifyInbound]);
+
   // Agrupar por dia percorre a lista inteira; sem memo isso refazia a cada
   // tecla de estado do pai e a cada tick de entrega.
   const groups = useMemo(() => groupByDate(messages), [messages]);
@@ -745,11 +810,29 @@ export function ChatView({
       <ChatHeader
         conversation={conversation}
         onBack={onBack}
-        onTakeover={onTakeover}
-        takeoverLoading={takeoverLoading}
+        // "Devolver à IA" segue no PATCH de hoje; só o "Assumir" passa pelo ticket.
+        onTakeover={conversation.status === "human" ? onTakeover : ticketTakeOver.takeOver}
+        takeoverLoading={takeoverLoading || ticketTakeOver.pending !== null}
         onToggleSearch={onLoadAround ? () => onSearchOpenChange(!searchOpen) : undefined}
         searchOpen={searchOpen}
-        onOpenContact={() => setContactOpen(true)}
+        onOpenContact={() => setContactView("info")}
+        focusTicketSummary={
+          tickets.activeTicket
+            ? focusTicketSummary(tickets.activeTicket, ticketCatalog.catalog?.statuses ?? null)
+            : null
+        }
+        ticketChip={
+          <ConversationTicketChip
+            activeTicketId={conversation.active_ticket_id}
+            state={tickets}
+            catalog={ticketCatalog.catalog}
+            catalogFailed={ticketCatalog.failed}
+            onRetryCatalog={ticketCatalog.retry}
+            viewerId={currentUserId}
+            onNewTicket={() => setContactView("ticket-new")}
+            onChangeFocus={() => setContactView("tickets")}
+          />
+        }
       />
 
       {searchOpen && (
@@ -1034,7 +1117,17 @@ export function ChatView({
         />
       )}
 
-      {contactOpen && (
+      {ticketTakeOver.conflict && (
+        <TakeOverDialog
+          conflict={ticketTakeOver.conflict}
+          pending={ticketTakeOver.pending}
+          onReassign={() => void ticketTakeOver.reassign()}
+          onConversationOnly={() => void ticketTakeOver.conversationOnly()}
+          onDismiss={ticketTakeOver.dismiss}
+        />
+      )}
+
+      {contactView && (
         <ContactInfoSheet
           // Trocar de conversa com a tela aberta precisa remontá-la: sem a
           // `key`, o painel manteria o lead da conversa anterior enquanto a
@@ -1043,7 +1136,9 @@ export function ChatView({
           conversation={conversation}
           portalContainer={chatRootRef}
           tagsController={tagsController}
-          onClose={() => setContactOpen(false)}
+          initialView={contactView}
+          tickets={tickets}
+          onClose={() => setContactView(null)}
           onSearch={onLoadAround ? () => onSearchOpenChange(true) : undefined}
         />
       )}

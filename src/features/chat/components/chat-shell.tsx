@@ -16,6 +16,7 @@ import {
   type ChatFilters,
 } from "@/features/chat/lib/chat-filters";
 import { useMessages } from "@/features/chat/hooks/use-messages";
+import type { ChatConversation } from "@/features/chat/types";
 import { useViewportHeight } from "@/lib/use-viewport-height";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
@@ -226,6 +227,13 @@ export function ChatShell() {
     setTakeoverLoading(false);
   };
 
+  // A conversa que uma rota devolveu: a lista E o cabeçalho, o mesmo par das
+  // ações da lista abaixo.
+  const handleConversationUpdate = (updated: Partial<ChatConversation> & { id: string }) => {
+    updateConversation(updated);
+    applyConversationUpdate(updated);
+  };
+
   const handleConversationAction = async (
     conversation: (typeof conversations)[number],
     action: ConversationAction
@@ -261,7 +269,15 @@ export function ChatShell() {
         conversation?: (typeof conversations)[number];
         error?: string;
       };
-      if (!response.ok) throw new Error(json.error ?? "action failed");
+      if (!response.ok) {
+        // Conversa com ticket não se limpa (409): o operador lê o porquê da
+        // rota, não um "não foi possível" que convida a tentar de novo.
+        if (action === "clear" && response.status === 409 && json.error) {
+          toast.error(json.error);
+          return false;
+        }
+        throw new Error(json.error ?? "action failed");
+      }
 
       if (action === "delete") {
         removeConversation(conversation.id);
@@ -415,6 +431,7 @@ export function ChatShell() {
             onSearchOpenChange={setSearchOpen}
             onTakeover={handleTakeover}
             takeoverLoading={takeoverLoading}
+            onConversationUpdate={handleConversationUpdate}
             tagsController={tagsController}
           />
         ) : (

@@ -253,7 +253,12 @@ export function useMessages({
   useChatRealtime({
     conversationId: selectedConversationId,
     onNewMessage: upsertLocal,
-    onConversationUpdate,
+    // A lista (quem chamou) E o cabeçalho da conversa aberta: mudança feita em
+    // outra aba (status, ticket em foco) chega por aqui, e só a lista mudava.
+    onConversationUpdate: (updated) => {
+      applyConversationUpdate(updated);
+      onConversationUpdate?.(updated);
+    },
     onNewConversation,
   });
 
@@ -560,13 +565,19 @@ export function useMessages({
           }
         );
         if (!res.ok) throw new Error("patch failed");
-        setCurrentConversation((prev) => (prev ? { ...prev, status } : prev));
-        onConversationUpdate?.({ id: selectedConversationId, status });
+        // Só o que a rota grava (o status), não a linha que ela devolve: a
+        // resposta que chega depois de um Realtime mais novo voltaria a prévia,
+        // a ordem e as não lidas. O `applyConversationUpdate` confere o id: a
+        // resposta que chega depois de trocar de conversa não pinta o cabeçalho
+        // da outra.
+        const updated = { id: selectedConversationId, status };
+        applyConversationUpdate(updated);
+        onConversationUpdate?.(updated);
       } catch {
         toast.error("Não foi possível atualizar o status.");
       }
     },
-    [selectedConversationId, onConversationUpdate]
+    [selectedConversationId, onConversationUpdate, applyConversationUpdate]
   );
 
   return {

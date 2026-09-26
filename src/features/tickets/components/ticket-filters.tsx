@@ -38,6 +38,7 @@ const STATUS_GROUP_LABEL: Record<TicketListStatusGroup, string> = {
   todos: "Todos",
   encerrados: "Encerrados",
   resolvidos: "Resolvidos",
+  pendentes: "Pendentes",
 };
 
 const SLA_FILTER_LABEL: Record<TicketListSlaFilter, string> = {
@@ -95,12 +96,13 @@ function withCurrent(options: Option[], current: string | null, label: string | 
 
 /**
  * Status: os grupos e, depois, cada status com o rótulo do catálogo. O grupo
- * "resolvidos" é o mesmo recorte do status Resolvido; só vira opção quando a
- * URL o traz, para a lista não oferecer duas vezes a mesma coisa.
+ * "resolvidos" é o mesmo recorte do status Resolvido, e "pendentes" é o recorte
+ * da fila do Início (o "Ver todos" de lá): cada um só vira opção quando a URL o
+ * traz, para a lista não oferecer duas vezes a mesma coisa.
  */
 function statusOptions(statuses: TicketStatusOption[] | null, current: TicketListStatusFilter): Option[] {
-  const groups: TicketListStatusGroup[] =
-    current === "resolvidos" ? ["ativos", "todos", "encerrados", "resolvidos"] : ["ativos", "todos", "encerrados"];
+  const groups: TicketListStatusGroup[] = ["ativos", "todos", "encerrados"];
+  if (current === "resolvidos" || current === "pendentes") groups.push(current);
   return [
     ...groups.map((value) => ({ value, label: STATUS_GROUP_LABEL[value] })),
     ...TICKET_STATUS_KEYS.map((key) => ({ value: key, label: ticketStatusLabel(key, statuses) })),

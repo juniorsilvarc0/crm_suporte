@@ -66,7 +66,7 @@ const version = z
   .max(2147483647, "Versão inválida.");
 
 // POST /api/tickets e o "Novo ticket" do chat. A chave é gerada ao abrir o
-// formulário (crypto.randomUUID) e repetida nos reenvios: o mesmo pedido nunca
+// formulário (`newUuid`) e repetida nos reenvios: o mesmo pedido nunca
 // abre dois tickets. Minúscula porque o banco a guarda como texto.
 export const ticketCreateSchema = z
   .object({

@@ -81,6 +81,7 @@ const ticket = (overrides: Partial<TicketDetail> = {}): TicketDetail => ({
   closed_at: null,
   next_due_at: "2026-09-25T17:00:00.123456+00:00",
   last_inbound_at: null,
+  replied_after_resolve: false,
   created_at: "2026-09-25T09:00:00+00:00",
   updated_at: "2026-09-25T12:30:00.5+00:00",
   customer: {
@@ -500,7 +501,10 @@ describe("TicketDetailView — conflitos", () => {
 
     await user.click(screen.getByRole("button", { name: "Atender" }));
 
-    expect(await screen.findByText("SUP-1024 está com Ana Lima.")).toBeInTheDocument();
+    // 3 s: com a máquina carregada, o diálogo passa do 1 s padrão do findBy.
+    expect(
+      await screen.findByText("SUP-1024 está com Ana Lima.", {}, { timeout: 3000 })
+    ).toBeInTheDocument();
     expect(requestOf(fetchMock, 0)).toEqual({
       url: `/api/tickets/${TICKET_ID}/take-over`,
       method: "POST",

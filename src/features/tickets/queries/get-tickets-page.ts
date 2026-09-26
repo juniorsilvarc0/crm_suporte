@@ -33,9 +33,10 @@ const TICKET_LIST_EMBEDS =
 
 // Colunas explícitas de propósito: description só no detalhe, e search_text,
 // sla_breached e sla_at_risk só servem ao filtro (a tela recalcula o selo em
-// lib/sla.ts). ai_triage, idempotency_key e external_id nem estão na view.
+// lib/sla.ts). replied_after_resolve vem: o selo "Respondeu após resolver" usa o
+// valor da view. ai_triage, idempotency_key e external_id nem estão na view.
 export const TICKET_LIST_SELECT =
-  `id, number, title, status, priority, version, source, conversation_id, is_terminal, reopened_count, sla_mode, sla_first_response_minutes, sla_resolution_minutes, sla_warn_pct, first_response_due_at, resolution_due_at, first_responded_at, sla_paused_at, resolved_at, closed_at, next_due_at, last_inbound_at, created_at, updated_at, ${TICKET_LIST_EMBEDS}` as const;
+  `id, number, title, status, priority, version, source, conversation_id, is_terminal, reopened_count, sla_mode, sla_first_response_minutes, sla_resolution_minutes, sla_warn_pct, first_response_due_at, resolution_due_at, first_responded_at, sla_paused_at, resolved_at, closed_at, next_due_at, last_inbound_at, replied_after_resolve, created_at, updated_at, ${TICKET_LIST_EMBEDS}` as const;
 
 const MAX_QUERY_LENGTH = 100;
 
@@ -72,6 +73,7 @@ export type TicketListRow = {
   closed_at: string | null;
   next_due_at: string | null;
   last_inbound_at: string | null;
+  replied_after_resolve: boolean | null;
   created_at: string | null;
   updated_at: string | null;
   customer: {
@@ -164,6 +166,17 @@ export function orderByDue(query: TicketListQuery): TicketListQuery {
 }
 
 /**
+ * Grupo "pendentes", o recorte da fila do Início: relógio correndo ou pausado,
+ * MAIS o resolvido em que o cliente respondeu depois (replied_after_resolve, da
+ * view: o PostgREST não compara coluna com coluna). A lista e getTicketQueue
+ * usam este mesmo filtro: mesmo recorte, mesmo total no "Ver todos (N)".
+ * Filtro estático: nada da URL entra no `.or()`.
+ */
+export function onlyPending(query: TicketListQuery): TicketListQuery {
+  return query.or("sla_mode.neq.stopped,replied_after_resolve.is.true");
+}
+
+/**
  * Monta o item CAMPO A CAMPO, nunca com spread: coluna a mais que a consulta
  * traga (a descrição do detalhe, um campo de filtro) não chega ao payload.
  *
@@ -192,6 +205,7 @@ export function toTicketListItem(row: TicketListRow): TicketListItem | null {
     row.sla_warn_pct === null ||
     row.first_response_due_at === null ||
     row.resolution_due_at === null ||
+    row.replied_after_resolve === null ||
     row.created_at === null ||
     row.updated_at === null
   ) {
@@ -221,6 +235,7 @@ export function toTicketListItem(row: TicketListRow): TicketListItem | null {
     closed_at: row.closed_at,
     next_due_at: row.next_due_at,
     last_inbound_at: row.last_inbound_at,
+    replied_after_resolve: row.replied_after_resolve,
     created_at: row.created_at,
     updated_at: row.updated_at,
     customer: row.customer
@@ -296,6 +311,9 @@ function buildListQuery(
   switch (protocol === null ? params.status : "todos") {
     case "ativos":
       query = query.neq("sla_mode", "stopped");
+      break;
+    case "pendentes":
+      query = onlyPending(query);
       break;
     case "resolvidos":
       query = query.eq("status", "resolvido");

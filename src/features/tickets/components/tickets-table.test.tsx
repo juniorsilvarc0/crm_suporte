@@ -84,6 +84,7 @@ const ticket = (overrides: Partial<TicketListItem> = {}): TicketListItem => ({
   closed_at: null,
   next_due_at: "2026-09-25T17:00:00.123456+00:00",
   last_inbound_at: null,
+  replied_after_resolve: false,
   created_at: "2026-09-25T09:00:00+00:00",
   updated_at: "2026-09-25T12:30:00.5+00:00",
   customer: {
