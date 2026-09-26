@@ -76,6 +76,13 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 - `/api/tickets/catalog`;
 - `/api/chat/conversations/[id]/active-ticket`: ticket em foco.
 
+O back completa-se com:
+- `/api/tickets/[id]/comments`: nota interna; só o autor edita ou apaga;
+- `/api/tickets/[id]/attachments`: bucket privado, download por URL assinada de 10 min;
+- as rotas de admin dos catálogos: `/api/products/[id]`, `/api/ticket-categories`, `/api/sla-policies/[priority]`, `/api/ticket-statuses/[key]`.
+
+Com ticket, **limpar a conversa** e **desconectar apagando o chat** respondem 409, e a instância segue conectada.
+
 As telas (lista, detalhe, quadro, chat, Início, Configurações › Atendimento) entram nos PRs seguintes.
 
 ## 7. Fluxos centrais

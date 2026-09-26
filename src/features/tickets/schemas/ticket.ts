@@ -20,14 +20,15 @@ function blankToNull(value: string | null): string | null {
 // O que o text do Postgres não guarda: NUL e surrogate solto. Passariam aqui e
 // voltariam do banco como 22P05 (ou PGRST102, do PostgREST): um 500. Com a
 // flag `u`, um par válido (emoji) é UM code point e não casa. Regex em vez de
-// isWellFormed: o schema também roda no navegador.
+// isWellFormed: o schema também roda no navegador. Exportados para os outros
+// schemas de ticket (comentário) usarem a mesma regra e a mesma mensagem.
 const PG_UNSAFE_TEXT = /[\u0000\p{Cs}]/u;
 
-function isPgSafeText(value: string): boolean {
+export function isPgSafeText(value: string): boolean {
   return !PG_UNSAFE_TEXT.test(value);
 }
 
-const PG_UNSAFE_TEXT_MESSAGE = "Remova os caracteres inválidos.";
+export const PG_UNSAFE_TEXT_MESSAGE = "Remova os caracteres inválidos.";
 
 const title = z
   .string("Informe o título.")

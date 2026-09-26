@@ -26,11 +26,16 @@ function avatarKey(url: string): string {
   }
 }
 
+/** O que `upsertMessage` devolve da conversa (o webhook decide o relay pelo `status`). */
+const CONVERSATION_COLUMNS = "id, contact_id, status, unread_count";
+
 /**
  * Grava conversa + mensagem de um evento do webhook.
  *
  * `stored` é a mídia já re-hospedada no bucket privado; sem ela, a mensagem
  * fica com a `media_url` do provedor (que expira).
+ *
+ * No inbound, a conversa devolvida é a de DEPOIS da mensagem (passo 4).
  */
 export async function upsertMessage(
   integrationId: string,
@@ -71,7 +76,7 @@ export async function upsertMessage(
       },
       { onConflict: "integration_id,external_id" }
     )
-    .select("id, contact_id, status, unread_count")
+    .select(CONVERSATION_COLUMNS)
     .single();
 
   if (convErr || !conv) {
@@ -131,6 +136,26 @@ export async function upsertMessage(
 
   if (msgErr) {
     throw new Error(`Message upsert failed: ${msgErr.message}`);
+  }
+
+  // 4. Inbound em conversa `resolved`: o trigger do INSERT a devolve para `bot`
+  //    no mesmo UPDATE do unread (migration _tickets, §10.1). O status do passo
+  //    1 é de ANTES da mensagem, e é por ele que o webhook decide o relay: sem
+  //    reler, a 1ª mensagem depois de resolvida não iria para a IA. No retry o
+  //    trigger não roda, e a releitura só confirma o que já está lá.
+  if (msg.direction === "inbound") {
+    const { data: current, error: currentErr } = await supabase
+      .from("chat_conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("id", conv.id)
+      .maybeSingle();
+    // A mensagem já está gravada: a releitura que falha não pode virar 500.
+    // Fica o status de antes, e esta mensagem segue sem relay se era `resolved`.
+    if (currentErr) {
+      console.warn("[upsertMessage] reler o status da conversa falhou:", currentErr.message);
+    } else if (current) {
+      return current;
+    }
   }
 
   return conv;

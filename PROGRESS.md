@@ -27,6 +27,94 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-26] Fase 4 · PR 3 — chat e conexão com ticket, comentários, anexos e catálogos de admin
+
+**Agente/Modelo:** Claude Opus 5.5 (4 frentes em paralelo; revisão adversarial em 4 frentes com verificação independente; correções; migration aprovada pelo dono; roteiro ponta a ponta)
+**Objetivo:** O back da Fase 4 fica completo para as telas. O chat e a conexão respeitam os tickets; o ticket ganha comentários e anexos privados; o admin edita filas, categorias, SLA e rótulos de status.
+
+**Arquivos alterados:** branch `feat/fase4-back-satelites`.
+- **Banco:** `supabase/migrations/20260926120000_categoria_trava_mae.sql` e os casos T92e–h em `supabase/tests/tickets.sql`.
+- **Chat e conexão:**
+  - `features/chat/lib/upsert-message.ts`;
+  - `api/chat/conversations/[id]/route.ts`;
+  - `api/connection/disconnect/route.ts`, com teste novo;
+  - o teste do webhook uazapi.
+- **Comentários:**
+  - `features/tickets/lib/comment-actions.ts`;
+  - `schemas/comment.ts`;
+  - `api/tickets/[id]/comments/**`;
+  - `schemas/ticket.ts` passa a exportar `isPgSafeText`.
+- **Anexos:** `src/lib/storage/ticket-attachments.ts` e `api/tickets/[id]/attachments/**`.
+- **Catálogos:**
+  - `schemas/catalog.ts`;
+  - `mapCatalogError` em `lib/map-ticket-error.ts`;
+  - `api/products/[id]`, `api/ticket-categories/**`, `api/sla-policies/[priority]` e `api/ticket-statuses/[key]`;
+  - `queries/get-ticket-catalog.ts`.
+- Tipos novos em `types.ts`, testes de tudo, PRD e este PROGRESS.
+
+**O que foi feito:**
+- **Relay depois de "resolvida":** o trigger já devolve a conversa `resolved` para `bot` no INSERT do inbound, mas o webhook decidia o relay pelo status lido antes. `upsertMessage` agora relê o status no inbound, e a 1ª mensagem depois de resolvida vai para a IA.
+- **Limpar conversa com ticket:** `DELETE …?mode=clear` → 409 `{error}`. "Apagar" (sem mode) só arquiva e não toca nos tickets.
+- **Desconectar com ticket:** com `wipe`/`deleteIntegration` e tickets, a rota responde 409 `conversations_have_tickets` com a contagem, **antes do logout**, e a instância segue conectada. Um 23503 residual também vira 409, e os 500 não repassam mais `error.message`.
+- **Comentários:** o autor vem do viewer; editar e apagar (soft) só pelo autor, com o predicado de `comment-actions` (2º uso de `note-actions`, duplicado); apagado → 409; texto com NUL → 400.
+- **Anexos:**
+  - valida, sobe e só então faz o INSERT; se o INSERT falha, apaga o objeto;
+  - chave `tickets/<ticket>/<uuid>`, sha256 calculado no servidor;
+  - HTML, SVG e XML são guardados como `application/octet-stream`;
+  - o GET dá 302 para URL assinada de 600 s, `Cache-Control: private`, com download pelo nome original fora de imagem, vídeo, áudio e PDF.
+- **Catálogos (admin):** member → 403; `.strict()` barra `sla_mode`/`is_terminal`/`position`; nome ou rótulo repetido → 409 com o item existente; regras do trigger de categoria → 422 no campo do formulário.
+- **Catálogo de quem abre ticket:** não oferece categoria de fila arquivada nem subcategoria de mãe arquivada. Se as filas não carregam, as categorias vêm `null`.
+
+**Decisões tomadas:**
+- **Migration nova, aprovada pelo dono na sessão:** `guard_ticket_category` lê a mãe com `FOR SHARE` e recusa reativar categoria de fila arquivada (`PRODUCT_ARCHIVED`, 422 no campo `archived`). Achado da revisão, **corrida R6**.
+- **`mime` do anexo** guarda o tipo com que o objeto foi gravado: um `.html` fica `application/octet-stream`, e o nome original fica em `file_name`.
+- **Ticket encerrado aceita comentário e anexo.** O banco não barra, e não inventei a regra.
+- **Formato das 5 rotas de catálogo:** `{ok:true, item}`, com erro com `code` do mapa de tickets.
+
+**Corrida R6:** arquivar a mãe × criar ou reativar a filha, com duas sessões `psql` reais no banco local como `service_role`. A 1ª sessão segura a transação por 3 s. Nas 4 ordens, a 2ª **espera o commit** (cerca de 2 s) e recebe o erro coerente:
+
+| Ordem | Erro da 2ª sessão |
+|---|---|
+| inserir primeiro → arquivar a mãe | `CATEGORY_HAS_ACTIVE_CHILDREN` |
+| arquivar primeiro → inserir | `CATEGORY_ARCHIVED` |
+| arquivar primeiro → reativar a filha | `CATEGORY_ARCHIVED` |
+| reativar primeiro → arquivar | `CATEGORY_HAS_ACTIVE_CHILDREN` |
+
+Nenhum estado final tem filha ativa sob mãe arquivada. Antes da migration, o verificador reproduziu o estado proibido nas 4 ordens, num cluster descartável.
+
+**Revisão adversarial:**
+- **Anexos e autoria:** nenhum achado. Os probes de content-type contra o storage real confirmaram que `html`/`svg`/`xml`/vazio saem como octet-stream.
+- **Chat e conexão:** nenhum achado.
+- **Catálogos:** a corrida R6.
+- **Testes:** dois achados. O teste do relay não fixava qual linha era relida, e o do disconnect não cobria exatamente 1 ticket; os dois foram corrigidos e provados por mutação.
+
+Dos 37 mutantes, os demais morreram.
+
+**Verificação:**
+- Testes SQL: baseline 52, cadastros 63, segredo 7, tickets 157.
+- `db:types` sem mudança.
+- typecheck ✓ · lint ✓ (0 erros; os 9 avisos já existiam) · test ✓ (1965) · build ✓.
+- **Roteiro ponta a ponta** (`scratchpad/e2e5.mjs`, `next dev` na 3201, receptor HTTP no lugar da IA e da uazapi): as 43 conferências passaram. Os 4 critérios de pronto do PR 3:
+  - resolvida + inbound → relay já na 1ª mensagem;
+  - desconectar com apagar + ticket → 409, e a uazapi nem é chamada;
+  - `.html` guardado e servido como octet-stream;
+  - member → 403 nas rotas de admin.
+
+  Também passaram comentários (autor, 403, 409), anexo com os bytes idênticos pela URL assinada, limpar → 409, SLA novo sem mexer no ticket aberto e categoria repetida, de 3º nível e reativada em fila arquivada. Os dados foram apagados e o catálogo restaurado.
+
+**Pendências / próximos passos:**
+- **Anterior a este PR (na `main`):** um retry da uazapi com a mesma mensagem repassa de novo à IA, porque o upsert ignora a duplicata mas devolve a conversa. Tratar no relay v1 (Fase 5), que já vai ter deduplicação.
+- **Anterior a este PR:** `disconnect` com corpo JSON `null` lança 500. Não tocado.
+- **PR 6 (4f):** falta uma leitura de admin que traga filas e categorias arquivadas (`getProducts` e `getTicketCatalog` só trazem as ativas).
+- **Na tela do ticket (PR 4):** ao editar um ticket de fila arquivada, a categoria atual vem do próprio ticket, não do catálogo.
+- **Resíduo aceito do PR 1:** INSERT de comentário ou anexo com autor sendo apagado ao mesmo tempo pode dar 40P01.
+- **Texto com NUL em `customers`:** continua registrado, fora do escopo.
+
+**Armadilhas descobertas:**
+- **supabase-js 2.105, opção `download` de `createSignedUrl`:** o nome passa por `encodeURI` depois de já codificado, e "relatório final.pdf" baixa como `relat%C3%B3rio final.pdf`. `signTicketAttachment` monta o parâmetro com `URL.searchParams`.
+- **O UUID das rotas aceita maiúsculas, e o CHECK da `object_key` exige minúsculas.** A chave sai do id lido do banco.
+- **Limpeza de anexo de teste:** use a API do storage (`DELETE /storage/v1/object/<bucket>` com `prefixes`), não `delete from storage.objects`, que deixa o arquivo órfão no volume.
+
 ## [2026-09-26] Fase 4 · PR 2 — back dos tickets: serviço único, consultas e rotas de sessão
 
 **Agente/Modelo:** Claude Opus 5.5 (workflow em 4 ondas: fundação → libs e consultas → serviço → rotas; revisão adversarial em 4 frentes com verificação independente; correções; roteiro ponta a ponta contra o app local)

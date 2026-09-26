@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDashboardViewer, requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { pushTakeoverToAgent } from "@/features/chat/lib/push-takeover";
+import { mapTicketError } from "@/features/tickets/lib/map-ticket-error";
 import {
   AROUND_CONTEXT,
   MESSAGES_PAGE_SIZE,
@@ -303,6 +304,14 @@ export async function DELETE(request: Request, { params }: Params) {
       });
       if (error?.code === "P0002") {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      // Conversa com ticket não se limpa: a timeline do atendimento mostra
+      // essas mensagens (CONVERSATION_HAS_TICKETS, migration _tickets §10.2).
+      if (error && mapTicketError(error).code === "conversation_has_tickets") {
+        return NextResponse.json(
+          { error: "A conversa tem ticket; limpar apagaria o histórico do atendimento." },
+          { status: 409 }
+        );
       }
       if (error) throw error;
       if (!data || Array.isArray(data) || typeof data !== "object") {

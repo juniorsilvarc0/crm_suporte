@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 import { TICKET_STATUS_KEYS, isTicketStatus } from "@/features/tickets/lib/ticket-status";
-import type { TicketError } from "@/features/tickets/types";
+import type {
+  TicketCatalogError,
+  TicketCatalogErrorBody,
+  TicketCatalogErrorField,
+  TicketError,
+} from "@/features/tickets/types";
 import { isUuid } from "@/lib/validation/uuid";
 
 // Traduz os erros do banco nas RPCs e tabelas de ticket (migration _tickets) em
@@ -300,6 +305,10 @@ const CONSTRAINT_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
     },
   ],
   ["sla_policies_warn_pct_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
+  // Fila (products, migration _cadastros), editada pela 4f.
+  ["products_name_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
+  ["products_niche_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
+  ["products_color_format_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
   // Nome repetido (23505): a rota do catálogo devolve o item existente, no
   // molde de POST /api/products.
   [
@@ -388,4 +397,126 @@ export function mapTicketError(error: DatabaseErrorLike | null | undefined): Tic
   // Inclui o 42501 sem TAG (grant faltando ou select que tocou coluna sem
   // grant) e a constraint de invariante: bug — 500, nunca 403 nem 400.
   return { ...INTERNAL_ERROR };
+}
+
+// Rotas de catálogo (4f, admin): qual formulário leu o erro.
+export type TicketCatalogErrorContext =
+  | "product"
+  | "category_create"
+  | "category_update"
+  | "sla_policy"
+  | "ticket_status";
+
+type CatalogOverride = { field: TicketCatalogErrorField; message?: string };
+
+const CATALOG_NAME_MESSAGE = "Informe um nome de até 80 caracteres.";
+const SLA_MINUTES_MESSAGE = "Use de 1 a 525.600 minutos.";
+
+// O campo do formulário do catálogo e, onde a mensagem do ticket não serve, a
+// do catálogo: CATEGORY_ARCHIVED é "escolha outra" no ticket, mas "reative a
+// mãe" ao criar ou reativar a subcategoria. Casada como no mapa: TAG ou
+// constraint na message, com as TAGs antes das constraints em cada lista (a TAG
+// vence, como em mapTicketError); status e `code` continuam os do mapa. As
+// checks só chegam aqui se o zod de schemas/catalog.ts deixar passar.
+const CATALOG_OVERRIDES: Record<
+  TicketCatalogErrorContext,
+  ReadonlyArray<readonly [string, CatalogOverride]>
+> = {
+  product: [
+    ["products_name_active_uidx", { field: "name" }],
+    ["products_name_check", { field: "name", message: CATALOG_NAME_MESSAGE }],
+    [
+      "products_niche_check",
+      { field: "niche", message: "Use até 80 caracteres no nicho, ou deixe em branco." },
+    ],
+    ["products_color_format_check", { field: "color", message: "Cor inválida." }],
+  ],
+  category_create: [
+    ["CATEGORY_TOO_DEEP", { field: "parent_id" }],
+    [
+      "CATEGORY_ARCHIVED",
+      { field: "parent_id", message: "Categoria mãe arquivada. Reative-a antes." },
+    ],
+    [
+      "CATEGORY_PRODUCT_MISMATCH",
+      { field: "parent_id", message: "A subcategoria fica na mesma fila da categoria mãe." },
+    ],
+    [
+      "ticket_categories_parent_id_fkey",
+      { field: "parent_id", message: "Categoria mãe não encontrada." },
+    ],
+    ["PRODUCT_ARCHIVED", { field: "product_id", message: "Fila arquivada. Reative-a antes." }],
+    ["ticket_categories_name_active_uidx", { field: "name" }],
+    ["ticket_categories_name_check", { field: "name", message: CATALOG_NAME_MESSAGE }],
+    ["ticket_categories_product_id_fkey", { field: "product_id" }],
+  ],
+  category_update: [
+    ["CATEGORY_HAS_ACTIVE_CHILDREN", { field: "archived" }],
+    [
+      "CATEGORY_ARCHIVED",
+      { field: "archived", message: "Categoria mãe arquivada. Reative-a antes." },
+    ],
+    // Reativar categoria de fila arquivada (20260926120000_categoria_trava_mae).
+    ["PRODUCT_ARCHIVED", { field: "archived", message: "Fila arquivada. Reative a fila antes." }],
+    ["ticket_categories_name_active_uidx", { field: "name" }],
+    ["ticket_categories_name_check", { field: "name", message: CATALOG_NAME_MESSAGE }],
+  ],
+  sla_policy: [
+    [
+      "sla_policies_first_response_check",
+      { field: "first_response_minutes", message: SLA_MINUTES_MESSAGE },
+    ],
+    ["sla_policies_resolution_check", { field: "resolution_minutes", message: SLA_MINUTES_MESSAGE }],
+    ["sla_policies_order_check", { field: "first_response_minutes" }],
+    ["sla_policies_warn_pct_check", { field: "warn_pct", message: "Use de 1 a 99%." }],
+  ],
+  ticket_status: [
+    ["ticket_statuses_label_uidx", { field: "label" }],
+    [
+      "ticket_statuses_label_check",
+      { field: "label", message: "Informe um rótulo de até 40 caracteres." },
+    ],
+    ["ticket_statuses_color_check", { field: "color", message: "Cor inválida." }],
+  ],
+};
+
+// Para o teste conferir cada TAG e constraint contra o mapa e as migrations.
+export const TICKET_CATALOG_ERROR_NEEDLES: readonly string[] = Object.values(
+  CATALOG_OVERRIDES
+).flatMap((overrides) => overrides.map(([needle]) => needle));
+
+/**
+ * Erro do banco nas rotas de catálogo (fila, categoria, SLA e status): o mapa
+ * de tickets, com o campo e a mensagem do formulário do catálogo. O campo de
+ * ticket do mapa (category_id, product_id…) não passa: o formulário do
+ * catálogo não o tem. O nome repetido sai como 409 `duplicate`, e a rota
+ * acrescenta o item existente.
+ */
+export function mapCatalogError(
+  error: DatabaseErrorLike | null | undefined,
+  context: TicketCatalogErrorContext
+): TicketCatalogError {
+  const { status, code, message } = mapTicketError(error);
+  const text = error?.message ?? "";
+  const override = CATALOG_OVERRIDES[context].find(([needle]) => text.includes(needle))?.[1];
+  if (!override) return { status, code, message };
+  return { status, code, message: override.message ?? message, field: override.field };
+}
+
+/**
+ * O corpo de erro das rotas de catálogo, no formato de ticketErrorBody: o campo
+ * marcado em `errors` com a própria mensagem e, no 409 `duplicate`, o item que
+ * já tem o nome. Nada do banco entra aqui.
+ */
+export function catalogErrorBody<Item>(
+  error: TicketCatalogError,
+  item?: Item
+): TicketCatalogErrorBody<Item> {
+  return {
+    ok: false,
+    code: error.code,
+    message: error.message,
+    errors: error.field ? { [error.field]: [error.message] } : undefined,
+    item,
+  };
 }

@@ -1,9 +1,11 @@
 import { getProducts } from "@/features/products/queries/get-products";
+import type { ProductOption } from "@/features/products/types";
 import { isTicketPriority } from "@/features/tickets/lib/ticket-priority";
 import { isTicketStatus, TICKET_STATUS_KEYS } from "@/features/tickets/lib/ticket-status";
 import type {
   SlaMode,
   TicketCatalog,
+  TicketCategoryOption,
   TicketSlaPolicy,
   TicketStatusOption,
   TicketTransition,
@@ -48,9 +50,39 @@ function mapPart<Row, Item>(
 const statusPosition = (key: string) => TICKET_STATUS_KEYS.findIndex((status) => status === key);
 
 /**
+ * As categorias que o catálogo oferece: a consulta só corta a própria
+ * categoria arquivada, então aqui sai a da fila arquivada (fora de `products`,
+ * que só traz as ativas) e a subcategoria cuja mãe não ficou (arquivada ou
+ * cortada pela fila): a filha sozinha não faz sentido no "Novo ticket".
+ *
+ * Sem as filas (`products` null), a parte inteira é `null`: não dá para saber
+ * qual fila está ativa. Devolver todas ofereceria categoria de fila arquivada;
+ * devolver só as gerais esconderia as da fila e pareceria a lista completa.
+ */
+function offeredCategories(
+  categories: TicketCategoryOption[] | null,
+  products: ProductOption[] | null
+): TicketCategoryOption[] | null {
+  if (!categories) return null;
+  if (!products) {
+    console.error("getTicketCatalog categories: filas indisponíveis, sem como conferir a fila");
+    return null;
+  }
+  const activeProducts = new Set(products.map((product) => product.id));
+  const inActiveQueue = categories.filter(
+    (category) => category.product_id === null || activeProducts.has(category.product_id)
+  );
+  const offered = new Set(inActiveQueue.map((category) => category.id));
+  return inActiveQueue.filter(
+    (category) => category.parent_id === null || offered.has(category.parent_id)
+  );
+}
+
+/**
  * O catálogo dos tickets: status (rótulo e cor do admin), a matriz de
  * transições, as prioridades com os minutos de SLA, as filas e as categorias
- * ATIVAS. Arquivada só aparece no ticket que já a tinha.
+ * ATIVAS (categoria geral ou de fila ativa, com a mãe também oferecida).
+ * Arquivada só aparece no ticket que já a tinha.
  *
  * Leitura resiliente por parte: cada uma é `null` quando falha, nunca `[]` —
  * vazio seria "não há status", e a tela cai nos rótulos de recurso
@@ -126,13 +158,16 @@ export async function getTicketCatalog(): Promise<TicketCatalog> {
         : null
     );
 
-    const categories = mapPart("categories", categoriesRes, (row) => ({
-      id: row.id,
-      name: row.name,
-      product_id: row.product_id,
-      parent_id: row.parent_id,
-      archived_at: row.archived_at,
-    }));
+    const categories = offeredCategories(
+      mapPart("categories", categoriesRes, (row) => ({
+        id: row.id,
+        name: row.name,
+        product_id: row.product_id,
+        parent_id: row.parent_id,
+        archived_at: row.archived_at,
+      })),
+      products
+    );
 
     return { statuses, transitions, priorities, products, categories };
   } catch (error) {
