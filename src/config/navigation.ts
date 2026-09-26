@@ -5,6 +5,7 @@ import {
   ContactRoundIcon,
   SlidersHorizontalIcon,
   SmartphoneIcon,
+  TicketIcon,
   UsersRoundIcon,
 } from "lucide-react";
 
@@ -39,12 +40,13 @@ export type NavItem = {
 
 /**
  * O núcleo que sobrou da poda do CRM de origem, mais os cadastros da Fase 3
- * (Clientes e Contatos). Tickets, agenda, financeiro e métricas de suporte
- * entram nas fases seguintes de `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém
- * o ícone da própria marca.
+ * (Clientes e Contatos) e os Tickets da Fase 4. Quadro, agenda, financeiro e
+ * métricas de suporte entram com as páginas deles, nas fases seguintes de
+ * `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém o ícone da própria marca.
  */
 export const dashboardNavigation: NavItem[] = [
   { title: "Início", href: "/app", icon: ActivityIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Tickets", href: "/app/tickets", icon: TicketIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "WhatsApp", href: "/app/chat", icon: WhatsAppIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Clientes", href: "/app/clientes", icon: Building2Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Contatos", href: "/app/contatos", icon: ContactRoundIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
@@ -67,6 +69,7 @@ export const dashboardNavigation: NavItem[] = [
  */
 export const mobileTabHrefs: ReadonlyArray<string> = [
   "/app",
+  "/app/tickets",
   "/app/chat",
   "/app/clientes",
 ];
@@ -104,6 +107,7 @@ const TOP_NAV_SPEC: ReadonlyArray<
   { kind: "link"; href: string } | { kind: "menu"; title: string; hrefs: ReadonlyArray<string> }
 > = [
   { kind: "link", href: "/app" },
+  { kind: "link", href: "/app/tickets" },
   { kind: "link", href: "/app/chat" },
   { kind: "link", href: "/app/clientes" },
   { kind: "link", href: "/app/contatos" },

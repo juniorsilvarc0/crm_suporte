@@ -11,9 +11,10 @@ import {
 import { decideRouteAccess } from "@/lib/auth/route-guard";
 
 describe("getDashboardNavigation", () => {
-  it("dá ao membro só a operação, com os cadastros", () => {
+  it("dá ao membro só a operação, com os tickets e os cadastros", () => {
     expect(getDashboardNavigation("member").map((item) => item.href)).toEqual([
       "/app",
+      "/app/tickets",
       "/app/chat",
       "/app/clientes",
       "/app/contatos",
@@ -23,6 +24,7 @@ describe("getDashboardNavigation", () => {
   it("dá ao administrador a operação e os ajustes", () => {
     expect(getDashboardNavigation("admin").map((item) => item.href)).toEqual([
       "/app",
+      "/app/tickets",
       "/app/chat",
       "/app/clientes",
       "/app/contatos",
@@ -47,6 +49,7 @@ describe("abas da barra inferior", () => {
   it("leva o WhatsApp para a barra — era o que ficava escondido no 'Mais'", () => {
     expect(getMobileTabs("admin").map((item) => item.href)).toEqual([
       "/app",
+      "/app/tickets",
       "/app/chat",
       "/app/clientes",
     ]);
@@ -55,7 +58,7 @@ describe("abas da barra inferior", () => {
   it("membro recebe as mesmas abas, todas dentro do que ele pode ver", () => {
     const tabs = getMobileTabs("member");
     const allowed = new Set(getDashboardNavigation("member").map((item) => item.href));
-    expect(tabs.map((tab) => tab.href)).toEqual(["/app", "/app/chat", "/app/clientes"]);
+    expect(tabs.map((tab) => tab.href)).toEqual(["/app", "/app/tickets", "/app/chat", "/app/clientes"]);
     for (const tab of tabs) expect(allowed.has(tab.href)).toBe(true);
   });
 
@@ -82,9 +85,9 @@ describe("buildTopNavigation", () => {
 
     expect(
       entries.map((entry) => (entry.kind === "link" ? entry.item.title : entry.title))
-    ).toEqual(["Início", "WhatsApp", "Clientes", "Contatos", "Ajustes"]);
+    ).toEqual(["Início", "Tickets", "WhatsApp", "Clientes", "Contatos", "Ajustes"]);
 
-    const ajustes = entries[4];
+    const ajustes = entries[5];
     expect(ajustes.kind).toBe("menu");
     if (ajustes.kind === "menu") {
       expect(ajustes.items.map((item) => item.href)).toEqual([
@@ -126,7 +129,7 @@ describe("buildTopNavigation", () => {
   });
 
   it("módulo novo fora da ordem da barra aparece no fim em vez de sumir", () => {
-    const novo = { title: "Tickets", href: "/app/tickets", icon: () => null };
+    const novo = { title: "Agenda", href: "/app/agendamentos", icon: () => null };
     const entries = buildTopNavigation([...getDashboardNavigation("member"), novo]);
 
     expect(entries.at(-1)).toEqual({ kind: "link", item: novo });
