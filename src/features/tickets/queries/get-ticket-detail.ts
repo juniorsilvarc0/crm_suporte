@@ -16,8 +16,10 @@ import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/a
 // ⚠️ Colunas SEMPRE explícitas em support_contracts: o service_role não lê
 // monthly_amount, e um embed support_contracts(*) falha com 42501. Hint pelo
 // nome da FK: quem abriu é a 2ª relação de tickets com app_users (PGRST201).
+// A categoria vem pelo embed (arquivada inclusive: o catálogo só tem as
+// ativas), e da conversa só o foco, para o "Responder no WhatsApp".
 const TICKET_DETAIL_SELECT =
-  `${TICKET_LIST_SELECT}, description, contact_id, customer_id, contract_id, product_id, category_id, assigned_to_user_id, first_ai_response_at, contract:support_contracts!tickets_contract_id_fkey(id, status, starts_on, ends_on), creator:app_users!tickets_created_by_user_id_fkey(id, name)` as const;
+  `${TICKET_LIST_SELECT}, description, contact_id, customer_id, contract_id, product_id, category_id, assigned_to_user_id, first_ai_response_at, contract:support_contracts!tickets_contract_id_fkey(id, status, starts_on, ends_on), creator:app_users!tickets_created_by_user_id_fkey(id, name), category:ticket_categories!tickets_category_id_fkey(id, name, archived_at), conversation:chat_conversations!tickets_conversation_id_fkey(active_ticket_id)` as const;
 
 // Nunca bucket, object_key nem sha256: o arquivo sai pela rota do anexo.
 const ATTACHMENT_SELECT =
@@ -35,6 +37,8 @@ type TicketDetailRow = TicketListRow & {
   first_ai_response_at: string | null;
   contract: { id: string; status: string; starts_on: string; ends_on: string | null } | null;
   creator: { id: string; name: string } | null;
+  category: { id: string; name: string; archived_at: string | null } | null;
+  conversation: { active_ticket_id: string | null } | null;
 };
 
 /**
@@ -83,6 +87,10 @@ function toTicketDetail(row: TicketDetailRow): TicketDetail | null {
     first_ai_response_at: row.first_ai_response_at,
     contract,
     creator: row.creator ? { id: row.creator.id, name: row.creator.name } : null,
+    category: row.category
+      ? { id: row.category.id, name: row.category.name, archived_at: row.category.archived_at }
+      : null,
+    in_focus: row.conversation?.active_ticket_id === item.id,
   };
 }
 

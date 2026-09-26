@@ -413,7 +413,8 @@ function ProductChips({
 
 // Rótulo pequeno com ícone e o valor embaixo — o bloco de fatos da ficha.
 // O ícone mora dentro do <dt>: um <div> filho de <dl> só pode ter dt/dd.
-function DetailRow({
+// Exportado para a lateral do detalhe do ticket (2º uso).
+export function DetailRow({
   icon,
   label,
   children,
