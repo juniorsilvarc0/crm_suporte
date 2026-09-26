@@ -87,6 +87,44 @@ const CATEGORIES = [
   },
 ];
 
+// Categoria e subcategoria da fila ativa (PRODUCTS) e de uma fila arquivada,
+// que getProducts não devolve.
+const QUEUE_CATEGORIES = [
+  {
+    id: "c81e728d-9d4c-4f63-8a2b-3c4d5e6f7a8b",
+    name: "Estoque",
+    product_id: PRODUCTS[0].id,
+    parent_id: null,
+    archived_at: null,
+  },
+  {
+    id: "eccbc87e-4b5c-4e2f-9a8b-7c6d5e4f3a2b",
+    name: "Inventário",
+    product_id: PRODUCTS[0].id,
+    parent_id: "c81e728d-9d4c-4f63-8a2b-3c4d5e6f7a8b",
+    archived_at: null,
+  },
+];
+
+const ARCHIVED_QUEUE_ID = "a87ff679-a2f3-4e71-8c9d-0e1f2a3b4c5d";
+
+const ARCHIVED_QUEUE_CATEGORIES = [
+  {
+    id: "1679091c-5a88-4faf-9b3c-2d1e0f9a8b7c",
+    name: "Folha",
+    product_id: ARCHIVED_QUEUE_ID,
+    parent_id: null,
+    archived_at: null,
+  },
+  {
+    id: "8f14e45f-ceea-467a-9575-8b7c6d5e4f3a",
+    name: "Férias",
+    product_id: ARCHIVED_QUEUE_ID,
+    parent_id: "1679091c-5a88-4faf-9b3c-2d1e0f9a8b7c",
+    archived_at: null,
+  },
+];
+
 function mockCatalog(overrides: Partial<Record<Table, unknown>> = {}) {
   const results: Record<Table, unknown> = {
     ticket_statuses: ok(STATUSES),
@@ -141,11 +179,58 @@ describe("getTicketCatalog", () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it("filas que não carregaram (getProducts null) deixam só products null", async () => {
-    mockCatalog();
+  it("filas que não carregaram (getProducts null) anulam products e categories", async () => {
+    // Sem as filas não há como saber qual categoria é de fila arquivada: a
+    // parte falha em vez de oferecer todas ou sumir em silêncio com as da fila.
+    mockCatalog({ ticket_categories: ok([...CATEGORIES, ...QUEUE_CATEGORIES]) });
     getProductsMock.mockResolvedValue(null);
 
-    expect(await getTicketCatalog()).toEqual({ ...FULL, products: null });
+    expect(await getTicketCatalog()).toEqual({ ...FULL, products: null, categories: null });
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("categoria de fila arquivada sai junto com a subcategoria; a da fila ativa fica", async () => {
+    mockCatalog({
+      ticket_categories: ok([...CATEGORIES, ...QUEUE_CATEGORIES, ...ARCHIVED_QUEUE_CATEGORIES]),
+    });
+
+    const { categories } = await getTicketCatalog();
+
+    expect(categories).toEqual([...CATEGORIES, ...QUEUE_CATEGORIES]);
+  });
+
+  it("categoria geral e a subcategoria dela ficam mesmo sem nenhuma fila ativa", async () => {
+    const child = {
+      id: "e4da3b7f-bbce-4345-9c2d-6e7f8a9b0c1d",
+      name: "Rejeição",
+      product_id: null,
+      parent_id: CATEGORIES[0].id,
+      archived_at: null,
+    };
+    mockCatalog({ ticket_categories: ok([...CATEGORIES, child, ...QUEUE_CATEGORIES]) });
+    getProductsMock.mockResolvedValue([]);
+
+    const { products, categories } = await getTicketCatalog();
+
+    expect(products).toEqual([]);
+    expect(categories).toEqual([...CATEGORIES, child]);
+  });
+
+  it("subcategoria cuja mãe não veio (arquivada) sai; a vizinha com mãe fica", async () => {
+    // A consulta já corta a mãe arquivada: a filha chega sozinha, apontando
+    // para um id que não está no resultado.
+    const orphan = {
+      id: "45c48cce-2e2d-4fbd-8a1f-0b1c2d3e4f5a",
+      name: "Cancelamento",
+      product_id: null,
+      parent_id: "6512bd43-d9ca-4a6f-9b7e-1c2d3e4f5a6b",
+      archived_at: null,
+    };
+    mockCatalog({ ticket_categories: ok([...CATEGORIES, orphan, ...QUEUE_CATEGORIES]) });
+
+    const { categories } = await getTicketCatalog();
+
+    expect(categories).toEqual([...CATEGORIES, ...QUEUE_CATEGORIES]);
   });
 
   it("parte vazia continua [], não vira null", async () => {

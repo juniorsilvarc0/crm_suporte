@@ -350,6 +350,40 @@ export type TicketErrorBody = {
 // quando a leitura dele falhou: a tela cai num texto sem nome.
 export type TicketTakeOverErrorBody = TicketErrorBody & { assigned_to_name?: string };
 
+// Campo marcado em `errors` pelas rotas de catálogo (4f, admin): os formulários
+// de fila, categoria, SLA e status. À parte de TicketErrorField, que é o dos
+// inputs do ticket.
+export type TicketCatalogErrorField =
+  | "name"
+  | "niche"
+  | "color"
+  | "archived"
+  | "product_id"
+  | "parent_id"
+  | "label"
+  | "first_response_minutes"
+  | "resolution_minutes"
+  | "warn_pct";
+
+// Erro de negócio das rotas de catálogo (mapCatalogError): status, `code` e
+// mensagem do mapa de tickets, com o campo do catálogo e sem os extras do
+// ticket (allowed, versão, responsável), que um catálogo nunca tem.
+export type TicketCatalogError = Pick<TicketError, "status" | "code" | "message"> & {
+  field?: TicketCatalogErrorField;
+};
+
+// Corpo de erro das rotas de catálogo, como a tela o lê. `item` só no 409
+// `duplicate`: o registro ativo que já tem o nome ou o rótulo (molde de POST
+// /api/products); ausente quando a releitura dele falhou. O 400 do zod tem o
+// mesmo `errors`, mas sem `code`.
+export type TicketCatalogErrorBody<Item> = {
+  ok: false;
+  code: string;
+  message: string;
+  errors?: Partial<Record<TicketCatalogErrorField, string[]>>;
+  item?: Item;
+};
+
 // Filtros da lista /app/tickets, lidos da URL por parseTicketListParams. Valor
 // fora da allowlist vira o padrão em vez de erro (link velho ou editado à mão
 // abre a lista padrão), e nada da URL é interpolado no filtro do PostgREST.

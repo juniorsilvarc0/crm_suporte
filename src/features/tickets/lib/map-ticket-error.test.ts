@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { TICKET_ERROR_TAGS, mapTicketError } from "@/features/tickets/lib/map-ticket-error";
+import {
+  TICKET_CATALOG_ERROR_NEEDLES,
+  TICKET_ERROR_TAGS,
+  catalogErrorBody,
+  mapCatalogError,
+  mapTicketError,
+} from "@/features/tickets/lib/map-ticket-error";
 import { ticketErrorBody, ticketErrorResponse } from "@/features/tickets/lib/ticket-error-response";
 import type { TicketError } from "@/features/tickets/types";
 
@@ -457,5 +463,206 @@ describe("ticketErrorResponse", () => {
     ticketErrorResponse("[POST /api/tickets]", error);
 
     expect(log).toHaveBeenCalledWith("[POST /api/tickets]", "internal", "Não foi possível.");
+  });
+});
+
+describe("mapCatalogError — rotas de catálogo (4f)", () => {
+  it("toda TAG e constraint dos overrides existe no mapa e nas migrations", () => {
+    const missing = TICKET_CATALOG_ERROR_NEEDLES.filter(
+      (needle) =>
+        !TICKET_ERROR_TAGS.includes(needle) &&
+        !TICKETS_SQL.includes(needle) &&
+        !CADASTROS_SQL.includes(needle)
+    );
+
+    expect(TICKET_CATALOG_ERROR_NEEDLES.length).toBeGreaterThan(15);
+    expect(missing).toEqual([]);
+  });
+
+  it("todo override cai num erro de negócio, nunca no 500 (campo em bug esconderia o log)", () => {
+    const internal = TICKET_CATALOG_ERROR_NEEDLES.filter(
+      (needle) => mapTicketError({ code: "P0001", message: needle }).status >= 500
+    );
+
+    expect(internal).toEqual([]);
+  });
+
+  it("as checks da fila (migration _cadastros) são 400, não 500", () => {
+    for (const name of ["products_name_check", "products_niche_check", "products_color_format_check"]) {
+      expect(CADASTROS_SQL).toContain(name);
+      expect(mapTicketError(check("products", name))).toMatchObject({
+        status: 400,
+        code: "validation",
+      });
+    }
+    expect(mapCatalogError(check("products", "products_niche_check"), "product")).toEqual({
+      status: 400,
+      code: "validation",
+      message: "Use até 80 caracteres no nicho, ou deixe em branco.",
+      field: "niche",
+    });
+  });
+
+  it.each([
+    ["product", unique("products_name_active_uidx"), "name", "Já existe uma fila com este nome."],
+    [
+      "category_create",
+      unique("ticket_categories_name_active_uidx"),
+      "name",
+      "Já existe uma categoria com este nome.",
+    ],
+    [
+      "category_update",
+      unique("ticket_categories_name_active_uidx"),
+      "name",
+      "Já existe uma categoria com este nome.",
+    ],
+    ["ticket_status", unique("ticket_statuses_label_uidx"), "label", "Já existe um status com este rótulo."],
+  ] as const)("%s: nome repetido → 409 duplicate no campo %s", (context, error, field, message) => {
+    expect(mapCatalogError(error, context)).toEqual({ status: 409, code: "duplicate", message, field });
+  });
+
+  it("CATEGORY_ARCHIVED: a mãe arquivada, no campo de cada formulário", () => {
+    expect(mapCatalogError(tag("CATEGORY_ARCHIVED"), "category_create")).toEqual({
+      status: 422,
+      code: "category_archived",
+      message: "Categoria mãe arquivada. Reative-a antes.",
+      field: "parent_id",
+    });
+    expect(mapCatalogError(tag("CATEGORY_ARCHIVED"), "category_update")).toMatchObject({
+      status: 422,
+      message: "Categoria mãe arquivada. Reative-a antes.",
+      field: "archived",
+    });
+  });
+
+  it("as regras do trigger de categorias marcam o campo do formulário", () => {
+    expect(mapCatalogError(tag("CATEGORY_TOO_DEEP"), "category_create")).toEqual({
+      status: 422,
+      code: "category_too_deep",
+      message: "Categoria tem no máximo dois níveis.",
+      field: "parent_id",
+    });
+    expect(mapCatalogError(tag("CATEGORY_PRODUCT_MISMATCH"), "category_create")).toMatchObject({
+      code: "category_product_mismatch",
+      field: "parent_id",
+    });
+    expect(mapCatalogError(tag("PRODUCT_ARCHIVED"), "category_create")).toMatchObject({
+      code: "product_archived",
+      message: "Fila arquivada. Reative-a antes.",
+      field: "product_id",
+    });
+    expect(mapCatalogError(tag("CATEGORY_HAS_ACTIVE_CHILDREN"), "category_update")).toEqual({
+      status: 422,
+      code: "category_has_active_children",
+      message: "Arquive as subcategorias antes da categoria.",
+      field: "archived",
+    });
+    expect(mapCatalogError(tag("PRODUCT_ARCHIVED"), "category_update")).toEqual({
+      status: 422,
+      code: "product_archived",
+      message: "Fila arquivada. Reative a fila antes.",
+      field: "archived",
+    });
+  });
+
+  it("FK da mãe e da fila: 422 no campo, sem citar o banco", () => {
+    const fk = (name: string) => ({
+      code: "23503",
+      message: `insert or update on table "ticket_categories" violates foreign key constraint "${name}"`,
+    });
+
+    expect(mapCatalogError(fk("ticket_categories_parent_id_fkey"), "category_create")).toEqual({
+      status: 422,
+      code: "category_not_found",
+      message: "Categoria mãe não encontrada.",
+      field: "parent_id",
+    });
+    expect(mapCatalogError(fk("ticket_categories_product_id_fkey"), "category_create")).toEqual({
+      status: 422,
+      code: "product_not_found",
+      message: "Fila não encontrada.",
+      field: "product_id",
+    });
+  });
+
+  it("SLA: a ordem do banco (um só campo no corpo) marca a 1ª resposta", () => {
+    expect(mapCatalogError(check("sla_policies", "sla_policies_order_check"), "sla_policy")).toEqual(
+      {
+        status: 400,
+        code: "validation",
+        message: "A 1ª resposta não pode ter prazo maior que a solução.",
+        field: "first_response_minutes",
+      }
+    );
+    expect(
+      mapCatalogError(check("sla_policies", "sla_policies_warn_pct_check"), "sla_policy")
+    ).toMatchObject({ field: "warn_pct", message: "Use de 1 a 99%." });
+  });
+
+  it("o campo de ticket do mapa não passa para o catálogo", () => {
+    expect(mapCatalogError(tag("CATEGORY_ARCHIVED"), "sla_policy")).toEqual({
+      status: 422,
+      code: "category_archived",
+      message: "Categoria arquivada. Escolha outra.",
+    });
+  });
+
+  it("TAG vence a constraint também no catálogo: o campo é o da TAG", () => {
+    const both = {
+      code: "P0001",
+      message: 'CATEGORY_ARCHIVED (via "ticket_categories_name_check")',
+    };
+
+    expect(mapCatalogError(both, "category_create")).toMatchObject({
+      code: "category_archived",
+      field: "parent_id",
+    });
+    expect(mapCatalogError(both, "category_update")).toMatchObject({
+      code: "category_archived",
+      field: "archived",
+    });
+  });
+
+  it("o override é do contexto: a constraint de outro formulário não marca campo", () => {
+    expect(mapCatalogError(unique("ticket_statuses_label_uidx"), "product")).not.toHaveProperty(
+      "field"
+    );
+  });
+
+  it("500 continua 500, sem campo e sem a mensagem do banco", () => {
+    const cause = { code: "42501", message: "permission denied for table products" };
+
+    expect(mapCatalogError(cause, "product")).toEqual(INTERNAL);
+    expect(mapCatalogError(null, "ticket_status")).toEqual(INTERNAL);
+  });
+});
+
+describe("catalogErrorBody", () => {
+  const ITEM = { id: USER_ID, name: "Financeiro" };
+
+  it("marca o campo e leva o item existente no 409", () => {
+    const body = catalogErrorBody(
+      mapCatalogError(unique("ticket_categories_name_active_uidx"), "category_create"),
+      ITEM
+    );
+
+    expect(body).toEqual({
+      ok: false,
+      code: "duplicate",
+      message: "Já existe uma categoria com este nome.",
+      errors: { name: ["Já existe uma categoria com este nome."] },
+      item: ITEM,
+    });
+  });
+
+  it("sem campo nem item, as chaves somem do JSON", () => {
+    const body = catalogErrorBody(mapCatalogError({ code: "57014", message: "timeout" }, "product"));
+
+    expect(JSON.parse(JSON.stringify(body))).toEqual({
+      ok: false,
+      code: "internal",
+      message: "Não foi possível concluir a operação.",
+    });
   });
 });
