@@ -17,7 +17,7 @@ Curadoria filtrada pela **stack real deste projeto**. Normativo: leia antes de i
 | **UI** | **Base UI (`@base-ui/react`)** + primitivos próprios em `src/components/ui` (27) | ⚠️ **Não é Radix.** `shadcn` está nas deps como CLI/estilos, mas os primitivos foram portados para Base UI. A API de composição difere (`render={<Button/>}` em vez de `asChild`). |
 | **Ícones** | **lucide-react v1** | Ícone de WhatsApp é próprio: `src/features/chat/components/whatsapp-icon.tsx`. |
 | **Estado** | React local + server components + `router.refresh()` | ⚠️ **Sem Redux, Zustand, Jotai ou TanStack Query.** É deliberado. Revalidação vem do servidor. |
-| **Forms** | **react-hook-form + zod** (`@hookform/resolvers`) | Existe de verdade — diferente de projetos com form manual. Use. |
+| **Forms** | **react-hook-form + zod** (`@hookform/resolvers`) | Uso real a partir da Fase 3 (empresa e contrato), com o **mesmo schema zod da rota** — ver UI.md §5.23. Formulários anteriores seguem em `FormData` até serem tocados. |
 | **Gráficos** | **recharts** | Sem uso desde a Fase 1; volta nas métricas de suporte (Fase 9). |
 | **Drag & drop** | **@dnd-kit** | Kanban do funil (`src/components/kibo-ui/kanban`). |
 | **Banco** | **Supabase (Postgres)** — `supabase-js` | **RLS em todas as tabelas; `anon` não alcança nada.** Server usa **service role** (grant mínimo, por coluna onde importa); o navegador só assina o Realtime do chat com JWT `authenticated` curto, por `subscribeAuthenticated`. Segredos no **Vault**. Tipos **gerados**: `pnpm db:types` (supabase CLI fixada via `npx`, só para isso). Ver §Segurança. |

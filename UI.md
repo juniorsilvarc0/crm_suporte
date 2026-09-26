@@ -273,7 +273,7 @@ Convenções embutidas: `focus-visible:ring-3`, `aria-invalid` estilizado, `[&_s
 
 ## §5. Padrões de tela
 
-### §5.1 Tela de dados (Leads, Follow-ups, Rastreamento, Financeiro)
+### §5.1 Tela de dados (Clientes, Contatos; depois Tickets, Follow-ups, Financeiro)
 
 ```
 PageHeader
@@ -288,8 +288,13 @@ paginação compartilhada
 - Filtro ativo mostra a **quantidade** e tem **limpeza explícita**.
 - Loading é `Skeleton` com a geometria do conteúdo, **nunca** spinner de página inteira.
 - Vazio é `EmptyState` com frase curta e, quando útil, uma ação.
-- Em Leads, a ação cotidiana é **“Arquivar pessoa”**, nunca exclusão física. Ela sai das listas operacionais e do funil ativo, mas conversa, agenda, financeiro e histórico continuam vinculados ao mesmo `lead_id`.
-- Nome e telefone exibidos no Funil e no WhatsApp vêm da pessoa canônica. Editar em Leads deve refletir nas três superfícies; snapshot do provedor fica apenas como metadado de auditoria.
+- **Filtros e página moram na URL** (`?q=&situacao=&page=`): a página server lê `searchParams`, e a busca navega com debounce de 300 ms e `router.replace(…, { scroll: false })`. Sem filtro local repetido no cliente.
+- **Lista com erro não diz "nenhum cadastrado".** A consulta devolve `failed: true`, e a tela mostra "Não foi possível carregar…" com **Tentar de novo** (`router.refresh()`). Base vazia, busca vazia e falha são três estados distintos, e a barra de busca nunca some.
+- **Paginação compartilhada:** `ListPagination` (`components/data-display/list-pagination.tsx`), com `Link` `rel="prev|next"` e o texto "1–25 de 312 empresas". Página além do fim abre a última que existe (o PostgREST responde 416 com `count`).
+- **Carregando:** `ListPageSkeleton`, com a mesma geometria das páginas (`max-w-screen-xl p-4 sm:p-6 lg:p-8`, ação na barra, não no cabeçalho), senão a tela salta.
+- Em Clientes, a ação cotidiana de admin é **"Arquivar"**, nunca exclusão física; os contatos continuam ligados à empresa arquivada. Arquivar com contrato vigente é recusado, com o motivo visível no botão.
+- Nome e telefone exibidos no chat e em Contatos vêm do contato canônico; snapshot do provedor fica apenas como metadado de auditoria.
+- **Valor de contrato nunca em lista.** Só a ficha da empresa mostra valor e vencimento, e só para admin (decidido no servidor, fora do payload do member).
 - No Chat, `contact_phone` é apresentação canônica e pode ter máscara; ações de envio usam a identidade original do canal (`external_id`). Nunca converta o campo exibido em destinatário do provedor.
 - Se uma pessoa tiver mais de uma oportunidade ativa, alterar sua etapa geral mostra conflito e orienta mover o card correto no Funil; a interface nunca escolhe uma oportunidade silenciosamente.
 
@@ -443,16 +448,23 @@ A palavra continua nos comentários do código, onde é o termo técnico correto
 - **Dois lugares, uma casca só.** `SaleDialog` aceita `variant`: `dialog` (a partir do card do funil, onde é o único modal) e `panel` (dentro do modal do lead, onde renderiza só o `<form>` com rodapé próprio). O modal do lead troca o corpo pelo painel e mostra "Voltar ao lead" — nunca abre um segundo `Dialog`.
 - Validação: **um `safeParse` só**, com o schema compartilhado com a rota, e os erros espalhados por campo com `aria-invalid` + `aria-describedby`.
 
-### §5.6 Combobox com CRUD inline (procedimentos)
+### §5.6 Combobox de catálogo com criação inline (filas, planos)
 
-`ProcedureCombobox` é a referência para lista editável dentro de um campo.
+`CatalogCombobox` (`components/forms/catalog-combobox.tsx`) é a referência para escolher de um catálogo dentro de um campo, com `mode="single"` (plano) ou `mode="adder"` (filas do contrato, em chips removíveis de 44 px).
+
+- **O valor é um objeto `{id, name, …}`**, com `itemToStringLabel`/`isItemEqualToValue` por id: o UUID nunca aparece no campo. Item arquivado que já estava escolhido entra como "(arquivado)".
+- **Um só caminho de seleção** (`onValueChange`), para item e para "Criar «X»" — nada de `onClick` paralelo.
+- **"Criar" só com `createUrl`**, que só é passado a admin. A criação tem trava contra duplo envio.
+- **Sem arquivar dentro do combobox** nesta fase: a gestão de filas vem com a tela de filas (Fase 4f).
+
+O que segue vale para o padrão (herdado do combobox de procedimentos da origem):
 
 - O catálogo desce **por prop do servidor** e revalida com `router.refresh()` — sem estado espelhado no cliente.
 - **Criar** aparece como linha da lista, com 2+ caracteres e sem correspondência exata. `409` seleciona o que já existe em vez de mostrar erro: é corrida entre abas, não erro de quem digitou.
 - **Apagar arquiva.** O botão fica no item, visível em `hover` **e** em `data-highlighted`, e **sempre visível no mobile** — hover-only não existe no toque.
 - **Caminho de teclado obrigatório**: `Delete` sobre o item destacado abre a mesma confirmação. O botão é `tabIndex={-1}` porque `role="option"` é folha em ARIA.
 - **Confirmação inline, na própria linha.** Um `Dialog` dentro do popup do combobox dentro do modal é armadilha de foco garantida.
-- O valor escolhido é **texto, não id**: arquivar o procedimento não apaga a escolha de quem está preenchendo — a linha vira "fora da lista".
+- (Histórico) No combobox de procedimentos o valor era texto; no `CatalogCombobox` é o objeto com id, porque contrato e ticket gravam a referência.
 
 ### §5.6.1 Badge de largura variável dentro de coluna estreita
 
@@ -634,14 +646,18 @@ Superfície própria com tokens `--wa-*` no `globals.css` (bolhas, fundo). É a 
 
 Abre tocando na **foto ou no nome** dentro da conversa (`ChatHeader` → `ContactInfoSheet`). Mesma mecânica de portal do §5.7.2b — o portal nasce no `ChatView`, o sheet é `absolute inset-0`, e a lista fica fora da camada por construção.
 
-- **O formato é do iOS; o conteúdo é do CRM.** A referência (WhatsApp) mostra **perfil comercial** — horário, categoria, descrição, site, mapa. Nada disso existe neste banco: medido em 2026-08-08, `chat_conversations.metadata` só carrega `avatar_key`. Copiar os campos seria inventar dado na tela (§1). O que entra é o que o CRM sabe: **lead, etapa do funil, origem, notas e próximo agendamento** — 391 das 424 conversas (92%) casam com um lead.
+- **O formato é do iOS; o conteúdo é do CRM.** A referência (WhatsApp) mostra **perfil comercial** — horário, categoria, descrição, site, mapa. Nada disso existe neste banco; copiar os campos seria inventar dado na tela (§1). O que entra é o que o CRM sabe: **o contato (e-mail, desde quando, notas), a empresa dele e o selo do contrato, e as etiquetas**.
+- **Grupo "Empresa"**, entre as pílulas e as etiquetas: nome da empresa, razão social · CNPJ formatado em 13px `tabular-nums`, a linha "Contrato" com o `ContractStatusBadge` (é aqui que o analista vê **"Contrato suspenso"**), "Abrir empresa" (`next/link` para a ficha) e "Trocar empresa". Sem empresa: "Sem empresa vinculada" + "Ligar a uma empresa". **Nunca valor** — o painel é tela de quem atende.
+- **Ligar, trocar e desligar** usam a vista "customer" do próprio sheet, com o `CustomerPicker appearance="chat"` (lista de botões, não popup: no sheet do chat o popup iria para o `body`). A gravação é o `PATCH /api/contacts/[id]` com `customer_id`, e o sucesso **espelha a empresa localmente** (o item escolhido já traz o selo), sem rebuscar — senão o esqueleto piscaria sobre as notas.
+- **Esc volta um passo** nas vistas "tags" e "customer" (`details.cancel()` + volta para "info"), coerente com o §5.7.18.
 - **Lista agrupada, no padrão da tabela do iOS.** Cartão `rounded-xl` por seção, título em versalete acima do cartão, `divide-y` entre linhas (sem borda na última), rótulo à esquerda e valor à direita.
 - **Fundo da página e fundo do cartão são superfícies diferentes.** `--wa-info-bg` × `--wa-info-card`, com par claro/escuro. É o degrau entre as duas que desenha o cartão; igualá-las apaga a estrutura e obriga a devolver borda em tudo.
 - **A identidade não espera a rede.** Foto, nome e telefone vêm da conversa e pintam no primeiro quadro; só o bloco de lead tem esqueleto — a tela nunca troca de tamanho quando o dado chega (§9).
 - **Erro tem saída.** Falha de rede vira linha com "Tentar de novo", não uma linha morta. Sem lead, a tela **diz** que não há lead em vez de mostrar campos vazios que parecem defeito.
 - **Notas editáveis gravam pela rota do contato** (`PATCH /api/contacts/[id]`). Rota nova seria um segundo caminho para o mesmo campo, com duas validações que divergem. O par Descartar/Salvar só aparece com alteração pendente — botão permanente convida a gravar o que não mudou.
 - ⚠️ **O texto de apoio das notas é cinza, não verde.** Na referência "Adicionar notas" é uma **linha que se toca**; aqui o campo já está aberto. Verde num placeholder promete um clique que não existe.
-- ⚠️ **"Ver lead completo" leva o telefone NORMALIZADO.** `getLeadsPage` procura em `name`, `phone` e `normalized_phone`; o número cru do WhatsApp vem com DDI (`5586…`) e não casa com `normalized_phone` (`86…`) — o link caía numa lista vazia. O normalizado casa nos dois lados. E é `next/link`, não `<a>`: sair do chat por documento inteiro pisca branco no PWA.
+- ⚠️ **Saída do chat é `next/link`, não `<a>`** ("Abrir empresa"): sair por documento inteiro pisca branco no PWA.
+- ⚠️ **O selo não é ao vivo.** Não há Realtime em `customers` (decisão de segurança: `authenticated` só lê as tabelas de chat); outra aba só vê a mudança ao reabrir o painel.
 - **Foto e nome são um alvo só** no cabeçalho, com `py-1` para o toque chegar a 48px sem mexer na altura fixa de 64px. Os textos viraram `span`: `<button>` aceita só conteúdo de frase, e `<p>` dentro dele é HTML inválido.
 - **Ampliar a foto ficou de fora de propósito** — seria diálogo sobre diálogo, que é anti-padrão aqui (§9). Também fora: galeria de mídia, silenciar, bloquear e exportar; nada disso existe no back-end.
 
@@ -1119,7 +1135,7 @@ As duas de tela cheia ganharam **área segura** — era o defeito real delas: o 
 
 A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da lista de navegação. Consequência: num CRM de WhatsApp, o **WhatsApp** ficava escondido atrás de dois toques, e os outros seis destinos moravam num popover de 224 px encostado no rodapé, sem título de seção e sem dizer onde a pessoa estava.
 
-- **A barra é uma escolha explícita**, não um `slice`: `mobileTabHrefs` em `config/navigation.ts` lista Dashboard · Leads · Funil · Agenda · WhatsApp. Item novo na navegação **não** entra na barra por acidente.
+- **A barra é uma escolha explícita**, não um `slice`: `mobileTabHrefs` em `config/navigation.ts` lista hoje **Início · WhatsApp · Clientes** (Fase 3); Tickets e Agenda entram quando existirem. Item novo na navegação **não** entra na barra por acidente.
 - **O menu completo é uma gaveta `vaul` pelo rodapé**, não um popover. Ocupa 88 dvh, agrupa por seção (`Operação` · `Análise` · `Administração`) e fecha arrastando — a superfície que o sistema já usa para "escolher um caminho".
 - **A gaveta lista tudo, inclusive o que já está na barra.** Um menu "completo" que esconde metade dos itens obriga a decorar em qual das duas superfícies cada coisa mora. O item atual aparece marcado.
 - **O gatilho fica no cabeçalho, no lugar da marca.** A marca não sumiu: foi para dentro da gaveta, onde tem função (dizer de que app é este menu) em vez de ocupar o canto mais valioso da tela sem levar a lugar nenhum.
@@ -1146,6 +1162,17 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 - O modelo de transcrição OpenAI usa `FormSelect` com opções compatíveis. `whisper-1` continua como padrão para evitar mudança silenciosa de custo ou comportamento.
 - Variáveis públicas embutidas no bundle continuam exigindo rebuild. O editor administra runtime do servidor; não promete alterar `NEXT_PUBLIC_*` já compilada.
 - Abas podem rolar dentro do próprio trilho em telas estreitas. A página não ganha overflow horizontal; ações mobile mantêm alvo de 44 px.
+
+### §5.23 Formulário: react-hook-form + zod compartilhado com a rota (Fase 3)
+
+A partir da Fase 3, formulário novo usa **react-hook-form + `zodResolver` com o MESMO schema que a rota valida** (`features/*/schemas/*.ts`, arquivo neutro). Uma regra, dois lugares que a aplicam. Os formulários anteriores seguem em `FormData` até serem tocados.
+
+- Tipagem de entrada e saída: `useForm<z.input<S>, unknown, z.output<S>>`. O `preprocess`/`transform` do zod muda o tipo entre os dois.
+- **Erro do servidor vai para o campo** com `setError(campo)` (a rota devolve `errors: {campo: [...]}`); erro sem campo vira alerta `role="alert"` no topo do formulário, não toast que some.
+- **PATCH manda só `dirtyFields`**: campo ausente não é campo apagado (o schema de edição não transforma ausente em `null`).
+- **Envio travado** contra duplo clique, e o `Dialog` não fecha durante o envio.
+- **CNPJ:** sem `inputMode="numeric"` — o CNPJ alfanumérico tem letras, e o teclado numérico as esconderia. `autoCapitalize="characters"`, formatação ao sair do campo quando válido.
+- **Datas** com `z.iso.date()` (recusa 30/02); **dinheiro** como texto `1500.00` validado por regex e convertido; **vencimento** de 1 a 28, sem valor padrão.
 
 ## §6. Estados de interface
 

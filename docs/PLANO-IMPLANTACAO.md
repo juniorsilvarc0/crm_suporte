@@ -98,6 +98,15 @@ As 45 migrations da clínica vão para `supabase/legado-clinica/`, fora do glob 
 - `support_contracts`: `status ativo|suspenso|encerrado`, vigência, `monthly_amount numeric(12,2)`, `billing_day`; único parcial de 1 contrato ativo por empresa;
 - `support_contract_products`.
 
+> **Feita em 2026-09-25** (`20260925120700_cadastros.sql` + `…120800_encerrar_contrato_futuro.sql`). Desvios, decididos com o dono:
+> - **1 contrato VIGENTE** (ativo ou suspenso) por empresa, e não "1 ativo": o selo nunca tem dois candidatos;
+> - **vencimento 1..28** (existe em todo mês; a Fase 8 gera competência sem regra de "último dia");
+> - **CNPJ alfanumérico opcional**, único entre ativas, DV conferido no zod; sem CPF;
+> - **o valor é ilegível para o service_role** (SELECT por coluna) e sai só por `get_support_contract_amounts`, que confere admin ativo;
+> - **contrato escrito só por RPC** (admin conferido no banco); selo em `customers.contract_status`, derivado por trigger;
+> - **member** cria/edita empresa e liga contato; **admin** arquiva/reativa, cria fila e plano e escreve contrato;
+> - rotas além das listadas: `POST /api/support-plans`, `POST /api/customers/[id]/restore`, `POST /api/contracts/[id]/status`.
+
 **Tickets (Fase 4):**
 - `ticket_statuses`: 8 chaves fixas (`novo, em_triagem, em_atendimento, aguardando_cliente, aguardando_interno, resolvido, fechado, cancelado`). `label`, `color` e `position` são editáveis; `sla_mode running|paused|stopped` e `is_terminal` são fixos.
 - `ticket_status_transitions`, somente leitura. Regras:
