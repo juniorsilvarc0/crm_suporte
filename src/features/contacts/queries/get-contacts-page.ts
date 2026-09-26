@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  CONTACT_COMPANY_FILTERS,
+  type ContactCompanyFilter,
+  type ContactListParams,
+  type ContactsPage,
+} from "@/features/contacts/types";
 import { toCustomerSummary } from "@/features/customers/lib/customer-display";
-import type { CustomerSummary } from "@/features/customers/types";
 import { normalizePhone } from "@/lib/formatters/phone";
 import { searchTokens } from "@/lib/formatters/search-text";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -15,37 +20,15 @@ export const CONTACTS_PAGE_SIZE = 25;
 export const CONTACT_LIST_SELECT =
   "id, name, phone, last_message_at, customer:customers(id, legal_name, trade_name, cnpj, contract_status, archived_at)";
 
-// Filtro "Empresa" da lista (?empresa=). "todos" é o padrão e fica fora da URL;
-// valor fora da lista vira "todos" (parseContactListParams).
-export const CONTACT_COMPANY_FILTERS = ["todos", "com", "sem"] as const;
-
-export type ContactCompanyFilter = (typeof CONTACT_COMPANY_FILTERS)[number];
-
-export type ContactListParams = {
-  q: string;
-  empresa: ContactCompanyFilter;
-  page: number;
-};
-
-// Escrito à mão, nunca derivado do Row de contacts: só o que a tabela mostra.
-export type ContactListItem = {
-  id: string;
-  name: string | null;
-  phone: string;
-  last_message_at: string | null;
-  customer: CustomerSummary | null;
-};
-
-// `failed` = a leitura deu erro: a tela diz "não foi possível carregar", nunca
-// "nenhum contato ainda".
-export type ContactsPage = {
-  items: ContactListItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-  pageCount: number;
-  failed: boolean;
-};
+// Os tipos moram em features/contacts/types.ts (neutro, o client importa);
+// reexportados aqui para quem já importava da query.
+export {
+  CONTACT_COMPANY_FILTERS,
+  type ContactCompanyFilter,
+  type ContactListItem,
+  type ContactListParams,
+  type ContactsPage,
+} from "@/features/contacts/types";
 
 const MAX_QUERY_LENGTH = 100;
 // Abaixo disso o pedaço de número casa com quase todo telefone da base, e o

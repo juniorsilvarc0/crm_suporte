@@ -36,12 +36,15 @@ export function KanbanPageSkeleton() {
   );
 }
 
+// Mesma geometria de Clientes e Contatos (e do contêiner de Equipe): título
+// com a contagem embaixo e a ação na barra, não no cabeçalho — senão a tela
+// salta quando o conteúdo chega.
 export function ListPageSkeleton() {
   return (
-    <main className="px-4 py-4 lg:px-6">
-      <div className="flex items-center justify-between border-b border-border/70 pb-4">
-        <div className="space-y-2"><Skeleton className="h-7 w-36" /><Skeleton className="h-4 w-64" /></div>
-        <Skeleton className="h-9 w-36 rounded-full" />
+    <main className="mx-auto w-full max-w-screen-xl space-y-3 p-4 sm:p-6 lg:p-8" aria-label="Carregando lista">
+      <div className="space-y-1">
+        <Skeleton className="h-8 w-36" />
+        <Skeleton className="h-5 w-28" />
       </div>
       <SkeletonToolbar />
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-soft">
