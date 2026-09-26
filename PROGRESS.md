@@ -27,6 +27,120 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-25] Fase 4 · PR 1 — banco dos tickets: máquina de estados, SLA e ticket em foco
+
+**Agente/Modelo:** Claude Opus 5.5 (desenho por workflow: leitores → 3 arquitetos → juiz; testes e corridas por subagentes; revisão adversarial da migration com verificação independente)
+**Objetivo:** O banco guarda o ticket e garante sozinho as regras da Fase 4: status só pela matriz, SLA com pausa, 1ª resposta humana, mensagem nascendo no ticket em foco. É o 1º dos 7 PRs da Fase 4, só com a camada de banco; o app atual roda em cima dele sem mudança.
+**Arquivos alterados:**
+- `supabase/migrations/20260925120900_tickets.sql`
+- `supabase/tests/tickets.sql` (153 casos)
+- `supabase/tests/cadastros.sql` (P01c)
+- `src/lib/supabase/database.types.ts` (gerado)
+- `PROGRESS.md`
+
+**O que foi feito:**
+- **Tabelas:**
+  - `ticket_statuses`: 8 chaves fixas; rótulo e cor editáveis.
+  - `ticket_status_transitions`: a matriz, só leitura.
+  - `sla_policies`: `baixa|media|alta|critica` = 8h/72h, 4h/24h, 1h/8h, 30min/4h, com aviso a 80%.
+  - `ticket_categories`: 2 níveis, opcionalmente presas a uma fila.
+  - `tickets`: protocolo `number` a partir de 1000, exibido como SUP-1000.
+  - Satélites: `ticket_status_history` e `ticket_events` (append-only), `ticket_comments`, `ticket_attachments` (bucket privado `ticket-attachments`).
+  - Chat: `chat_conversations.active_ticket_id` e `chat_messages.ticket_id`.
+  - View `ticket_queue`, com o SLA calculado na leitura.
+- **Escrita só por RPC SECURITY DEFINER**, que confere o ator no banco (usuário ativo ou token vigente): `create_ticket`, `ticket_update`, `ticket_transition`, `ticket_assign`, `ticket_set_active`, `ticket_take_over`. O `service_role` só lê `tickets` e a trilha, e `guard_ticket_update` barra até o dono.
+- **Triggers:**
+  - carimbo do ticket em foco no INSERT da mensagem, ignorando o valor que vem do app;
+  - 1ª resposta pela mensagem humana entregue;
+  - retomada de `aguardando_cliente` para `em_atendimento` quando o cliente responde;
+  - saída do foco quando o ticket termina.
+- **Decisões do dono aplicadas** (rodada de perguntas da Fase 4):
+  - matriz proposta: o member pode tudo no ticket (cancelar pede motivo) e os catálogos são só do admin;
+  - `resolvido` não reabre sozinho;
+  - o tempo em `resolvido` pausa o prazo de solução, e a 1ª resposta nunca pausa;
+  - resposta humana anterior à abertura conta como 1ª resposta, na abertura;
+  - todo ticket nasce de conversa;
+  - tickets fora do Realtime nesta fase.
+- **`cadastros.sql` P01c:** a Fase 4 abre UPDATE de fila para a tela de Configurações (4f), então o teste agora prova só que fila não é apagada. A troca está coberta pelo T93 de `tickets.sql`.
+
+**Decisões tomadas:**
+- **Ordem da trilha por `seq`.** A corrida R2 mostrou "novo → em_atendimento" antes de "∅ → novo", e `ticket.focused` antes de `ticket.created`. Causa: uma RPC grava várias linhas na mesma transação, todas com o mesmo `occurred_at` (`v_now`), e o `id` é um uuid aleatório. Correção:
+  - a sequência `public.ticket_log_seq` alimenta a coluna `seq` de `ticket_status_history` **e** de `ticket_events`, então a ordem vale entre as duas tabelas;
+  - os índices passaram a `(ticket_id, occurred_at desc, seq desc)`;
+  - o `occurred_at` continua igual ao `v_now`, porque as métricas da Fase 9 o comparam com os carimbos do ticket;
+  - o T18b trava a ordem.
+
+  A migration nunca saiu do banco local, então a correção entrou no próprio arquivo. O banco local recebeu o mesmo delta por `ALTER`, com a coluna por último nos dois lugares.
+- **Consequência para o PR 2.** `getTicketTimeline` ordena history e events por `(occurred_at, seq)`, não por `(at, id)` como a spec dizia. O cursor precisa respeitar isso.
+- **Correção na spec da corrida R3.** "O outro recebe `VERSION_CONFLICT`" só vale quando a mensagem chega primeiro. Quando a transição vem primeiro, a mensagem perde **sem erro**:
+  - ela vem de um trigger;
+  - o webhook nunca pode falhar;
+  - `resolvido` não é retomado.
+
+  O comportamento está certo.
+- **Revisão adversarial da migration** (4 frentes: segurança, estado/SLA, travas/triggers, compatibilidade com o app; cada achado atacado por um verificador independente). Compatibilidade: nenhuma quebra; o código da `main` roda em cima. Dois achados confirmados e corrigidos no próprio arquivo:
+  1. **1ª resposta conta no ACEITE, não no `created_at`** (média). O reenvio de uma mensagem `failed` (`send/route.ts`) reaproveita a mesma linha, com o `created_at` da tentativa que falhou, e o `service_role` nem tem UPDATE nessa coluna. Com o carimbo por `created_at`, uma resposta aceita 6 h depois da abertura ficava registrada como dada em 10 min, e o prazo aparecia cumprido.
+     - Agora `ticket_sla_from_chat_message` usa `now()` no UPDATE que aceita e `created_at` no INSERT já aceito. Vale igual para `first_ai_response_at`.
+     - No envio normal a diferença é a latência do provedor.
+     - **Muda a escolha da spec** ("`created_at`, não o `now()` do tick") e fica alinhado à decisão 4 do dono: só conta o que o cliente recebeu.
+     - Testes: T31c e T31d agora esperam o aceite, e o T31e cobre o reenvio atrasado, fora do prazo, para o analista e para a IA.
+  2. **Deadlock entre `delete_app_user` e as RPCs de ticket com o mesmo usuário** (baixa). A exclusão trava mensagens → `app_users` → set null em `tickets`; a RPC trava ticket → `app_users` pela FK. Dava 40P01 em `create_ticket` e em `ticket_take_over`.
+     - Agora `require_ticket_actor`, a 1ª instrução de toda RPC de ticket, pega em modo **compartilhado** o advisory lock `public.app_users:gestao`, que as RPCs de gestão de usuário já pegam exclusivo.
+     - A função passou a `volatile`: `stable` conferiria o ator no snapshot de antes da espera.
+     - Contraprova: as corridas do verificador repetidas no clone, sem 40P01.
+     - **Resíduo aceito:** INSERT direto em `ticket_comments`/`ticket_attachments` (PR 3) com autor = usuário sendo apagado ao mesmo tempo ainda pode dar 40P01. É raro e se resolve repetindo; o PR 3 pode passar por RPC com a mesma trava, se valer.
+
+**Verificação:**
+- **Testes SQL** (`./scripts/db-local-test.sh`): baseline 52, cadastros 63, segredo_integracao 7 e tickets 153, todos ok.
+- **Aplicação do zero, provada fora do CI.** Montei um banco descartável `crm_fresh` no mesmo container:
+  - `create database … owner postgres`;
+  - `pg_dump -s -N public -N supabase_migrations` do `postgres`, restaurado como `supabase_admin`;
+  - os default privileges da imagem e do `docker/db-init.sql`.
+
+  Resultado:
+  - as 10 migrations aplicam, com "baseline ok: 30 tabela(s) e 62 função(ões)";
+  - as 4 suítes SQL passam nele;
+  - o `pg_dump -s -n public` dele é idêntico ao do banco local, a não ser por 3 default privileges do `postgres` para si mesmo que a imagem cria ao subir;
+  - os buckets e a publication do Realtime também são iguais.
+- **Mutações, só no `crm_fresh`:**
+  - sequência invertida: falha o T18b;
+  - trigger de carimbo desligado: a suíte cai;
+  - pausa que não empurra o prazo de solução: barrada pela CHECK `tickets_resolution_due_check` e pelos testes;
+  - carimbo da 1ª resposta de volta ao `created_at`: falham T31c, T31d e T31e.
+- **Corridas R1–R5**, com duas ou três sessões `psql` reais, `pg_sleep(5)` segurando a trava, um observador em `pg_stat_activity`/`pg_locks` e `log_lock_waits`. Nenhuma sessão recebeu 40P01, e o log do servidor tem 0 "deadlock".
+
+  | Corrida | Resultado |
+  |---|---|
+  | R1a (inbound → `create_ticket`) | B esperou a trava FOR UPDATE da conversa; o ticket nasceu com a mensagem vinculada (`linked_messages=1`) |
+  | R1b (`create_ticket` → inbound) | a mensagem nasceu carimbada no ticket novo |
+  | R2 (dois "Assumir") | o segundo recebe `ALREADY_ASSIGNED`; um único `ticket.assigned` |
+  | R3a (inbound → transição com a versão velha) | `VERSION_CONFLICT` |
+  | R3b (transição → inbound) | `resolvido` v5, sem retomada e sem erro |
+  | R4a (inbound → cancelar) | a mensagem ficou no ticket; foco nulo |
+  | R4b (cancelar → inbound) | a mensagem ficou **solta**; nunca cai em ticket encerrado |
+  | R5 estresse (rename × inbound × "Assumir") | 200 + 200 (com folga aleatória) + 1000 voltas, 0 erros; uma 4ª sessão pausando: 200 voltas, só `VERSION_CONFLICT` esperados. 1600/1600 mensagens no ticket em foco |
+
+  Os roteiros ficaram no scratchpad da sessão e não entram no repo.
+- **App:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos já existiam) · test ✓ (99 arquivos, 1078) · build ✓ (rodado no checkout principal com o `database.types.ts` novo; ver armadilhas).
+
+**Pendências / próximos passos:**
+- PRs 2–7 da Fase 4, cada um a partir da `main` depois do merge do anterior:
+  - 2: back, núcleo;
+  - 3: back do chat, conexão, satélites e catálogos;
+  - 4 a 7: telas.
+- A migration roda **só no banco local** (`./scripts/db-local-apply.sh`). Produção não existe (Fase 10).
+
+**Armadilhas descobertas:**
+- **`pnpm` global desta máquina é o 10.2.0**, que recusa o `pnpm-workspace.yaml` só com configurações ("packages field missing or empty"). Use `npx -y pnpm@10.33.0 <script>`, a versão do `packageManager`.
+- **Worktree com `node_modules` em symlink:** o Turbopack recusa ("points out of the filesystem root"), então `next build` não roda nele. `tsc`, `eslint` e `vitest` rodam por `node_modules/.bin/`. O build roda num checkout com `node_modules` de verdade.
+- **Depois de um `next build`, o vitest também acha `.next/standalone/**/*.test.ts`** (100 arquivos em vez de 99). Não é teste novo.
+- **Mesmo `occurred_at` numa transação:** trilha nova ordena por `seq`, nunca por `id` uuid.
+- **Tempo nos testes SQL:**
+  - `guard_ticket_update` barra `created_at` até para o dono. Para "passar o tempo", `pg_temp.shift_ticket` usa `set local session_replication_role = replica` (como comando `SET`; `set_config()` dá "permission denied");
+  - `format('%s', boolean)` escreve `t`/`f`.
+- **Sequência não volta no ROLLBACK:** os testes consomem protocolos. No banco local, o próximo ticket sai com número alto (a sequência já passou de 1100 e sobe a cada rodada), e isso não é bug.
+- **`chat_integrations.provider` é UNIQUE:** um teste que commita uma integração quebra o `baseline.sql` de quem roda depois no mesmo banco.
+
 ## [2026-09-25] Fase 3 — cadastros: empresas, filas, planos, contratos e o selo no chat
 
 **Agente/Modelo:** Claude Opus 5.5 (orquestrando workflows de subagentes: desenho com leitores + 3 arquitetos + juiz; back e front em ondas; revisão adversarial em 5 lentes com verificação independente)
