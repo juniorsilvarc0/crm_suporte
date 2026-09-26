@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { ListPagination } from "@/components/data-display/list-pagination";
 import { CustomerFormDialog } from "@/features/customers/components/customer-form-dialog";
 import { CustomersTable } from "@/features/customers/components/customers-table";
@@ -5,6 +7,7 @@ import {
   getCustomersPage,
   parseCustomerListParams,
 } from "@/features/customers/queries/get-customers-page";
+import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +20,12 @@ export default async function ClientesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Usuário confirmado no BANCO antes de qualquer leitura: o layout não roda
+  // de novo na navegação pelo cliente, e o proxy só confere a assinatura do
+  // cookie — um usuário desativado segue com cookie válido por até 7 dias.
+  const viewer = await getDashboardViewer();
+  if (!viewer) redirect("/api/auth/logout");
+
   const params = parseCustomerListParams(await searchParams);
   const customers = await getCustomersPage(params);
 
