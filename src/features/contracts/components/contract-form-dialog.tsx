@@ -105,8 +105,9 @@ type ContractFormDialogProps = {
   /** Presente = edição do contrato vigente. Ausente = contrato novo. */
   contract?: AdminContractView | null;
   /** Catálogos ATIVOS, do servidor; revalidam com `router.refresh()`. */
-  products: ProductOption[];
-  plans: SupportPlanOption[];
+  /** `null` = a leitura do catálogo falhou (não é catálogo vazio). */
+  products: ProductOption[] | null;
+  plans: SupportPlanOption[] | null;
   /** Gatilho travado (ex.: empresa arquivada, valor indisponível). */
   disabled?: boolean;
   /** Id do texto que explica a trava, visível ao lado do botão. */
@@ -225,8 +226,9 @@ function ContractForm({
   customerId: string;
   customerName: string;
   contract: AdminContractView | null;
-  products: ProductOption[];
-  plans: SupportPlanOption[];
+  /** `null` = a leitura do catálogo falhou (não é catálogo vazio). */
+  products: ProductOption[] | null;
+  plans: SupportPlanOption[] | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -242,8 +244,8 @@ function ContractForm({
   const [learnedProducts, setLearnedProducts] = useState<CatalogOption[]>([]);
   const [learnedPlans, setLearnedPlans] = useState<CatalogOption[]>([]);
 
-  const productOptions = useMemo(() => products.map(productToOption), [products]);
-  const planOptions = useMemo(() => plans.map(planToOption), [plans]);
+  const productOptions = useMemo(() => (products ?? []).map(productToOption), [products]);
+  const planOptions = useMemo(() => (plans ?? []).map(planToOption), [plans]);
 
   // O contrato pode cobrir produto ou plano ARQUIVADO: fora do catálogo ativo,
   // mas continua valendo nele (a RPC aceita) e aparece com "(arquivado)".
@@ -273,6 +275,7 @@ function ContractForm({
     register,
     handleSubmit,
     setError,
+    getValues,
     formState: { errors },
   } = useForm<ContractFormValues, unknown, ContractFormOutput>({
     resolver: contract ? editResolver : createResolver,
@@ -388,12 +391,20 @@ function ContractForm({
                     options={productOptions}
                     chosen={chosen}
                     onAdd={(option) => {
-                      setLearnedProducts((current) => [...current, option]);
-                      field.onChange([...field.value, option.id]);
+                      // Valor ATUAL do formulário, não o da renderização do
+                      // clique: "Criar «X»" termina depois de um fetch, e nesse
+                      // meio tempo a pessoa pode ter escolhido outro produto.
+                      const current = getValues("product_ids");
+                      setLearnedProducts((learned) => [...learned, option]);
+                      if (!current.includes(option.id)) field.onChange([...current, option.id]);
                     }}
                     createUrl="/api/products"
                     placeholder="Busque ou crie um produto"
-                    emptyText="Nenhum produto cadastrado."
+                    emptyText={
+                      products === null
+                        ? "Não foi possível carregar os produtos. Recarregue a página."
+                        : "Nenhum produto cadastrado."
+                    }
                     triggerLabel="Abrir lista de produtos"
                     required
                     invalid={Boolean(fieldState.error)}
@@ -455,7 +466,11 @@ function ContractForm({
                   }}
                   createUrl="/api/support-plans"
                   placeholder="Sem plano"
-                  emptyText="Nenhum plano cadastrado."
+                  emptyText={
+                    plans === null
+                      ? "Não foi possível carregar os planos. Recarregue a página."
+                      : "Nenhum plano cadastrado."
+                  }
                   triggerLabel="Abrir lista de planos"
                   invalid={Boolean(fieldState.error)}
                   describedBy={fieldState.error ? id("plan-error") : undefined}

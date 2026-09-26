@@ -38,8 +38,8 @@ import { cn } from "@/lib/utils";
 export type ContractAdminContext = {
   customerId: string;
   customerName: string;
-  products: ProductOption[];
-  plans: SupportPlanOption[];
+  products: ProductOption[] | null;
+  plans: SupportPlanOption[] | null;
 };
 
 export type ContractCardProps =

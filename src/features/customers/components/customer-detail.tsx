@@ -59,8 +59,9 @@ export type CustomerDetailProps =
   | (CustomerDetailBase & {
       role: "admin";
       contracts: AdminContractView[] | null;
-      products: ProductOption[];
-      plans: SupportPlanOption[];
+      /** `null` = a leitura do catálogo falhou (não é catálogo vazio). */
+      products: ProductOption[] | null;
+      plans: SupportPlanOption[] | null;
     });
 
 // Vigente = ativo ou suspenso; o banco garante um só por empresa.

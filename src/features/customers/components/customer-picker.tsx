@@ -262,7 +262,11 @@ export function CustomerPicker({
                     ) : null}
                   </span>
                   <span className="flex min-w-0 max-w-[45%] shrink-0 items-center gap-2">
-                    <ContractStatusBadge status={customer.contract_status} />
+                    {/* O selo encolhe e trunca (UI.md §5.6.1); "Atual" e o
+                        spinner não — são eles que dizem qual é a empresa ligada. */}
+                    <span className="min-w-0">
+                      <ContractStatusBadge status={customer.contract_status} />
+                    </span>
                     {busyId === customer.id ? (
                       <Loader2Icon aria-hidden className={cn("size-[18px] shrink-0 animate-spin", styles.muted)} />
                     ) : isCurrent ? (
