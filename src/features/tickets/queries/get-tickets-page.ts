@@ -270,6 +270,11 @@ export function toTicketListItems(rows: TicketListRow[], context: string): Ticke
  * um `ilike` por token em search_text (título + contato + empresa, normalizados
  * no banco). Os tokens só têm [a-z0-9] — sem `.or()` e sem nada para escapar no
  * filtro do PostgREST. Fila e responsável só entram como uuid conferido.
+ *
+ * Protocolo IGNORA o status: quem digita "SUP-1024" quer aquele ticket, e o
+ * padrão "ativos" esconderia o resolvido sem a pessoa ter escolhido filtro
+ * nenhum. Os filtros que ela escolheu (prioridade, fila, responsável, SLA)
+ * continuam valendo.
  */
 function buildListQuery(
   supabase: SupabaseClient<Database>,
@@ -288,7 +293,7 @@ function buildListQuery(
     }
   }
 
-  switch (params.status) {
+  switch (protocol === null ? params.status : "todos") {
     case "ativos":
       query = query.neq("sla_mode", "stopped");
       break;

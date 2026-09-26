@@ -227,6 +227,45 @@ describe("getTicketsPage", () => {
     }
   );
 
+  it.each(["ativos", "resolvidos", "encerrados", "novo", "cancelado"] as const)(
+    "protocolo ignora o status %s: quem digita o protocolo quer aquele ticket",
+    async (status) => {
+      const [calls] = queueQueries(ok([]));
+
+      await getTicketsPage(params({ q: "SUP-1024", status }), VIEWER);
+
+      expect(filters(calls)).toEqual([["eq", "number", 1024]]);
+    }
+  );
+
+  it("protocolo mantém os filtros que a pessoa escolheu", async () => {
+    const [calls] = queueQueries(ok([]));
+
+    await getTicketsPage(
+      params({ q: "#1024", status: "novo", prioridade: "alta", responsavel: "eu", sla: "risco" }),
+      VIEWER
+    );
+
+    expect(filters(calls)).toEqual([
+      ["eq", "number", 1024],
+      ["eq", "priority", "alta"],
+      ["eq", "assigned_to_user_id", VIEWER],
+      ["eq", "sla_at_risk", true],
+    ]);
+  });
+
+  it("texto que não é protocolo continua com o status", async () => {
+    const [calls] = queueQueries(ok([]));
+
+    await getTicketsPage(params({ q: "nota 1024" }), VIEWER);
+
+    expect(filters(calls)).toEqual([
+      ["ilike", "search_text", "%nota%"],
+      ["ilike", "search_text", "%1024%"],
+      ["neq", "sla_mode", "stopped"],
+    ]);
+  });
+
   it("texto vira um ilike por token em search_text", async () => {
     const [calls] = queueQueries(ok([]));
 
