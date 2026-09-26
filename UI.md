@@ -651,6 +651,23 @@ Abre tocando na **foto ou no nome** dentro da conversa (`ChatHeader` → `Contac
 - **Grupo "Empresa"**, entre as pílulas e as etiquetas: nome da empresa, razão social · CNPJ formatado em 13px `tabular-nums`, a linha "Contrato" com o `ContractStatusBadge` (é aqui que o analista vê **"Contrato suspenso"**), "Abrir empresa" (`next/link` para a ficha) e "Trocar empresa". Sem empresa: "Sem empresa vinculada" + "Ligar a uma empresa". **Nunca valor** — o painel é tela de quem atende.
 - **Ligar, trocar e desligar** usam a vista "customer" do próprio sheet, com o `CustomerPicker appearance="chat"` (lista de botões, não popup: no sheet do chat o popup iria para o `body`). A gravação é o `PATCH /api/contacts/[id]` com `customer_id`, e o sucesso **espelha a empresa localmente** (o item escolhido já traz o selo), sem rebuscar — senão o esqueleto piscaria sobre as notas.
 - **Esc volta um passo** nas vistas "tags" e "customer" (`details.cancel()` + volta para "info"), coerente com o §5.7.18.
+- **Grupo "Tickets"** (Fase 4), entre Empresa e Etiquetas (`conversation-tickets-group`):
+  - o ticket em foco (protocolo, título, selos) com até 2 ações rápidas, "Abrir ticket" (`next/link` para o detalhe), "Trocar foco (N abertos)" e "Novo ticket";
+  - a falha da leitura tem "Tentar de novo" próprio, e o resto do painel continua.
+- **Vistas do ticket** no próprio sheet:
+  - "tickets": os abertos da conversa, para trocar o foco (`PUT active-ticket`);
+  - "ticket-new": o formulário.
+
+  Um **mapa de vista-pai** decide para onde o Esc e o voltar levam: "ticket-new" volta de onde veio. O cabeçalho abre o painel direto numa vista pela prop `initialView`, aplicada quando o painel abre.
+- **Formulário "Novo ticket":**
+  - RHF + zod compartilhado com a rota;
+  - Título; Prioridade e Fila em **pílulas** (no sheet, popup iria para o `body`); Descrição;
+  - "Assumir o atendimento" ligado por padrão;
+  - `idempotency_key` gerada **ao abrir** (`newUuid`, com fallback para `http://` em IP da rede, onde `crypto.randomUUID` não existe), mais uma trava de `useRef`: duplo clique = 1 ticket;
+  - Esc ou toque fora com o formulário sujo pergunta "Descartar?" na própria vista.
+
+  Um reenvio depois de erro de rede que devolve o ticket da 1ª tentativa avisa com `toast.warning`, e não diz "aberto".
+- ⚠️ **Colar com o painel aberto não vira anexo:** o colar global do chat ignora a colagem quando o painel está aberto. Um print colado na Descrição fica na Descrição.
 - **Lista agrupada, no padrão da tabela do iOS.** Cartão `rounded-xl` por seção, título em versalete acima do cartão, `divide-y` entre linhas (sem borda na última), rótulo à esquerda e valor à direita.
 - **Fundo da página e fundo do cartão são superfícies diferentes.** `--wa-info-bg` × `--wa-info-card`, com par claro/escuro. É o degrau entre as duas que desenha o cartão; igualá-las apaga a estrutura e obriga a devolver borda em tudo.
 - **A identidade não espera a rede.** Foto, nome e telefone vêm da conversa e pintam no primeiro quadro; só o bloco de lead tem esqueleto — a tela nunca troca de tamanho quando o dado chega (§9).
@@ -661,6 +678,21 @@ Abre tocando na **foto ou no nome** dentro da conversa (`ChatHeader` → `Contac
 - ⚠️ **O selo não é ao vivo.** Não há Realtime em `customers` (decisão de segurança: `authenticated` só lê as tabelas de chat); outra aba só vê a mudança ao reabrir o painel.
 - **Foto e nome são um alvo só** no cabeçalho, com `py-1` para o toque chegar a 48px sem mexer na altura fixa de 64px. Os textos viraram `span`: `<button>` aceita só conteúdo de frase, e `<p>` dentro dele é HTML inválido.
 - **Ampliar a foto ficou de fora de propósito** — seria diálogo sobre diálogo, que é anti-padrão aqui (§9). Também fora: galeria de mídia, silenciar, bloquear e exportar; nada disso existe no back-end.
+
+### §5.7.20 Ticket em foco no cabeçalho da conversa (Fase 4)
+
+- **Linha de apoio**, dentro do botão de identidade, só texto: "IA · SUP-1024 Em atendimento", com `truncate`.
+- **Chip a partir de `lg`** (`conversation-ticket-chip`):
+  - com foco: `next/link` para o ticket, com protocolo e `SlaBadge`, mais o menu (ações rápidas, Abrir ticket, "Trocar foco (N abertos)");
+  - sem foco: "Abrir ticket", que abre o painel em "ticket-new".
+  - **No celular, nada novo** na coluna de ações (`h-16`).
+- **Espaço no cabeçalho:** a coluna de ações só encolhe quando o chip é o de foco (`has-[[data-ticket-chip=focus]]`), que é o único que trunca. O botão Assumir/Devolver é `shrink-0` e nunca quebra em duas linhas.
+- **Uma leitura de tickets por conversa:** o `ChatView` usa `useConversationTickets` e passa os dados ao painel. A releitura acontece ao mudar foco ou status, no `visibilitychange`, depois de cada ação e quando chega mensagem do cliente (debounce de 1 s). O foco vem do Realtime de `chat_conversations` (`active_ticket_id`): mudar o foco em outra aba troca o chip aqui.
+- **"Assumir"** com ticket em foco é o take-over do ticket (conversa `human`, responsável e `em_atendimento`), e a conversa devolvida pela rota é aplicada na hora, sem esperar o Realtime.
+  - Com `already_assigned`, abre o diálogo "SUP-1024 está com <nome>. [Assumir conversa e ticket] [Só a conversa]".
+  - O diálogo entra no `anyDialogOpen`.
+  - Sem foco, é o PATCH de sempre.
+- **PATCH de status:** aplica só `{id, status}`, que é o que a rota grava, e nunca a linha da resposta. Uma resposta que chega depois de um evento mais novo do Realtime desfaria a prévia, a ordem e as não lidas (e o `updated_at`).
 
 ### §5.7.13 Etiquetas do chat e caixa de arquivadas
 
@@ -1268,6 +1300,16 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 - Área segura: `pb-[max(env(safe-area-inset-bottom),0.75rem)]` em rodapé fixo.
 
 ---
+
+### §5.8.1 Fila de tickets no Início (Fase 4)
+
+`ticket-queue-panel.tsx`, **acima do mural**, em largura cheia: a fila é o trabalho do dia, com prazo correndo, e o mural é lembrete pessoal.
+- **Duas seções em `lg:grid-cols-2`:**
+  - **Minha fila:** meus tickets com relógio correndo ou pausado, **mais os resolvidos em que o cliente respondeu depois** (`replied_after_resolve` da view), estes primeiro, com o selo "Respondeu após resolver" e Reabrir · Fechar na linha;
+  - **Não atribuídos:** o mesmo recorte sem responsável, com o botão **Atender** (take-over). Com `already_assigned`, o toast "<nome> já pegou SUP-1024." e a tela relida. O resolvido respondido mostra Reabrir · Fechar no lugar de Atender, porque o take-over não reabre ticket resolvido.
+- **Até 8 por seção**, com "Ver todos (N)". O link leva à lista com o **mesmo recorte** (status "pendentes", filtro `onlyPending`, o mesmo da fila), então o total bate. Só a ordem difere: na lista, "prazo" põe o resolvido respondido no fim, porque ele não tem prazo.
+- **Resolvido sem resposta do cliente não está na fila:** o trabalho ali acabou. Ele continua na lista, em "Resolvidos".
+- **Estados:** vazio próprio de cada seção; falha isolada com "Tentar de novo". Uma seção que falha não derruba a outra nem o mural.
 
 ### §5.8 Mural de post-its (`/app`, bloco "Minhas notas")
 

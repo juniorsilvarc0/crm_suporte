@@ -27,6 +27,121 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-26] Fase 4 · PR 5 — ticket no chat (chip, painel, Novo ticket, Assumir) e fila no Início
+
+**Agente/Modelo:** Claude Opus 5.5 (workflow em 2 ondas: fundação do chat → Início ‖ painel → cabeçalho; revisão adversarial em 4 frentes; correções por agentes; migration aprovada pelo dono; roteiro ponta a ponta com Realtime)
+**Objetivo:** O analista trata o ticket de dentro da conversa. O chip do cabeçalho mostra o ticket em foco, o painel do contato abre, troca e cria ticket, e "Assumir" pega conversa e ticket juntos. O Início mostra a fila do dia.
+
+**Arquivos alterados:** branch `feat/fase4-front-chat-inicio`.
+- **Banco:**
+  - `supabase/migrations/20260926130000_fila_respondeu_apos_resolver.sql`;
+  - T95i–k em `supabase/tests/tickets.sql`;
+  - `database.types.ts`, regenerado.
+- **Chat:**
+  - `features/chat/types.ts` (`active_ticket_id`);
+  - `hooks/use-messages.ts`: Realtime do cabeçalho; o PATCH aplica só `{id, status}`;
+  - `components/chat-shell.tsx`: 409 do limpar e `onConversationUpdate`;
+  - `chat-header.tsx`, `chat-view.tsx` e `contact-info-sheet.tsx`;
+  - testes novos de `chat-view` e `use-messages`.
+- **Tickets:**
+  - `lib/ticket-request.ts`: 3º uso, extraído e adotado pela lista e pelo detalhe;
+  - `hooks/use-conversation-tickets.ts` e `use-conversation-take-over.ts`;
+  - componentes `conversation-ticket-chip`, `take-over-dialog`, `conversation-tickets-group`, `new-ticket-form` e `ticket-queue-panel`;
+  - `queries/get-ticket-queue.ts` e `get-tickets-page.ts`: `onlyPending` e o grupo "pendentes";
+  - `types.ts`.
+- **Outros:** `src/lib/validation/uuid.ts` (`newUuid`) e o Início em `app/(dashboard)/app/page.tsx`.
+- **Docs:** UI.md (§5.7.12, §5.7.20 nova, §5.8.1 nova), PRD §7.3 e este PROGRESS.
+
+**O que foi feito:**
+- **Cabeçalho do chat:**
+  - a linha de apoio mostra o ticket em foco em texto ("IA · SUP-1024 Em atendimento");
+  - a partir de `lg`, um chip com o protocolo, o `SlaBadge` e um menu (ações rápidas, Abrir ticket, Trocar foco);
+  - sem foco, o chip vira "Abrir ticket";
+  - no celular, nada novo na coluna de ações.
+- **"Assumir" com ticket em foco:** faz o take-over do ticket e aplica na hora a conversa devolvida.
+  - Com `already_assigned`, abre o diálogo "Assumir conversa e ticket / Só a conversa".
+  - "Só a conversa" com a conversa já humana não a devolve à IA.
+- **Painel do contato:**
+  - grupo "Tickets", com as vistas "tickets" (trocar o foco) e "ticket-new" (formulário);
+  - mapa de vista-pai para o Esc e o voltar;
+  - o cabeçalho abre o painel direto numa vista (`initialView`).
+- **Novo ticket:**
+  - "Assumir o atendimento" vem ligado;
+  - a chave é gerada ao abrir e há trava de ref, então o duplo clique abre 1 ticket;
+  - Esc ou toque fora com o formulário sujo pergunta "Descartar?".
+- **Leituras:** uma só por conversa (`useConversationTickets` no `ChatView`), refeita ao mudar foco ou status, no `visibilitychange`, depois de cada ação e quando chega mensagem do cliente (debounce de 1 s).
+- **Realtime do cabeçalho:** o update de `chat_conversations` vai à lista e à conversa aberta, então mudar o foco em outra aba troca o chip.
+- **Limpar conversa com ticket:** mostra o motivo do 409.
+- **Início:**
+  - a fila fica acima do mural, com "Minha fila" e "Não atribuídos" (até 8 cada, "Ver todos (N)");
+  - Atender, e Reabrir · Fechar;
+  - a falha de uma seção é isolada.
+
+**Decisões tomadas:**
+- **Fila do Início, decidida pelo dono na sessão:** relógio correndo ou pausado **mais resolvido em que o cliente respondeu depois**, estes primeiro. Para isso, a view `ticket_queue` ganhou `replied_after_resolve` (migration nova), porque o PostgREST não compara coluna com coluna.
+  - O "Ver todos" usa o grupo de lista "pendentes", com o mesmo `onlyPending` da fila. Um teste prova que o href aplica os mesmos filtros da seção.
+  - Resolvido sem resposta do cliente sai da fila e continua em "Resolvidos".
+- **Na seção Não atribuídos, o resolvido respondido mostra Reabrir · Fechar**, porque o take-over não reabre ticket resolvido.
+- **`newUuid()`:** usa `crypto.randomUUID` e, fora de contexto seguro (`http://` em IP da rede), cai para v4 com `getRandomValues`.
+- **Reenvio depois de erro de rede que devolve o ticket da 1ª tentativa** (`created:false`) mostra `toast.warning`, e não "aberto": os dados enviados eram os de antes.
+- **PATCH de status:** aplica só `{id, status}`. A linha da resposta desfaria um evento mais novo do Realtime (prévia, ordem, não lidas, `updated_at`).
+- **Colar com o painel do contato aberto não vira anexo da conversa.**
+- **A coluna de ações do cabeçalho só encolhe com o chip de foco** (`has-[[data-ticket-chip=focus]]`). O botão Assumir/Devolver é `shrink-0`.
+
+**Revisão adversarial** (4 frentes: regressão do chat, ticket no chat, Início e testes): 9 confirmados e 1 refutado.
+- **Severidade média:**
+  - o sinal "Respondeu após resolver" sumia no corte de 8;
+  - o total do "Ver todos" divergia do da lista.
+- **Severidade baixa:**
+  - resolvido sem dono com resposta ficava fora da fila;
+  - `crypto.randomUUID` em `http://` de rede;
+  - o reenvio dizia "aberto";
+  - o take-over não aplicava a conversa;
+  - o colar ia para o chat;
+  - o botão Devolver encolhia;
+  - o PATCH desfazia o Realtime.
+
+Todos foram corrigidos, e os testes novos falham com o código antigo.
+- **Frente de testes, refeita por um agente depois do reinício:** 61 mutantes, 25 sobreviventes. Cada um ganhou teste no arquivo colocado e foi provado por mutação no repo, com restauração conferida por `cmp`/sha1.
+  - Chat: o 409 do limpar (`chat-shell.test.tsx` novo), o status do PATCH sem Realtime, a fiação do `ChatView` (notifyInbound, status, leitura única para o painel, foco no chip, take-over com `onConversationUpdate`).
+  - `ticketRequest`: sucesso exige 2xx e `ok: true`.
+  - Debounce de 1 s, travas contra duplo clique (take-over, troca de foco, fila), o diálogo `already_assigned` (sem rede, recusado, Esc em voo), o 404 que relê e a chave gerada ao abrir.
+  - Toque fora com o formulário sujo, o 422 que relê, e o toast só com `changed`.
+  - A página do Início entregando a fila (`page.test.tsx` novo).
+
+  Também: o teste instável do detalhe (PR 4, `findByText` de 1 s) passou a esperar 3 s, e os mocks de transição e take-over seguem o formato real das rotas.
+
+**Verificação:**
+- **Testes SQL:** baseline 52, cadastros 63, segredo 7, tickets 160.
+- **Migration:** a view manteve `security_invoker=true`, e só o `service_role` a lê.
+- **App:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos já existiam) · test ✓ (2306) · build ✓.
+- **Roteiro ponta a ponta** (`scratchpad/e2e7.mjs`, `next dev` na 3201, com um cliente Realtime em Node autenticado pelo mesmo JWT curto do navegador): as 20 conferências passaram.
+  - **Duplo clique = 1 ticket:** 2 POSTs simultâneos com a mesma chave.
+  - As mensagens soltas de 24 h e a seguinte aparecem na timeline.
+  - Abrir com Assumir leva a `human`, com responsável e `em_atendimento`.
+  - **A troca de foco feita por outra aba chega pelo Realtime**, e o carimbo segue o foco.
+  - O Início mostra as duas filas, sem `ai_triage` nem chave.
+  - Resolvido com resposta aparece na Minha fila com o selo, e "Ver todos" leva à lista "pendentes", que o traz.
+
+  Os dados foram apagados depois.
+
+**Pendências / próximos passos:**
+- **Conferir no navegador:**
+  - chip e menu no desktop;
+  - painel com o grupo Tickets e "Novo ticket" no celular;
+  - Esc em camadas;
+  - "Assumir" com ticket de outro analista.
+- **PR 6:** Configurações › Atendimento (filas, categorias, SLA, status). Falta uma leitura de admin com os arquivados.
+- **PR 7:** Quadro.
+- **Selo de SLA no chip:** depois da 1ª resposta do analista, só é relido na próxima releitura (foco, status, aba). Reler também na 1ª resposta aceita fica em aberto.
+
+**Armadilhas descobertas:**
+- **O reinício da sessão apagou o scratchpad** (`/private/tmp/…/scratchpad`), com a spec e os roteiros. A spec da Fase 4 foi recuperada do journal do workflow de desenho (`~/.claude/projects/…/subagents/workflows/wf_1e550572-3b0/journal.jsonl`). **Guarde fora do scratchpad o que não pode ser perdido.**
+- **O reinício da máquina também derruba o Docker:** `open -a Docker`, e a stack volta pelas políticas de restart.
+- **Cliente Realtime em Node para teste:** `await sb.realtime.setAuth()` **antes** de `subscribe`, como o `subscribeAuthenticated`. Sem isso a assinatura fica `anon` e nenhum evento chega.
+- **Roteiro com `finally` que imprime "TUDO OK":** uma exceção no meio passaria como sucesso. Conte a exceção como falha.
+- **Recuar `resolved_at` em teste:** a CHECK `tickets_stamps_after_open_check` exige carimbo depois da abertura. Recue o ticket inteiro.
+
 ## [2026-09-26] Fase 4 · PR 4 — telas de lista e detalhe do ticket, navegação
 
 **Agente/Modelo:** Claude Opus 5.5 (workflow em 2 ondas: base e navegação → lista ‖ timeline e anexos → detalhe; revisão adversarial em 4 frentes com 20 verificadores; correções em 3 frentes provadas por mutação; roteiro SSR)

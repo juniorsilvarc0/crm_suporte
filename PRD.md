@@ -117,7 +117,7 @@ Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avi
    - **solução:** pausa em `aguardando_*` e em `resolvido`, e reabrir retoma o que restava.
 
    O prazo é calculado na leitura (view `ticket_queue`).
-6. **Cliente responde com o ticket em `aguardando_cliente`:** o ticket volta sozinho para `em_atendimento`. Em `resolvido` ele não reabre, só aparece o sinal "Respondeu após resolver".
+6. **Cliente responde com o ticket em `aguardando_cliente`:** o ticket volta sozinho para `em_atendimento`. Em `resolvido` ele não reabre, só aparece o sinal "Respondeu após resolver" (`ticket_queue.replied_after_resolve`). O Início põe esses tickets **primeiro** na fila, com Reabrir · Fechar.
 7. **"Assumir"** (`ticket_take_over`):
    - põe a conversa em `human`, o ticket em foco e o analista como responsável;
    - leva `novo`/`em_triagem` a `em_atendimento`;
