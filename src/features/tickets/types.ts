@@ -87,8 +87,9 @@ export type TicketContractRef = Pick<ContractView, "id" | "status" | "starts_on"
 
 // Linha da lista, do quadro e do Início (ticket_queue). Sem description: a
 // lista não a mostra. `contact` nunca é nulo (contact_id NOT NULL, FK restrict).
-// `next_due_at` nulo = relógio parado; `last_inbound_at` > `resolved_at` é o
-// "Respondeu após resolver".
+// `next_due_at` nulo = relógio parado. `replied_after_resolve` é o "Respondeu
+// após resolver" (resolvido e `last_inbound_at` > `resolved_at`), calculado na
+// view: a tela usa o valor do banco, não recalcula.
 export type TicketListItem = TicketSlaFields & {
   id: string;
   number: number;
@@ -101,6 +102,7 @@ export type TicketListItem = TicketSlaFields & {
   reopened_count: number;
   next_due_at: string | null;
   last_inbound_at: string | null;
+  replied_after_resolve: boolean;
   created_at: string;
   updated_at: string;
   customer: TicketCustomerRef | null;
@@ -402,7 +404,9 @@ export type TicketCatalogErrorBody<Item> = {
 // abre a lista padrão), e nada da URL é interpolado no filtro do PostgREST.
 // ?status= aceita um grupo ou uma das chaves de TICKET_STATUS_KEYS. "ativos" é o
 // padrão e fica fora da URL: relógio não parado (sla_mode <> stopped).
-export const TICKET_LIST_STATUS_GROUPS = ["ativos", "resolvidos", "encerrados", "todos"] as const;
+// "pendentes" = os ativos MAIS o resolvido em que o cliente respondeu depois: o
+// recorte da fila do Início, que o "Ver todos (N)" abre.
+export const TICKET_LIST_STATUS_GROUPS = ["ativos", "pendentes", "resolvidos", "encerrados", "todos"] as const;
 
 export type TicketListStatusGroup = (typeof TICKET_LIST_STATUS_GROUPS)[number];
 export type TicketListStatusFilter = TicketListStatusGroup | TicketStatusKey;

@@ -24,6 +24,7 @@ function conversation(
     removed_at: null,
     pinned_at: null,
     status: "human",
+    active_ticket_id: null,
     unread_count: 0,
     last_message_at: null,
     last_message_preview: null,

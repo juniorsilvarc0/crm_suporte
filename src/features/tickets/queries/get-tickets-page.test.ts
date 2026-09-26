@@ -21,14 +21,15 @@ import type { TicketListParams } from "@/features/tickets/types";
 type Call = [method: string, ...args: unknown[]];
 
 // Builder encadeável que grava cada chamada e resolve com `result` quando é
-// aguardado. Não tem `.or()`: se a busca um dia montar um, o teste quebra.
+// aguardado. O `.or()` é só do grupo "pendentes" (filtro estático): os testes
+// da busca conferem a lista exata de filtros, e um `.or()` dela quebraria.
 function fakeQuery(result: unknown) {
   const calls: Call[] = [];
   const builder: Record<string, unknown> = {
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };
-  for (const method of ["select", "ilike", "eq", "neq", "is", "not", "order", "range", "limit"]) {
+  for (const method of ["select", "ilike", "eq", "neq", "is", "not", "or", "order", "range", "limit"]) {
     builder[method] = (...args: unknown[]) => {
       calls.push([method, ...args]);
       return builder;
@@ -72,6 +73,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   closed_at: null,
   next_due_at: "2026-09-25T20:00:00.123456+00:00",
   last_inbound_at: "2026-09-25T12:05:00.000001+00:00",
+  replied_after_resolve: false,
   created_at: "2026-09-25T12:00:00.123456+00:00",
   updated_at: "2026-09-25T12:30:00.5+00:00",
   customer: {
@@ -102,7 +104,10 @@ const ok = (data: unknown[], count = data.length) => ({ data, error: null, count
 
 // Só os filtros, na ordem em que a query os aplica.
 const filters = (calls: Call[]) =>
-  calls.filter(([method]) => ["eq", "neq", "is", "not", "ilike"].includes(method));
+  calls.filter(([method]) => ["eq", "neq", "is", "not", "or", "ilike"].includes(method));
+
+// O grupo "pendentes": relógio não parado OU resolvido respondido.
+const PENDING: Call = ["or", "sla_mode.neq.stopped,replied_after_resolve.is.true"];
 
 const BY_DUE: Call[] = [
   ["order", "next_due_at", { ascending: true, nullsFirst: false }],
@@ -128,7 +133,7 @@ describe("parseTicketListParams", () => {
   });
 
   it("status aceita os grupos e as chaves; o resto vira 'ativos'", () => {
-    for (const status of ["ativos", "resolvidos", "encerrados", "todos", "novo", "cancelado"]) {
+    for (const status of ["ativos", "pendentes", "resolvidos", "encerrados", "todos", "novo", "cancelado"]) {
       expect(parseTicketListParams({ status }).status).toBe(status);
     }
     for (const status of ["", "Novo", "ATIVOS", "constructor", "__proto__", "toString", undefined]) {
@@ -227,7 +232,7 @@ describe("getTicketsPage", () => {
     }
   );
 
-  it.each(["ativos", "resolvidos", "encerrados", "novo", "cancelado"] as const)(
+  it.each(["ativos", "pendentes", "resolvidos", "encerrados", "novo", "cancelado"] as const)(
     "protocolo ignora o status %s: quem digita o protocolo quer aquele ticket",
     async (status) => {
       const [calls] = queueQueries(ok([]));
@@ -288,6 +293,7 @@ describe("getTicketsPage", () => {
 
   it.each([
     ["ativos", [["neq", "sla_mode", "stopped"]]],
+    ["pendentes", [PENDING]],
     ["resolvidos", [["eq", "status", "resolvido"]]],
     ["encerrados", [["eq", "is_terminal", true]]],
     ["todos", []],
@@ -430,6 +436,7 @@ describe("getTicketsPage", () => {
     ["sem contato", { contact: null }],
     ["sem número", { number: null }],
     ["sem versão", { version: null }],
+    ["sem 'respondeu após resolver'", { replied_after_resolve: null }],
   ])("linha inesperada (%s) falha a página em vez de esconder o ticket", async (_, overrides) => {
     queueQueries(ok([row(), row(overrides)], 2));
 
@@ -515,5 +522,19 @@ describe("toTicketListItem", () => {
 
     expect(item?.first_response_due_at).toBe("2026-09-25T13:00:00.123456+00:00");
     expect(item?.last_inbound_at).toBe("2026-09-25T12:05:00.000001+00:00");
+  });
+
+  it("repassa o 'respondeu após resolver' da view, sem recalcular", () => {
+    const replied = row({
+      status: "resolvido",
+      sla_mode: "stopped",
+      next_due_at: null,
+      resolved_at: "2026-09-25T14:00:00.000001+00:00",
+      last_inbound_at: null,
+      replied_after_resolve: true,
+    });
+
+    expect(toTicketListItem(replied)?.replied_after_resolve).toBe(true);
+    expect(toTicketListItem(row())?.replied_after_resolve).toBe(false);
   });
 });

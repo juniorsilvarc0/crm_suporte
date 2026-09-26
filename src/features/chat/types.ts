@@ -42,6 +42,11 @@ export type ChatConversation = {
   /** Fixada no topo da lista. `null` = solta. */
   pinned_at: string | null;
   status: ConversationStatus;
+  /**
+   * Ticket em foco: a mensagem nova nasce nele. `null` = sem foco. Chega pelo
+   * Realtime do chat (só o uuid; o resto do ticket vem de /api/tickets).
+   */
+  active_ticket_id: string | null;
   unread_count: number;
   last_message_at: string | null;
   last_message_preview: string | null;

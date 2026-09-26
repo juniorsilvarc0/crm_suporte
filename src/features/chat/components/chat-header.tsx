@@ -22,12 +22,27 @@ type ChatHeaderProps = {
   searchOpen?: boolean;
   /** Abre a tela de dados do contato. Sem ele, o bloco não vira botão. */
   onOpenContact?: () => void;
+  /**
+   * O ticket em foco em texto ("SUP-1024 Em atendimento"), para a linha de
+   * apoio. `null` = sem foco, ou ainda não lido.
+   */
+  focusTicketSummary?: string | null;
+  /** O chip do ticket em foco. Só aparece a partir de `lg`: no celular a coluna de ações não cresce. */
+  ticketChip?: React.ReactNode;
 };
 
 const PRESENCE: Record<ChatConversation["status"], string> = {
   bot: "Atendimento pela IA",
   human: "Atendimento humano",
   resolved: "Conversa resolvida",
+};
+
+// A forma curta, quando a linha também leva o ticket em foco ("IA · SUP-1024
+// Em atendimento"): a frase longa comeria o protocolo no celular.
+const PRESENCE_SHORT: Record<ChatConversation["status"], string> = {
+  bot: "IA",
+  human: "Humano",
+  resolved: "Resolvida",
 };
 
 export function ChatHeader({
@@ -38,6 +53,8 @@ export function ChatHeader({
   onToggleSearch,
   searchOpen = false,
   onOpenContact,
+  focusTicketSummary = null,
+  ticketChip,
 }: ChatHeaderProps) {
   const displayName = contactDisplayName(conversation);
   const isHuman = conversation.status === "human";
@@ -78,8 +95,12 @@ export function ChatHeader({
             <span className="block truncate text-[15px] font-medium text-foreground">
               {displayName}
             </span>
+            {/* Só texto: dentro do botão de identidade não cabe controle, e o
+                chip clicável do ticket fica na coluna de ações (a partir de `lg`). */}
             <span className="block truncate text-xs text-[var(--wa-meta)]">
-              {PRESENCE[conversation.status]}
+              {focusTicketSummary
+                ? `${PRESENCE_SHORT[conversation.status]} · ${focusTicketSummary}`
+                : PRESENCE[conversation.status]}
               {/* O telefone só a partir de `sm`: no celular ele espremia o nome
                   do contato, que é a informação que importa. Vinha cru do
                   WhatsApp ("558690000021") — `formatPhoneBR` é a mesma função da
@@ -94,7 +115,12 @@ export function ChatHeader({
         </IdentityWrapper>
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5">
+      {/* A partir de `lg`, com o chip de foco, a coluna encolhe junto com o
+          nome: quem cede é o selo do chip, que trunca; os botões mantêm a
+          largura. Sem ele (só "Abrir ticket"), nada ali trunca, e encolher
+          quebraria o "Devolver à IA" em duas linhas. */}
+      <div className="flex shrink-0 items-center gap-0.5 lg:has-[[data-ticket-chip=focus]]:min-w-0 lg:has-[[data-ticket-chip=focus]]:shrink">
+        {ticketChip ? <div className="hidden min-w-0 lg:me-1.5 lg:flex">{ticketChip}</div> : null}
         {onToggleSearch && (
           <button
             type="button"
@@ -120,7 +146,7 @@ export function ChatHeader({
           onClick={onTakeover}
           disabled={takeoverLoading}
           className={cn(
-            "flex h-11 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium text-white transition-colors disabled:opacity-60 sm:h-9",
+            "flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium text-white transition-colors disabled:opacity-60 sm:h-9",
             isHuman
               ? "bg-orange-500 hover:bg-orange-600"
               : "bg-[var(--wa-green-deep)] hover:opacity-90"

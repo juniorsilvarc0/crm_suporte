@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { invalidTransitionMessage } from "@/features/tickets/lib/ticket-actions";
-import type {
-  TicketStatusKey,
-  TicketStatusOption,
-  TicketTakeOverErrorBody,
-} from "@/features/tickets/types";
+import {
+  ticketFieldError,
+  ticketRequest,
+  type TicketRequestFailure,
+} from "@/features/tickets/lib/ticket-request";
+import type { TicketStatusKey, TicketStatusOption } from "@/features/tickets/types";
 
 const FAILURE_MESSAGE = "Não foi possível concluir a operação.";
 const NETWORK_MESSAGE = "Não foi possível concluir a operação. Confira a conexão e tente de novo.";
@@ -25,10 +26,7 @@ export type TicketRequest = {
 };
 
 /** Resposta recusada. `status` 0 = a requisição nem chegou (rede). */
-export type TicketFailure = {
-  status: number;
-  body: TicketTakeOverErrorBody | null;
-};
+export type TicketFailure = TicketRequestFailure;
 
 export type TicketRunOptions<Data> = {
   /** Texto do toast de sucesso; `null` = sem toast (ex.: `changed: false`). */
@@ -59,12 +57,6 @@ export type TicketMutation = {
   dismissConflict: () => void;
   refresh: () => void;
 };
-
-type Payload = { ok?: boolean } & Partial<Omit<TicketTakeOverErrorBody, "ok">>;
-
-function firstFieldError(body: TicketTakeOverErrorBody | null): string | undefined {
-  return Object.values(body?.errors ?? {}).find((messages) => messages?.[0])?.[0];
-}
 
 /**
  * As escritas do detalhe do ticket, com UM tratamento de erro para todas (sem
@@ -120,7 +112,7 @@ export function useTicketMutation({
       refresh();
       return;
     }
-    toast.error(firstFieldError(body) ?? body?.message ?? FAILURE_MESSAGE);
+    toast.error(ticketFieldError(body) ?? body?.message ?? FAILURE_MESSAGE);
     // A tela está velha (ticket encerrado, já atribuído, sumiu): relê.
     if (httpStatus === 404 || httpStatus === 409) refresh();
   }
@@ -135,15 +127,13 @@ export function useTicketMutation({
 
     let failure: TicketFailure;
     try {
-      const response = await fetch(request.url, {
+      const result = await ticketRequest<Data>(request.url, {
         method: request.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request.body),
+        body: request.body,
       });
-      const payload = (await response.json().catch(() => null)) as Payload | null;
 
-      if (response.ok && payload?.ok === true) {
-        const data = payload as unknown as Data;
+      if (result.ok) {
+        const data = result.data;
         setConflict(false);
         const message = options.success?.(data) ?? null;
         if (message) toast.success(message);
@@ -157,12 +147,7 @@ export function useTicketMutation({
         }
         return true;
       }
-      failure = {
-        status: response.status,
-        body: payload ? ({ ...payload, ok: false } as TicketTakeOverErrorBody) : null,
-      };
-    } catch {
-      failure = { status: 0, body: null };
+      failure = result;
     } finally {
       inFlight.current = false;
       setPendingKey(null);

@@ -30,6 +30,20 @@ import { ContractStatusBadge } from "@/features/contracts/components/contract-st
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerSummary } from "@/features/customers/types";
+import { useTeamDirectory } from "@/features/settings/hooks/use-team-directory";
+import {
+  ConversationTicketsFocusList,
+  ConversationTicketsGroup,
+} from "@/features/tickets/components/conversation-tickets-group";
+import {
+  NewTicketForm,
+  type NewTicketFormHandle,
+} from "@/features/tickets/components/new-ticket-form";
+import {
+  useConversationTickets,
+  type ConversationTicketsState,
+} from "@/features/tickets/hooks/use-conversation-tickets";
+import { useTicketCatalog } from "@/features/tickets/hooks/use-ticket-catalog";
 import { formatCnpj } from "@/lib/formatters/cnpj";
 import { formatDate } from "@/lib/formatters/date";
 import { formatPhoneBR } from "@/lib/formatters/phone";
@@ -59,12 +73,36 @@ import type { Tag } from "@/features/tags/types";
 
 type PendingAction = "search" | null;
 
+/** A vista em que o painel abre (`initialView`): o cabeçalho do chat abre direto nos tickets. */
+export type ContactInfoInitialView = "info" | "tickets" | "ticket-new";
+
+type SheetView = ContactInfoInitialView | "tags" | "customer";
+
+// Vista-pai de cada vista interna: o Esc e o "Voltar" sobem UM degrau, e só a
+// vista "info" fecha o painel (UI.md §5.7.18).
+const PARENT_VIEW: Record<Exclude<SheetView, "info">, SheetView> = {
+  tags: "info",
+  customer: "info",
+  tickets: "info",
+  "ticket-new": "info",
+};
+
+const VIEW_TITLE: Record<SheetView, string> = {
+  info: "Dados do contato",
+  tags: "Etiquetas",
+  customer: "Empresa",
+  tickets: "Tickets",
+  "ticket-new": "Novo ticket",
+};
+
 export function ContactInfoSheet({
   conversation,
   portalContainer,
   tagsController,
   onClose,
   onSearch,
+  initialView = "info",
+  tickets: sharedTickets,
 }: {
   conversation: ChatConversation;
   portalContainer: RefObject<HTMLDivElement | null>;
@@ -72,12 +110,25 @@ export function ContactInfoSheet({
   onClose: () => void;
   /** Abre a busca da conversa. A tela fecha antes, para não empilhar camada. */
   onSearch?: () => void;
+  /**
+   * Vista em que o painel abre. Lida só na MONTAGEM, que é a abertura: o
+   * `ChatView` monta o painel ao abrir (e o remonta ao trocar de conversa, pela
+   * `key`). Mudar a prop com o painel aberto não troca a vista.
+   */
+  initialView?: ContactInfoInitialView;
+  /**
+   * Os tickets da conversa, quando quem monta já os lê (o `ChatView`, para o
+   * cabeçalho): uma leitura só, e a ação feita aqui chega ao chip. Sem ele, o
+   * painel lê os seus.
+   */
+  tickets?: ConversationTicketsState;
 }) {
   const [open, setOpen] = useState(true);
   const [pending, setPending] = useState<PendingAction>(null);
-  // Etiquetar e escolher a empresa trocam o miolo DESTE sheet, com "Voltar" —
-  // abrir uma gaveta por cima seria modal sobre modal (UI.md §9).
-  const [view, setView] = useState<"info" | "tags" | "customer">("info");
+  // Etiquetar, escolher a empresa, trocar o foco e abrir ticket trocam o miolo
+  // DESTE sheet, com "Voltar" — abrir uma gaveta por cima seria modal sobre
+  // modal (UI.md §9).
+  const [view, setView] = useState<SheetView>(initialView);
   const [busyTagId, setBusyTagId] = useState<string | null>(null);
   // Alvo da escrita de empresa; só vale enquanto `linking` (o hook é o dono do
   // "em voo"). Ao desligar é a empresa atual, que é o que o seletor espera.
@@ -108,6 +159,31 @@ export function ContactInfoSheet({
   const telHref = contactTelHref(conversation.contact_phone);
   const contact = info?.contact ?? null;
   const customer = info?.customer ?? null;
+
+  // Tickets da conversa: relê quando o foco ou o atendimento mudam (Realtime do
+  // chat, inclusive de outra aba) e depois de cada ação daqui. Com os de quem
+  // monta, a leitura própria nem sai (`null`).
+  const ownTickets = useConversationTickets(
+    sharedTickets ? null : conversation.id,
+    conversation.active_ticket_id,
+    conversation.status
+  );
+  const tickets = sharedTickets ?? ownTickets;
+  // Rótulos e matriz para as ações rápidas; as filas do "Novo ticket".
+  const ticketCatalog = useTicketCatalog();
+  // Quem está logado: decide se "Atender" cabe (ticket sem responsável ou seu).
+  const { currentUserId } = useTeamDirectory();
+  const newTicketRef = useRef<NewTicketFormHandle>(null);
+
+  // O "Novo ticket" decide se a vista pode sair: enviando, não; sujo, pergunta
+  // "Descartar?" nele mesmo e fica. As outras vistas saem sempre.
+  const canLeaveView = () =>
+    view !== "ticket-new" || newTicketRef.current?.requestExit() !== false;
+
+  const goBack = () => {
+    if (view === "info" || !canLeaveView()) return;
+    setView(PARENT_VIEW[view]);
+  };
 
   // Sem mensagem = nada foi enviado (outra escrita já está em voo): silêncio.
   const pickCustomer = async (next: CustomerSummary) => {
@@ -158,7 +234,12 @@ export function ContactInfoSheet({
         // desfaz uma coisa só (UI.md §5.7.18).
         if (!next && view !== "info" && details.reason === "escape-key") {
           details.cancel();
-          setView("info");
+          goBack();
+          return;
+        }
+        // Fora do Esc (toque fora), o formulário sujo segura o painel igual.
+        if (!next && !canLeaveView()) {
+          details.cancel();
           return;
         }
         if (!next) close();
@@ -184,12 +265,12 @@ export function ContactInfoSheet({
         aria-describedby={undefined}
       >
         <header className="flex h-14 shrink-0 items-center gap-1 border-b border-[var(--wa-info-divider)] px-1 sm:px-2">
-          {/* Nas vistas de etiquetas e de empresa o mesmo botão volta um passo,
-              em vez de fechar: fechar dali perderia a tela de contato inteira. */}
+          {/* Nas vistas internas o mesmo botão volta um passo, em vez de
+              fechar: fechar dali perderia a tela de contato inteira. */}
           {view !== "info" ? (
             <button
               type="button"
-              onClick={() => setView("info")}
+              onClick={goBack}
               aria-label="Voltar para os dados do contato"
               className="flex size-11 shrink-0 items-center justify-center rounded-full text-[var(--wa-info-label)] transition-colors hover:bg-[var(--wa-info-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -209,7 +290,7 @@ export function ContactInfoSheet({
             </DialogClose>
           )}
           <DialogTitle className="font-sans min-w-0 flex-1 truncate text-center text-[17px] font-semibold tracking-[-0.01em]">
-            {view === "tags" ? "Etiquetas" : view === "customer" ? "Empresa" : "Dados do contato"}
+            {VIEW_TITLE[view]}
           </DialogTitle>
           {/* Equilibra o botão da esquerda para o título ficar centrado. */}
           <span className="size-11 shrink-0" aria-hidden />
@@ -247,6 +328,33 @@ export function ContactInfoSheet({
               />
             </div>
           </div>
+        ) : view === "tickets" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+            <div className="mx-auto w-full max-w-xl">
+              <ConversationTicketsFocusList
+                conversationId={conversation.id}
+                state={tickets}
+                activeTicketId={conversation.active_ticket_id}
+                statuses={ticketCatalog.catalog?.statuses ?? null}
+                onFocused={() => setView("info")}
+              />
+            </div>
+          </div>
+        ) : view === "ticket-new" ? (
+          // Sem foco automático no título: o teclado subiria no meio da troca
+          // de vista. O formulário tem rolagem e rodapé próprios.
+          <NewTicketForm
+            ref={newTicketRef}
+            conversationId={conversation.id}
+            products={ticketCatalog.catalog?.products ?? null}
+            productsLoading={ticketCatalog.loading}
+            onRetryProducts={ticketCatalog.retry}
+            onCreated={() => {
+              tickets.refresh();
+              setView("info");
+            }}
+            onExit={() => setView(PARENT_VIEW["ticket-new"])}
+          />
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
           <div className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-6">
@@ -301,6 +409,21 @@ export function ContactInfoSheet({
               failed={failed}
               onChange={() => setView("customer")}
             />
+
+            {/* A falha dos tickets fica no grupo, com "Tentar de novo" próprio:
+                o resto do painel não depende dela. */}
+            <InfoGroup title="Tickets">
+              <ConversationTicketsGroup
+                state={tickets}
+                activeTicketId={conversation.active_ticket_id}
+                catalog={ticketCatalog.catalog}
+                catalogFailed={ticketCatalog.failed}
+                onRetryCatalog={ticketCatalog.retry}
+                viewerId={currentUserId}
+                onChangeFocus={() => setView("tickets")}
+                onNewTicket={() => setView("ticket-new")}
+              />
+            </InfoGroup>
 
             {/* Etiquetas vêm antes das notas: é o dado que se lê de relance e
                 o que a pessoa mais mexe durante o atendimento. */}
