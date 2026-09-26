@@ -27,6 +27,110 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-26] Fase 4 · PR 2 — back dos tickets: serviço único, consultas e rotas de sessão
+
+**Agente/Modelo:** Claude Opus 5.5 (workflow em 4 ondas: fundação → libs e consultas → serviço → rotas; revisão adversarial em 4 frentes com verificação independente; correções; roteiro ponta a ponta contra o app local)
+**Objetivo:** O app abre, edita, transiciona, atribui e assume tickets e troca o ticket em foco da conversa por rotas de sessão, todas passando por um serviço único de escrita (o mesmo que a API v1 usará na Fase 5).
+
+**Arquivos alterados:** branch `feat/fase4-back-nucleo`.
+- `src/config/site.ts`: `ticketPrefix: "SUP"`.
+- `src/lib/validation/uuid.ts`: `UUID_RE`/`isUuid`, só para os arquivos novos; as cópias antigas ficam.
+- `src/lib/formatters/relative-time.ts`: `formatDuration`, `humanizeUntil` e `humanizeSince`, com floor.
+- `src/features/tickets/`:
+  - `types.ts`: tipos à mão, inclusive os shapes de resposta que a tela vai consumir;
+  - `lib/`: `ticket-status`, `ticket-priority`, `protocol`, `state-machine`, `sla`, `map-ticket-error`, `ticket-error-response` e `ticket-timeline`;
+  - `schemas/ticket.ts`;
+  - `queries/`: `get-ticket-catalog`, `get-tickets-page`, `get-ticket-detail`, `get-ticket-timeline`, `get-conversation-tickets` e `get-ticket-queue`;
+  - `server/ticket-service.ts`.
+- Rotas:
+  - `POST|GET /api/tickets`;
+  - `PATCH /api/tickets/[id]`;
+  - `POST /api/tickets/[id]/{transition,assign,take-over}`;
+  - `GET /api/tickets/[id]/timeline`;
+  - `GET /api/tickets/catalog`;
+  - `PUT /api/chat/conversations/[id]/active-ticket`.
+- Testes de cada lib, consulta, serviço e rota.
+- Docs: PRD (§6, §7.3 do ticket, §8 inventário e domínio Tickets, glossário), AGENTS §4.1, este PROGRESS.
+
+**O que foi feito:**
+- **Serviço único** (`server/ticket-service.ts`):
+  - o client é injetado (o teste passa um `rpc` falso);
+  - o ator vem sempre do viewer;
+  - todo jsonb volta conferido por zod;
+  - o erro de RPC passa por `mapTicketError` (TAG → constraint → code).
+  - **O aviso à IA ao assumir mora aqui:** `pushTakeoverToAgent` só dispara com `conversation_changed`, e o `conversation_external_id` (telefone) nunca sai do servidor.
+- **Rotas** no molde de `contracts/[id]/status`: guard na 1ª linha, uuid → 400, zod `.strict()` → 400, erro de negócio no formato `{ok:false, code, message, errors?, allowed?, current?, current_version?}`. Os principais:
+  - 409 `invalid_transition` com os destinos permitidos;
+  - 409 `version_conflict` com a versão atual;
+  - 409 `already_assigned` com o id e o nome de quem está com o ticket.
+- **Consultas:** lista pela view `ticket_queue`, com select explícito (nunca `description`, `ai_triage` nem a chave idempotente) e embeds com hint pelo nome da FK. O PostgREST local confirmou que não há PGRST201.
+- **Timeline:** 5 leituras em paralelo, com cursor só por instante (ver decisões).
+
+**Decisões tomadas:**
+- **Emendas à spec que o PR 1 impôs:**
+  - a trilha ordena por `(occurred_at, seq)`;
+  - a 1ª resposta conta no aceite;
+  - a trava de gestão está nas RPCs.
+- **Timeline:**
+  - o cursor é só `before` (o instante ISO cru, estrito), e o `beforeId` da spec saiu;
+  - uma página nunca separa itens do mesmo instante;
+  - dentro do mesmo instante, a ordem é mensagem < comentário < anexo < status/evento (por `seq`);
+  - uma fonte que bate no limite de 100 define um piso, e nada fica para trás. Um álbum de fotos grava tudo no mesmo segundo, e o caso existe;
+  - os instantes são comparados com precisão de microssegundo, **sem `Date`**: o formato do ECMAScript só garante milissegundos.
+- **Busca:** "SUP-1024", "#1024" ou "1024" vira busca por protocolo (`number.eq`). Somada ao filtro padrão "ativos", ela não acha um ticket fechado; decidir na tela (PR 4).
+- **SLA:** "Resolvido fora do prazo" julga só a solução, e o `sla.test.ts` espelha os casos do T95. Com a 1ª resposta pendente, um ticket pausado mostra "1ª resposta…", não "Pausado", como a view.
+- **Erros:**
+  - 23514 de entrada vira 400 com o campo; 23514 de invariante (relógio do SLA, carimbos) é 500 com log, porque é bug;
+  - `ticketSummarySchema` é `.strict()`: chave nova do banco dá 500 e não vaza em silêncio.
+- **Timeline e consultas:** comentário e mensagem apagados aparecem como apagados, sem conteúdo. `getConversationTickets` recebe o client e lança o erro (a rota responde 500); um foco que ficou fora dos 20 primeiros entra no fim da lista.
+- **Catálogo:** só dá 500 quando as 5 partes falham.
+
+**Revisão adversarial** (4 frentes, cada achado atacado por um verificador):
+- **Segurança:** nenhum achado. Os guards dos 8 handlers vêm antes de tudo, e nenhuma resposta, erro ou replay traz chave proibida.
+- **Contrato com o banco:** um achado. As 6 RPCs batem em nome e tipo, e o jsonb real passa nos schemas.
+- **Timeline e SLA:** nenhum achado, em 582 cenários gerados (278 mil itens) sem perder nem repetir item.
+- **Testes:** três lacunas.
+
+Confirmados e corrigidos (todos de severidade baixa):
+1. **Texto com NUL ou surrogate solto** passava no zod, e o banco respondia 22P05 → 500. Agora o zod recusa (`/[\u0000\p{Cs}]/u`, que deixa emoji passar), e 22P05 entrou nos códigos de entrada inválida. **O mesmo buraco existe em `customers`** (schema e `map-cadastro-error`); fica registrado, fora do escopo.
+2. **Faltavam testes** de `getConversationTickets` e `getTicketCatalog`: mutações sobreviviam à suíte inteira.
+3. **O `sla.test` não cobria frações de tamanho variável.**
+
+Também: o schema do cursor passou a usar `isTimelineInstant` como fonte única; os tipos de resposta foram para `types.ts`; `getTicketQueue` ganhou teste.
+
+**Verificação:**
+- **Roteiro ponta a ponta:** `scratchpad/e2e4.mjs` contra o `next dev` na 3201 e o banco local, com um receptor HTTP no lugar da IA. As 41 conferências passaram:
+  - a mesma chave duas vezes gera 1 ticket;
+  - `novo→resolvido` → 409 com `allowed`;
+  - versão velha → 409 com `current_version`;
+  - "Assumir" põe a conversa em `human` e o aviso `{phone, assumed:true}` chega ao receptor, sem 2º aviso quando a conversa já era `human`;
+  - admin sem `reassign` → 409 com o nome de quem está com o ticket;
+  - trocar o foco muda o ticket em que a próxima mensagem do webhook cai;
+  - cancelar tira o ticket do foco;
+  - a timeline sai na ordem de gravação;
+  - nenhuma resposta traz chave proibida nem o telefone.
+
+  Os dados foram apagados depois.
+- Depois das correções: typecheck ✓ · lint ✓ (0 erros; os 9 avisos já existiam) · test ✓ (1666) · build ✓. O roteiro ponta a ponta foi rodado de novo e passou.
+
+**Pendências / próximos passos:**
+- **PR 3:**
+  - `upsert-message`;
+  - limpar e desconectar com ticket → 409;
+  - comentários (o `body` leva o mesmo filtro de texto inválido) e anexos;
+  - rotas de admin da 4f.
+- **PR 4:**
+  - a tela monta o cursor com `URLSearchParams`/`encodeURIComponent`: o `+` do fuso vira espaço;
+  - decidir a busca por protocolo contra o filtro "ativos".
+- **Log de 500:** sai duas vezes (serviço com a causa, rota com o contexto). Aceito.
+- **Criar ticket não devolve o novo status da conversa.** O chat depende do Realtime de `chat_conversations`. Se o PR 5 precisar, é acrescentar `conversation_changed` ao `data`.
+
+**Armadilhas descobertas:**
+- **A porta 3200 é do container `crm-suporte-web`** do compose, quando ele está no ar. Rode o `next dev` de teste em outra porta (3201) e não derrube o container.
+- **Finder aberto na pasta do projeto trava o build:** ele recria `.next/.DS_Store` enquanto o Next apaga a pasta, e dá `ENOTEMPTY`. Feche a janela ou repita.
+- **`psql -At` com `INSERT … RETURNING` imprime também "INSERT 0 1".** Use `-q` quando o script lê o id.
+- **A fração do PostgREST varia de 0 a 6 casas:** compare instantes por microssegundos inteiros, nunca pelo tamanho do texto nem por `Date.parse`.
+
 ## [2026-09-25] Fase 4 · PR 1 — banco dos tickets: máquina de estados, SLA e ticket em foco
 
 **Agente/Modelo:** Claude Opus 5.5 (desenho por workflow: leitores → 3 arquitetos → juiz; testes e corridas por subagentes; revisão adversarial da migration com verificação independente)

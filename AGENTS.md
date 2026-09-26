@@ -197,7 +197,8 @@ src/app/
 src/features/<dominio>/  # auth, chat, connection, contacts (identidade, lista,
                          #   vínculo com empresa), contracts, customers, home,
                          #   integrations (logs), products (filas), quick-replies,
-                         #   settings, tags
+                         #   settings, tags, tickets (lib pura, schemas, queries
+                         #   e server/ticket-service.ts: a escrita única, via RPC)
 src/components/
   ui/                    # primitivos (Base UI) — reuse antes de criar
   data-display/          # data-toolbar, empty-state, page-skeletons
