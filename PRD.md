@@ -70,6 +70,14 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 
 **Sem API pública hoje:** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 para a IA e para outros sistemas entra na Fase 5.
 
+**Tickets (Fase 4, em andamento):** o banco e as rotas de sessão já existem:
+- `/api/tickets`: abrir e listar por conversa;
+- `/api/tickets/[id]`: editar, transicionar, atribuir, assumir, timeline;
+- `/api/tickets/catalog`;
+- `/api/chat/conversations/[id]/active-ticket`: ticket em foco.
+
+As telas (lista, detalhe, quadro, chat, Início, Configurações › Atendimento) entram nos PRs seguintes.
+
 ## 7. Fluxos centrais
 
 ### 7.1 Entrada de mensagem pelo WhatsApp
@@ -85,17 +93,48 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 
 Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avisa o agente e para o relay. Liberar devolve para `bot`.
 
+### 7.3 Ticket (Fase 4)
+
+1. **Nasce de uma conversa.** Quem abre é o analista (no chat) ou, na Fase 5, a IA pela API. A abertura é idempotente por ator e chave. O inbound **nunca** cria ticket.
+2. **Na abertura:**
+   - o ticket recebe o protocolo `SUP-<número>` (a partir de 1000);
+   - a empresa e o contrato vigente saem do contato;
+   - as mensagens soltas das últimas 24 h entram no ticket;
+   - ele vira o **ticket em foco** da conversa (`chat_conversations.active_ticket_id`).
+
+   "Abrir e assumir" faz também o take-over na mesma transação.
+3. **Mensagem nova nasce no ticket em foco:** o banco carimba `chat_messages.ticket_id` e ignora o valor que o app manda. Ticket encerrado sai do foco, e as mensagens seguintes ficam soltas.
+4. **Status só anda pela matriz** (RPC `ticket_transition`). Transição inválida responde 409 com os destinos permitidos. Não existe "forçar".
+5. **SLA 24/7 por prioridade**, com snapshot dos minutos na abertura:
+   - **1ª resposta:** é a do analista humano, contada quando o provedor **aceita** a mensagem. Uma resposta entregue antes da abertura conta na abertura. A da IA fica à parte;
+   - **solução:** pausa em `aguardando_*` e em `resolvido`, e reabrir retoma o que restava.
+
+   O prazo é calculado na leitura (view `ticket_queue`).
+6. **Cliente responde com o ticket em `aguardando_cliente`:** o ticket volta sozinho para `em_atendimento`. Em `resolvido` ele não reabre, só aparece o sinal "Respondeu após resolver".
+7. **"Assumir"** (`ticket_take_over`):
+   - põe a conversa em `human`, o ticket em foco e o analista como responsável;
+   - leva `novo`/`em_triagem` a `em_atendimento`;
+   - avisa a IA.
+
+   Tomar o ticket de outro analista exige confirmação.
+8. **Nesta fase nenhum aviso sai ao cliente** na troca de status. O evento assinado entra na Fase 6.
+
 ## 8. Banco de dados
 
 **Projeto Supabase:** `crm-suporte` (`supabase/config.toml`) — **produção ainda não definida**; por enquanto só Docker local (ver [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md)); o banco nasce aplicando `supabase/migrations/` do zero.
 
-**Inventário do schema (depois da Fase 3, medido no banco local em 2026-09-25):** 21 tabelas públicas · 2 policies · 42 funções. A Fase 3 somou `products`, `support_plans`, `customers`, `support_contracts` e `support_contract_products`. As 45 migrations da clínica ficam só como referência em `supabase/legado-clinica/`.
+**Inventário do schema (depois do banco da Fase 4, medido no banco local em 2026-09-25):** 30 tabelas públicas · 1 view · 2 policies · 62 funções.
+- A Fase 3 somou `products`, `support_plans`, `customers`, `support_contracts` e `support_contract_products`.
+- A Fase 4 somou as tabelas de tickets e a view `ticket_queue`.
+
+As 45 migrations da clínica ficam só como referência em `supabase/legado-clinica/`.
 
 | Domínio | Tabelas |
 |---|---|
 | Contatos | `contacts` (+ `customer_id` → empresa), `contact_phone_identities`, `contact_events` (append-only; inclui ligar/trocar/desligar empresa), `tags`, `contact_tags` |
 | Cadastros | `customers` (empresa; `contract_status` é o selo, derivado por trigger), `products` (a fila), `support_plans`, `support_contracts` (no máximo 1 vigente por empresa; escrita só por RPC de admin; **`monthly_amount` ilegível para o service_role**, sai só por `get_support_contract_amounts`), `support_contract_products` |
-| Atendimento | `chat_conversations`, `chat_messages`, `chat_integrations`, `chat_quick_replies`, `conversation_tags` |
+| Atendimento | `chat_conversations` (+ `active_ticket_id`, o ticket em foco), `chat_messages` (+ `ticket_id`, carimbado no INSERT), `chat_integrations`, `chat_quick_replies`, `conversation_tags` |
+| Tickets | `tickets` (escrita **só por RPC**; o service_role só lê), `ticket_statuses` (8 fixos; rótulo e cor editáveis), `ticket_status_transitions` (a matriz), `sla_policies`, `ticket_categories`, `ticket_status_history` e `ticket_events` (append-only, ordem por `seq`), `ticket_comments`, `ticket_attachments` (bucket privado `ticket-attachments`); view `ticket_queue` (SLA na leitura) |
 | Plataforma | `app_users`, `api_tokens`, `app_settings`, `app_environment_variables`, `integration_logs`, `user_notes` |
 
 Tipos TypeScript do banco: **gerados** em `src/lib/supabase/database.types.ts` (`pnpm db:types`); o CI falha se divergirem do schema.
@@ -185,4 +224,8 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - **Fila (produto)** — cada software da casa (`products`); os tickets da Fase 4 entram numa fila.
 - **Contrato de suporte** — `ativo` | `suspenso` | `encerrado` (terminal), com vigência, plano, filas cobertas, valor mensal e dia de vencimento (1..28). **Vigente** = ativo ou suspenso.
 - **Selo** — a situação do contrato mostrada para quem atende ("Contrato suspenso"), sem valor.
-- **Ticket, SLA** — entidades do produto-alvo, definidas em `docs/PLANO-IMPLANTACAO.md`; entram na Fase 4.
+- **Ticket** — o chamado. Nasce de uma conversa, tem protocolo `SUP-<número>`, status fixo, prioridade, fila, categoria, responsável e SLA.
+- **Ticket em foco** — o ticket da conversa que recebe as mensagens novas (`active_ticket_id`). Uma conversa pode ter vários tickets abertos; só um fica em foco.
+- **Status do ticket** — `novo`, `em_triagem`, `em_atendimento`, `aguardando_cliente`, `aguardando_interno`, `resolvido`, `fechado`, `cancelado`. Os dois últimos são terminais. É independente do status da conversa.
+- **SLA** — prazos de 1ª resposta e de solução por prioridade (`baixa|media|alta|critica`), 24/7. O prazo de solução pausa fora de atendimento; a 1ª resposta não pausa.
+- **Assumir (ticket)** — take-over centrado no ticket: conversa em `human`, ticket em foco, analista responsável e `em_atendimento`.
