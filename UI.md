@@ -273,7 +273,7 @@ Convenções embutidas: `focus-visible:ring-3`, `aria-invalid` estilizado, `[&_s
 
 ## §5. Padrões de tela
 
-### §5.1 Tela de dados (Clientes, Contatos; depois Tickets, Follow-ups, Financeiro)
+### §5.1 Tela de dados (Clientes, Contatos, Tickets; depois Follow-ups, Financeiro)
 
 ```
 PageHeader
@@ -344,6 +344,7 @@ Anatomia do card, nesta ordem:
 - O histórico de etapas fica **dentro do modal**, imediatamente abaixo de Anotações. Não exige navegação para outra tela.
 - Use timeline neutra e discreta: mudança em destaque, data e horário abaixo. A entrada inicial aparece como “Entrou em Novo”; as demais, como “Novo → Agendado”.
 - Ordem decrescente: evento mais recente primeiro. Rótulos vêm das colunas atuais do Funil, com fallback legível para etapas antigas removidas.
+- **Exceção: a timeline do ticket (§5.24) é cronológica.** Ela é a conversa do atendimento, lida de cima para baixo como o chat, com "Carregar anteriores" no topo e o composer embaixo.
 - Carregue sob demanda ao abrir o lead. Preserve a geometria com `Skeleton`; falha mostra mensagem local e “Tentar novamente”; vazio é explícito.
 - A timeline usa `max-h-64` e rolagem interna com `overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]`. Não transforme cada evento em card e não aumente indefinidamente o modal.
 
@@ -1135,7 +1136,7 @@ As duas de tela cheia ganharam **área segura** — era o defeito real delas: o 
 
 A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da lista de navegação. Consequência: num CRM de WhatsApp, o **WhatsApp** ficava escondido atrás de dois toques, e os outros seis destinos moravam num popover de 224 px encostado no rodapé, sem título de seção e sem dizer onde a pessoa estava.
 
-- **A barra é uma escolha explícita**, não um `slice`: `mobileTabHrefs` em `config/navigation.ts` lista hoje **Início · WhatsApp · Clientes** (Fase 3); Tickets e Agenda entram quando existirem. Item novo na navegação **não** entra na barra por acidente.
+- **A barra é uma escolha explícita**, não um `slice`: `mobileTabHrefs` em `config/navigation.ts` lista hoje **Início · Tickets · WhatsApp · Clientes** (Fase 4); Agenda entra quando existir. Item novo na navegação **não** entra na barra por acidente.
 - **O menu completo é uma gaveta `vaul` pelo rodapé**, não um popover. Ocupa 88 dvh, agrupa por seção (`Operação` · `Análise` · `Administração`) e fecha arrastando — a superfície que o sistema já usa para "escolher um caminho".
 - **A gaveta lista tudo, inclusive o que já está na barra.** Um menu "completo" que esconde metade dos itens obriga a decorar em qual das duas superfícies cada coisa mora. O item atual aparece marcado.
 - **O gatilho fica no cabeçalho, no lugar da marca.** A marca não sumiu: foi para dentro da gaveta, onde tem função (dizer de que app é este menu) em vez de ocupar o canto mais valioso da tela sem levar a lugar nenhum.
@@ -1173,6 +1174,73 @@ A partir da Fase 3, formulário novo usa **react-hook-form + `zodResolver` com o
 - **Envio travado** contra duplo clique, e o `Dialog` não fecha durante o envio.
 - **CNPJ:** sem `inputMode="numeric"` — o CNPJ alfanumérico tem letras, e o teclado numérico as esconderia. `autoCapitalize="characters"`, formatação ao sair do campo quando válido.
 - **Datas** com `z.iso.date()` (recusa 30/02); **dinheiro** como texto `1500.00` validado por regex e convertido; **vencimento** de 1 a 28, sem valor padrão.
+
+### §5.24 Tickets: lista e detalhe (Fase 4)
+
+Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/tickets/components/`.
+
+**Selos** (`ticket-status-badge`, `ticket-priority-badge`, `sla-badge`):
+- `<span>` no molde do `ContractStatusBadge`, com o texto sempre presente (a cor nunca é a única pista) e o rótulo inteiro no `title`.
+- Status: rótulo e cor vêm do catálogo; cor fora de `isColorName` cai na de recurso.
+- SLA: `getSlaState` (`lib/sla.ts`, a mesma regra da view `ticket_queue`), com o tom em `data-tone`:
+
+| Tom | Estilo |
+|---|---|
+| `ok` | contorno padrão |
+| `warn` | âmbar |
+| `breached`/`missed` | `destructive` |
+| `paused`/`none` | `muted` |
+| `met` | esmeralda |
+
+- ⚠️ Âmbar e esmeralda são paleta de domínio, porque ainda não existe token semântico de aviso nem de sucesso.
+- Com a 1ª resposta pendente, um ticket pausado mostra "1ª resposta…", não "Pausado".
+- **O relógio é `useNow(fetchedAt)`:** começa no instante da leitura do servidor (sem divergência de hidratação) e avança a cada 60 s.
+
+**Lista `/app/tickets`:**
+- **Filtros na URL:** status, prioridade, fila, responsável e SLA, mais busca e ordem (`lib/ticket-list-url.ts`, neutro: servidor e cliente usam o mesmo).
+  - O padrão é "ativos".
+  - Buscar por protocolo ("SUP-1024", "#1024", "1024") **ignora o status**: quem digita o número quer aquele ticket.
+- **Layout:**
+  - tabela a partir de `lg` (8 colunas; "Atualizado" só a partir de `xl`);
+  - abaixo disso, `article` com barra de acento pela cor do **SLA**, protocolo e selo de SLA na 1ª linha e link esticado.
+- **Menu ⋯:** Abrir conversa, Atribuir a mim, Mover para… (só destinos permitidos pela matriz; "Cancelado" pede motivo) e Copiar protocolo.
+- **Sem ações em massa e sem KPI.** Cada ticket exige a sua versão, e as métricas são da Fase 9.
+- **Estados** (a falha nunca parece vazio):
+
+| Estado | Tela |
+|---|---|
+| Falha | "Tentar de novo" |
+| Nenhum ativo | "Ver todos os tickets" |
+| Base vazia | "Tickets nascem de uma conversa no WhatsApp." |
+| Filtro sem resultado | "Limpar filtros" |
+
+**Detalhe `/app/tickets/[number]`** (o protocolo na URL):
+- **Cabeçalho:** protocolo com "Copiar", título editável e os selos.
+- **Ações:**
+  - "Responder no WhatsApp" põe o ticket em foco se preciso (toast só quando mudou) e abre `/app/chat?conversation=`. Em ticket encerrado, só abre a conversa;
+  - as ações rápidas (`lib/ticket-actions.ts`);
+  - o menu com Atribuir, Pôr em foco, Copiar e Cancelar (confirmação na linha, motivo obrigatório).
+- **Linha de fatos:** Aberto em · 1ª resposta · Solução.
+- **Grade `lg:grid-cols-3`:**
+  - principal: descrição e timeline;
+  - lateral: `DetailRow` de `contract-card` com Empresa, Contato, Fila e categoria, Prioridade (a dica é o SLA **gravado no ticket**; só ao escolher outra prioridade mostra a política do catálogo, que é o que o novo snapshot aplicaria), Responsável, Origem, Reaberturas e Anexos;
+  - no celular, a lateral fica abaixo da timeline.
+- **Fila e categoria se editam juntas e só gravam em "Salvar":** o `CatalogCombobox` zera o valor enquanto a pessoa busca. Trocar a fila limpa a categoria no mesmo PATCH. A fila e a categoria atuais vêm do ticket, mesmo arquivadas.
+- **Conflito de versão (409):** alerta no topo, "Este ticket mudou em outro lugar", **mais um toast** e `router.refresh()`. No celular a lateral fica abaixo da timeline, e o alerta sozinho sairia da tela de quem agiu lá embaixo.
+- **Transição inválida:** toast "De X só vai para A, B".
+- **Falha parcial não some em silêncio:**
+  - sem a matriz de transições, o cabeçalho diz "Não foi possível carregar as ações de status." e oferece "Tentar de novo";
+  - sem a equipe, o filtro de responsável da lista oferece só "Eu" e "Sem responsável", com "Não foi possível carregar a equipe." junto ao campo.
+- **Sem Realtime de tickets:** `router.refresh()` depois de cada ação e no `visibilitychange`.
+- **Timeline** (`ticket-timeline`), com o `ol` em `border-s`, sem `max-h`:
+  - itens: status, evento, "Nota do ticket" (editar e apagar só pelo autor), "Nota no chat", mensagem compacta (Cliente, IA, Analista, Celular da empresa) com link para a conversa, e anexo;
+  - "Carregar anteriores" monta o cursor com `URLSearchParams` (o `+` do fuso) e junta as páginas sem duplicar;
+  - composer com Ctrl/⌘+Enter.
+- **Anexos** (`ticket-attachments`):
+  - `DocumentMessageCard`, e `ImageLightbox` só para PNG, JPEG, WebP e GIF;
+  - o teto de 50 MB é conferido antes do envio;
+  - ⚠️ não há miniatura: a foto é decodificada inteira, com altura limitada (`max-h-48`). A variante `thumb` na rota é backlog.
+- ⚠️ **404 com `loading.tsx`:** a resposta já saiu em streaming (200), e o `notFound()` vira a tela de 404 no corpo, com `noindex`. É o mesmo da ficha de Clientes. Teste pelo corpo, não pelo status.
 
 ## §6. Estados de interface
 
