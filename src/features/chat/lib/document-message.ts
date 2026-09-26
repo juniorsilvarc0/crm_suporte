@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/features/chat/types";
+import { formatBytes } from "@/lib/formatters/bytes";
 
 export type DocumentMessagePresentation = {
   fileName: string;
@@ -62,7 +63,7 @@ export function getDocumentMessagePresentation(
   return {
     fileName,
     extension: extension?.toUpperCase() ?? null,
-    sizeLabel: size === null ? null : formatDocumentBytes(size),
+    sizeLabel: size === null ? null : formatBytes(size),
     caption,
   };
 }
@@ -151,11 +152,4 @@ function safeDecode(value: string): string {
   } catch {
     return value;
   }
-}
-
-function formatDocumentBytes(bytes: number): string {
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
-  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }

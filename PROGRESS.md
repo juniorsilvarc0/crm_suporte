@@ -27,6 +27,104 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-26] Fase 4 · PR 4 — telas de lista e detalhe do ticket, navegação
+
+**Agente/Modelo:** Claude Opus 5.5 (workflow em 2 ondas: base e navegação → lista ‖ timeline e anexos → detalhe; revisão adversarial em 4 frentes com 20 verificadores; correções em 3 frentes provadas por mutação; roteiro SSR)
+**Objetivo:** O analista acha, filtra e trata tickets na tela. A lista tem filtros na URL e selo de SLA vivo; o detalhe tem timeline, notas, anexos e ações rápidas. "Tickets" entra no menu e na barra do celular.
+
+**Arquivos alterados:** branch `feat/fase4-front-lista-detalhe`.
+- **Páginas:** `app/(dashboard)/app/tickets/{page,loading}.tsx` e `[number]/{page,loading}.tsx`.
+- **`features/tickets/components/`:**
+  - selos de status, prioridade e SLA;
+  - `tickets-table` e `ticket-filters`;
+  - `ticket-detail` (+ `header`, `sidebar`);
+  - `ticket-timeline` e `ticket-attachments`.
+- **Hooks:** `use-now` e `use-ticket-mutation`.
+- **Lib:** `ticket-actions`, `ticket-list-url`, `timeline-view` e `attachment-view`.
+- **Consultas:**
+  - `get-assignable-users`, com id, nome, avatar e `is_active`, **nunca e-mail ou papel**;
+  - ajustes em `get-tickets-page` (protocolo ignora o status) e `get-ticket-detail` (categoria atual e `in_focus`).
+- **Navegação:** `config/navigation.ts` + teste e `config/nav-active.ts` + teste (href mais longo com limite de segmento), usado em `dashboard-shell.tsx`.
+- **Outros:**
+  - `lib/formatters/bytes.ts`: 3º uso, e as 2 cópias do chat passaram a importá-lo;
+  - `contract-card.tsx` exporta `DetailRow`.
+- **Docs:** UI.md (§5.1, §5.3.1, §5.22 e a §5.24 nova) e este PROGRESS.
+
+**O que foi feito:**
+- **Lista:**
+  - filtros (status, prioridade, fila, responsável, SLA, busca e ordem) e página na URL;
+  - tabela a partir de `lg` e cartões com barra de acento do SLA abaixo disso;
+  - menu ⋯ com Abrir conversa, Atribuir a mim, Mover para… (só destinos da matriz; cancelar pede motivo) e Copiar protocolo;
+  - 4 estados distintos: falha, nenhum ativo, base vazia e filtro vazio.
+- **Detalhe:**
+  - protocolo copiável e título editável;
+  - "Responder no WhatsApp", que põe em foco se preciso;
+  - ações rápidas (Atender, Aguardar cliente, Resolver, Reabrir, Fechar);
+  - linha de fatos e lateral editável: empresa, fila + categoria com "Salvar", prioridade com a dica do SLA, responsável;
+  - timeline cronológica com "Carregar anteriores" e notas (só o autor edita e apaga);
+  - anexos com upload.
+- **Conflito de versão (409):** alerta no topo, toast e refresh.
+- **Sem Realtime de tickets:** refresh no `visibilitychange` e depois de cada ação.
+
+**Decisões tomadas** (revise):
+- **Menu:** só "Tickets" entra agora; "Quadro" (PR 7) e "Atendimento" (PR 6) entram com as páginas deles, para não haver link para página inexistente. A chave "Lista | Quadro" também fica para o PR 7.
+- **Busca por protocolo** ignora o filtro de status. Os outros filtros continuam valendo.
+- **"Atender" aparece:**
+  - só com o relógio não parado;
+  - em ticket sem responsável ou do próprio analista;
+  - em novo e em triagem, só se a matriz permite ir a `em_atendimento`.
+
+  Tomar ticket de outro é por "Atribuir".
+- **Fila e categoria gravam só no "Salvar":** o `CatalogCombobox` zera o valor enquanto a pessoa busca. A categoria efetiva é derivada da fila escolhida, então reescolher a mesma fila não a apaga.
+- **Dica da prioridade:** é o SLA **gravado no ticket** (snapshot). Só a prioridade nova, durante o PATCH, mostra a política do catálogo.
+- **"Responder no WhatsApp"** vira "Abrir conversa" em ticket encerrado, que não entra em foco.
+- **`getAssignableUsers`** traz também os inativos, com `is_active`: a timeline assina a trilha pelo nome, e quem foi desativado não é "Usuário removido". O "Atribuir" filtra os ativos.
+- **Ator `system` na timeline** aparece como "Automático", e evento desconhecido como "Atividade registrada".
+- **`formatBytes`** manteve o ponto decimal ("1.5 MB") para não mudar a saída do chat. Trocar para vírgula é decisão de produto.
+- **Tons de SLA "aviso" e "cumprido"** usam âmbar e esmeralda, porque não há token semântico. Seguem o `ContractStatusBadge`.
+
+**Revisão adversarial** (4 frentes, cada achado atacado por um verificador): 16 achados confirmados e 4 refutados, todos corrigidos.
+- **Severidade média:**
+  - 409 de versão numa ação da lateral não tinha toast, e no celular o alerta ficava fora da tela.
+- **Severidade baixa, na interface:**
+  - a dica de prioridade mostrava a política do catálogo e não o snapshot;
+  - a falha das transições sumia com as ações sem aviso;
+  - os itens do menu da nota tinham cerca de 28 px no celular;
+  - `already_assigned` não relia a tela;
+  - o "Definir empresa" aceitava uma 2ª escolha durante a releitura;
+  - a busca da fila apagava a categoria;
+  - o refresh da timeline deixava um buraco.
+- **Severidade baixa, nos testes:** faltavam testes de filtros, foco, categorias por fila, `visibilitychange`, somente leitura em encerrado, escritas da lateral, busca que segue a URL e barra de SLA.
+
+Cada teste novo foi provado matando o mutante descrito, e a restauração foi conferida com `cmp`/`diff --no-index`.
+
+**Verificação:**
+- typecheck ✓ · lint ✓ (0 erros; os 9 avisos já existiam) · test ✓ (2169) · build ✓.
+- **Roteiro SSR** (`scratchpad/e2e6.mjs`, `next dev` na 3201): 19 conferências, sem navegador (AGENTS §3.12), todas verdes antes e depois das correções:
+  - a lista abre para member e admin;
+  - os protocolos ativos aparecem e o cancelado não, no filtro padrão;
+  - **"Vence em 2 horas"** (alta, aberto há cerca de 6 h com a 1ª resposta dada) e **"Pausado · restavam…"** (aguardando cliente);
+  - **o filtro na URL sobrevive a recarregar**, e a busca por protocolo acha o cancelado;
+  - "Limpar filtros" aparece no filtro vazio;
+  - o detalhe abre com a mensagem da conversa na timeline;
+  - **o HTML da lista e do detalhe não traz `ai_triage` nem a chave idempotente**;
+  - número inválido ou inexistente leva à tela de 404;
+  - o menu tem "Tickets".
+
+  Nenhum e-mail de outro usuário no HTML, só o do próprio viewer, que já vem do cabeçalho.
+
+**Pendências / próximos passos:**
+- **O visual e os cliques ficam para o dono conferir no navegador:** sem Playwright pela regra do projeto, a verificação foi código, testes e HTML do servidor.
+- **Miniatura de anexo:** a foto é decodificada inteira, com a exibição limitada a `max-h-48`. A variante `thumb` na rota do anexo é backlog; a revisão classificou o risco como aceito.
+- **Filtro de fila:** com o catálogo indisponível, ele oferece só "Todas" e "Sem fila", sem aviso. Isso é anterior ao PR 4 e não foi corrigido.
+- **Duplicação aceita:** `postTicketAction` da lista e `useTicketMutation` do detalhe são 2 usos. No 3º (Início ou chat, PR 5), vale extrair.
+- **PR 5:** chat (chip do ticket em foco, abrir ticket, trocar foco, Assumir) e Início (Minha fila / Não atribuídos).
+
+**Armadilhas descobertas:**
+- **`notFound()` numa página com `loading.tsx` responde 200:** o streaming já começou, e a tela de 404 vem no corpo, com `noindex` e o marcador `NEXT_HTTP_ERROR_FALLBACK;404`. Teste pelo corpo, não pelo status. A ficha de Clientes é igual.
+- **O selo de SLA arredonda para baixo:** 1h59m59s é "1 hora". Para provar "Vence em 2 horas", recue um pouco menos que 6 h.
+- **`router.refresh()` nos testes de componente:** o `RefreshGate` (Suspense com `use()` de uma promise pendente) imita a releitura do Next para provar botões travados durante o refresh.
+
 ## [2026-09-26] Fase 4 · PR 3 — chat e conexão com ticket, comentários, anexos e catálogos de admin
 
 **Agente/Modelo:** Claude Opus 5.5 (4 frentes em paralelo; revisão adversarial em 4 frentes com verificação independente; correções; migration aprovada pelo dono; roteiro ponta a ponta)

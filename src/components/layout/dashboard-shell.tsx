@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { AppHeader, type AppHeaderUser } from "@/components/layout/app-header";
 import { NavigationDrawer } from "@/components/layout/navigation-drawer";
 import { InstallPwaBanner } from "@/components/pwa/install-pwa-banner";
+import { getActiveNavHref } from "@/config/nav-active";
 import { getDashboardNavigation, getMobileTabs, type NavItem } from "@/config/navigation";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
@@ -41,8 +42,10 @@ export function DashboardShell({ children, viewer }: { children: React.ReactNode
   // quatro primeiros da lista. Ver o comentário de `mobileTabHrefs`.
   const mobileTabs = useMemo(() => getMobileTabs(viewer.role), [viewer.role]);
   const showMobileNavigation = mobileTabs.length > 1;
-  const isActive = (href: string) => pathname === href || (href !== "/app" && pathname.startsWith(href));
-  const currentSection = [...navItems].sort((a, b) => b.href.length - a.href.length).find((item) => isActive(item.href))?.title ?? siteConfig.name;
+  // Um item só acende por vez, decidido sobre a lista inteira (config/nav-active.ts).
+  const activeHref = getActiveNavHref(pathname, navItems.map((item) => item.href));
+  const isActive = (href: string) => href === activeHref;
+  const currentSection = navItems.find((item) => item.href === activeHref)?.title ?? siteConfig.name;
   // O menu completo lista tudo menos o Perfil, que tem lugar próprio no rodapé
   // da gaveta, junto de "Sair".
   const menuItems = navItems.filter((item) => item.href !== "/app/perfil");

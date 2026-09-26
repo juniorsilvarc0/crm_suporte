@@ -22,6 +22,7 @@ import {
   type AttachmentBatchProgress,
   type AttachmentDraft,
 } from "@/features/chat/lib/attachment-batch";
+import { formatBytes } from "@/lib/formatters/bytes";
 import { cn } from "@/lib/utils";
 
 /**
@@ -373,12 +374,6 @@ function grow(element: HTMLTextAreaElement) {
   element.style.height = "auto";
   const lineHeight = parseFloat(getComputedStyle(element).lineHeight) || 20;
   element.style.height = `${Math.min(element.scrollHeight, lineHeight * 4)}px`;
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function describeKind(file: File): string {

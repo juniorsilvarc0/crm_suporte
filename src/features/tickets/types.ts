@@ -109,9 +109,15 @@ export type TicketListItem = TicketSlaFields & {
   assignee: TicketUserRef | null;
 };
 
+// A categoria atual do ticket, arquivada inclusive: o catálogo só traz as
+// ativas, e o detalhe mostra o nome da que o ticket já tem.
+export type TicketCategoryRef = Pick<TicketCategoryOption, "id" | "name" | "archived_at">;
+
 // Página /app/tickets/[number]: a linha da lista mais o que só o detalhe usa
 // (descrição, ids editáveis do PATCH, contrato e quem abriu). `creator` nulo =
 // aberto por integração ou por usuário já removido (`source` diz qual).
+// `in_focus` = é o ticket em foco da conversa (chat_conversations.active_ticket_id):
+// o "Responder no WhatsApp" só troca o foco quando ele não está.
 export type TicketDetail = TicketListItem & {
   description: string | null;
   contact_id: string;
@@ -123,7 +129,14 @@ export type TicketDetail = TicketListItem & {
   first_ai_response_at: string | null;
   contract: TicketContractRef | null;
   creator: { id: string; name: string } | null;
+  category: TicketCategoryRef | null;
+  in_focus: boolean;
 };
+
+// A equipe na tela do ticket (getAssignableUsers): só o que a tela mostra,
+// nunca e-mail nem papel. Inativo vem para dar nome à trilha e ao responsável
+// atual, e nunca é oferecido para atribuir.
+export type TicketTeamMember = TicketUserRef & { is_active: boolean };
 
 // Comentário interno do ticket. Apagado não guarda texto: `body` nulo ⇔
 // `deleted_at` preenchido (check ticket_comments_body_check). Sem autor = usuário
