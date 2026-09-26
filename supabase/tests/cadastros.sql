@@ -132,11 +132,13 @@ begin
     insert into r values (sqlstate = '23514' and v_c = 'products_color_format_check',
       'P01b cor fora da paleta', sqlstate || ' ' || v_c);
   end;
+  -- A Fase 4 (20260925120900) abre UPDATE de fila para a tela de Configurações
+  -- (4f; ver T93 em tests/tickets.sql). O que continua fechado é apagar.
   begin
-    update public.products set name = 'ERP 2' where id = v_erp;
-    insert into r values (false, 'P01c fila não é editada nesta fase', 'passou');
+    delete from public.products where id = v_erp;
+    insert into r values (false, 'P01c fila não é apagada', 'passou');
   exception when others then
-    insert into r values (sqlstate = '42501', 'P01c fila não é editada nesta fase', sqlstate || ' ' || sqlerrm);
+    insert into r values (sqlstate = '42501', 'P01c fila não é apagada', sqlstate || ' ' || sqlerrm);
   end;
 
   insert into public.products (name) values ('Fila Teste Alfa') returning id into v_p1;

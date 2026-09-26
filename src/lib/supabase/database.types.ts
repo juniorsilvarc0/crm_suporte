@@ -65,16 +65,28 @@ isOneToOne: false
                   ]
                 },"chat_conversations": {
                   Row: {
-                    "archived_at": string | null,"contact_avatar_url": string | null,"contact_id": string,"contact_name": string | null,"contact_phone": string | null,"created_at": string,"external_id": string,"id": string,"integration_id": string | null,"last_message_at": string | null,"last_message_preview": string | null,"metadata": NonNullable<Json>,"pinned_at": string | null,"removed_at": string | null,"status": string,"unread_count": number,"updated_at": string
+                    "active_ticket_id": string | null,"archived_at": string | null,"contact_avatar_url": string | null,"contact_id": string,"contact_name": string | null,"contact_phone": string | null,"created_at": string,"external_id": string,"id": string,"integration_id": string | null,"last_message_at": string | null,"last_message_preview": string | null,"metadata": NonNullable<Json>,"pinned_at": string | null,"removed_at": string | null,"status": string,"unread_count": number,"updated_at": string
                   }
                   Insert: {
-                    "archived_at"?: string | null,"contact_avatar_url"?: string | null,"contact_id": string,"contact_name"?: string | null,"contact_phone"?: string | null,"created_at"?: string,"external_id": string,"id"?: string,"integration_id"?: string | null,"last_message_at"?: string | null,"last_message_preview"?: string | null,"metadata"?: NonNullable<Json>,"pinned_at"?: string | null,"removed_at"?: string | null,"status"?: string,"unread_count"?: number,"updated_at"?: string
+                    "active_ticket_id"?: string | null,"archived_at"?: string | null,"contact_avatar_url"?: string | null,"contact_id": string,"contact_name"?: string | null,"contact_phone"?: string | null,"created_at"?: string,"external_id": string,"id"?: string,"integration_id"?: string | null,"last_message_at"?: string | null,"last_message_preview"?: string | null,"metadata"?: NonNullable<Json>,"pinned_at"?: string | null,"removed_at"?: string | null,"status"?: string,"unread_count"?: number,"updated_at"?: string
                   }
                   Update: {
-                    "archived_at"?: string | null,"contact_avatar_url"?: string | null,"contact_id"?: string,"contact_name"?: string | null,"contact_phone"?: string | null,"created_at"?: string,"external_id"?: string,"id"?: string,"integration_id"?: string | null,"last_message_at"?: string | null,"last_message_preview"?: string | null,"metadata"?: NonNullable<Json>,"pinned_at"?: string | null,"removed_at"?: string | null,"status"?: string,"unread_count"?: number,"updated_at"?: string
+                    "active_ticket_id"?: string | null,"archived_at"?: string | null,"contact_avatar_url"?: string | null,"contact_id"?: string,"contact_name"?: string | null,"contact_phone"?: string | null,"created_at"?: string,"external_id"?: string,"id"?: string,"integration_id"?: string | null,"last_message_at"?: string | null,"last_message_preview"?: string | null,"metadata"?: NonNullable<Json>,"pinned_at"?: string | null,"removed_at"?: string | null,"status"?: string,"unread_count"?: number,"updated_at"?: string
                   }
                   Relationships: [
                     {
+      foreignKeyName: "chat_conversations_active_ticket_fkey"
+      columns: ["active_ticket_id","id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id","conversation_id"]
+    },{
+      foreignKeyName: "chat_conversations_active_ticket_fkey"
+      columns: ["active_ticket_id","id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id","conversation_id"]
+    },{
       foreignKeyName: "chat_conversations_contact_id_fkey"
       columns: ["contact_id"]
 isOneToOne: false
@@ -103,13 +115,13 @@ isOneToOne: false
                   ]
                 },"chat_messages": {
                   Row: {
-                    "content": string | null,"conversation_id": string,"created_at": string,"delivery_status": string,"direction": string,"external_id": string | null,"id": string,"is_deleted": boolean,"media_bucket": string | null,"media_key": string | null,"media_mime_type": string | null,"media_url": string | null,"metadata": NonNullable<Json>,"quoted_message_id": string | null,"sender_type": string,"sent_by_user_id": string | null,"type": string
+                    "content": string | null,"conversation_id": string,"created_at": string,"delivery_status": string,"direction": string,"external_id": string | null,"id": string,"is_deleted": boolean,"media_bucket": string | null,"media_key": string | null,"media_mime_type": string | null,"media_url": string | null,"metadata": NonNullable<Json>,"quoted_message_id": string | null,"sender_type": string,"sent_by_user_id": string | null,"ticket_id": string | null,"type": string
                   }
                   Insert: {
-                    "content"?: string | null,"conversation_id": string,"created_at"?: string,"delivery_status"?: string,"direction": string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type": string,"sent_by_user_id"?: string | null,"type"?: string
+                    "content"?: string | null,"conversation_id": string,"created_at"?: string,"delivery_status"?: string,"direction": string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type": string,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
                   }
                   Update: {
-                    "content"?: string | null,"conversation_id"?: string,"created_at"?: string,"delivery_status"?: string,"direction"?: string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type"?: string,"sent_by_user_id"?: string | null,"type"?: string
+                    "content"?: string | null,"conversation_id"?: string,"created_at"?: string,"delivery_status"?: string,"direction"?: string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type"?: string,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
                   }
                   Relationships: [
                     {
@@ -130,6 +142,18 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "app_users"
       referencedColumns: ["id"]
+    },{
+      foreignKeyName: "chat_messages_ticket_fkey"
+      columns: ["ticket_id","conversation_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id","conversation_id"]
+    },{
+      foreignKeyName: "chat_messages_ticket_fkey"
+      columns: ["ticket_id","conversation_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id","conversation_id"]
     }
                   ]
                 },"chat_quick_replies": {
@@ -309,6 +333,19 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"sla_policies": {
+                  Row: {
+                    "first_response_minutes": number,"priority": string,"rank": number,"resolution_minutes": number,"updated_at": string,"warn_pct": number
+                  }
+                  Insert: {
+                    "first_response_minutes": number,"priority": string,"rank": number,"resolution_minutes": number,"updated_at"?: string,"warn_pct"?: number
+                  }
+                  Update: {
+                    "first_response_minutes"?: number,"priority"?: string,"rank"?: number,"resolution_minutes"?: number,"updated_at"?: string,"warn_pct"?: number
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"support_contract_products": {
                   Row: {
                     "contract_id": string,"created_at": string,"product_id": string
@@ -391,6 +428,284 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"ticket_attachments": {
+                  Row: {
+                    "bucket": string,"created_at": string,"file_name": string,"id": string,"mime": string,"object_key": string,"sha256": string,"size_bytes": number,"ticket_id": string,"uploaded_by_token_id": string | null,"uploaded_by_user_id": string | null
+                  }
+                  Insert: {
+                    "bucket"?: string,"created_at"?: string,"file_name": string,"id"?: string,"mime": string,"object_key": string,"sha256": string,"size_bytes": number,"ticket_id": string,"uploaded_by_token_id"?: string | null,"uploaded_by_user_id"?: string | null
+                  }
+                  Update: {
+                    "bucket"?: string,"created_at"?: string,"file_name"?: string,"id"?: string,"mime"?: string,"object_key"?: string,"sha256"?: string,"size_bytes"?: number,"ticket_id"?: string,"uploaded_by_token_id"?: string | null,"uploaded_by_user_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_attachments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_attachments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_attachments_uploaded_by_token_id_fkey"
+      columns: ["uploaded_by_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_attachments_uploaded_by_user_id_fkey"
+      columns: ["uploaded_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_categories": {
+                  Row: {
+                    "archived_at": string | null,"created_at": string,"id": string,"name": string,"parent_id": string | null,"product_id": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "archived_at"?: string | null,"created_at"?: string,"id"?: string,"name": string,"parent_id"?: string | null,"product_id"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "archived_at"?: string | null,"created_at"?: string,"id"?: string,"name"?: string,"parent_id"?: string | null,"product_id"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_categories_parent_id_fkey"
+      columns: ["parent_id"]
+isOneToOne: false
+      referencedRelation: "ticket_categories"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_categories_product_id_fkey"
+      columns: ["product_id"]
+isOneToOne: false
+      referencedRelation: "products"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_comments": {
+                  Row: {
+                    "author_token_id": string | null,"author_user_id": string | null,"body": string | null,"created_at": string,"deleted_at": string | null,"edited_at": string | null,"id": string,"ticket_id": string
+                  }
+                  Insert: {
+                    "author_token_id"?: string | null,"author_user_id"?: string | null,"body"?: string | null,"created_at"?: string,"deleted_at"?: string | null,"edited_at"?: string | null,"id"?: string,"ticket_id": string
+                  }
+                  Update: {
+                    "author_token_id"?: string | null,"author_user_id"?: string | null,"body"?: string | null,"created_at"?: string,"deleted_at"?: string | null,"edited_at"?: string | null,"id"?: string,"ticket_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_comments_author_token_id_fkey"
+      columns: ["author_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_comments_author_user_id_fkey"
+      columns: ["author_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_comments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_comments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_events": {
+                  Row: {
+                    "actor_token_id": string | null,"actor_type": string,"actor_user_id": string | null,"event_key": string | null,"event_type": string,"id": string,"metadata": NonNullable<Json>,"occurred_at": string,"seq": number,"ticket_id": string
+                  }
+                  Insert: {
+                    "actor_token_id"?: string | null,"actor_type": string,"actor_user_id"?: string | null,"event_key"?: string | null,"event_type": string,"id"?: string,"metadata"?: NonNullable<Json>,"occurred_at"?: string,"seq"?: number,"ticket_id": string
+                  }
+                  Update: {
+                    "actor_token_id"?: string | null,"actor_type"?: string,"actor_user_id"?: string | null,"event_key"?: string | null,"event_type"?: string,"id"?: string,"metadata"?: NonNullable<Json>,"occurred_at"?: string,"seq"?: number,"ticket_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_events_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_events_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_status_history": {
+                  Row: {
+                    "actor_token_id": string | null,"actor_type": string,"actor_user_id": string | null,"from_status": string | null,"id": string,"occurred_at": string,"reason": string | null,"seq": number,"ticket_id": string,"to_status": string
+                  }
+                  Insert: {
+                    "actor_token_id"?: string | null,"actor_type": string,"actor_user_id"?: string | null,"from_status"?: string | null,"id"?: string,"occurred_at"?: string,"reason"?: string | null,"seq"?: number,"ticket_id": string,"to_status": string
+                  }
+                  Update: {
+                    "actor_token_id"?: string | null,"actor_type"?: string,"actor_user_id"?: string | null,"from_status"?: string | null,"id"?: string,"occurred_at"?: string,"reason"?: string | null,"seq"?: number,"ticket_id"?: string,"to_status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_status_history_from_fkey"
+      columns: ["from_status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    },{
+      foreignKeyName: "ticket_status_history_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_status_history_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_status_history_to_fkey"
+      columns: ["to_status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    }
+                  ]
+                },"ticket_status_transitions": {
+                  Row: {
+                    "from_status": string,"to_status": string
+                  }
+                  Insert: {
+                    "from_status": string,"to_status": string
+                  }
+                  Update: {
+                    "from_status"?: string,"to_status"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_status_transitions_from_fkey"
+      columns: ["from_status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    },{
+      foreignKeyName: "ticket_status_transitions_to_fkey"
+      columns: ["to_status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    }
+                  ]
+                },"ticket_statuses": {
+                  Row: {
+                    "color": string,"is_terminal": boolean,"key": string,"label": string,"position": number,"sla_mode": string,"updated_at": string
+                  }
+                  Insert: {
+                    "color": string,"is_terminal": boolean,"key": string,"label": string,"position": number,"sla_mode": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "color"?: string,"is_terminal"?: boolean,"key"?: string,"label"?: string,"position"?: number,"sla_mode"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"tickets": {
+                  Row: {
+                    "ai_triage": Json | null,"assigned_to_user_id": string | null,"category_id": string | null,"closed_at": string | null,"contact_id": string,"contract_id": string | null,"conversation_id": string,"created_at": string,"created_by_token_id": string | null,"created_by_user_id": string | null,"customer_id": string | null,"description": string | null,"external_id": string | null,"first_ai_response_at": string | null,"first_responded_at": string | null,"first_response_breached_at": string | null,"first_response_due_at": string,"id": string,"idempotency_key": string | null,"number": number,"priority": string,"product_id": string | null,"reopened_count": number,"resolution_breached_at": string | null,"resolution_due_at": string,"resolved_at": string | null,"search_title": string | null,"sla_first_response_minutes": number,"sla_paused_at": string | null,"sla_paused_seconds": number,"sla_resolution_minutes": number,"sla_warn_pct": number,"source": string,"status": string,"title": string,"updated_at": string,"version": number
+                  }
+                  Insert: {
+                    "ai_triage"?: Json | null,"assigned_to_user_id"?: string | null,"category_id"?: string | null,"closed_at"?: string | null,"contact_id": string,"contract_id"?: string | null,"conversation_id": string,"created_at"?: string,"created_by_token_id"?: string | null,"created_by_user_id"?: string | null,"customer_id"?: string | null,"description"?: string | null,"external_id"?: string | null,"first_ai_response_at"?: string | null,"first_responded_at"?: string | null,"first_response_breached_at"?: string | null,"first_response_due_at": string,"id"?: string,"idempotency_key"?: string | null,"number"?: never,"priority": string,"product_id"?: string | null,"reopened_count"?: number,"resolution_breached_at"?: string | null,"resolution_due_at": string,"resolved_at"?: string | null,"search_title"?: never,"sla_first_response_minutes": number,"sla_paused_at"?: string | null,"sla_paused_seconds"?: number,"sla_resolution_minutes": number,"sla_warn_pct": number,"source": string,"status"?: string,"title": string,"updated_at"?: string,"version"?: number
+                  }
+                  Update: {
+                    "ai_triage"?: Json | null,"assigned_to_user_id"?: string | null,"category_id"?: string | null,"closed_at"?: string | null,"contact_id"?: string,"contract_id"?: string | null,"conversation_id"?: string,"created_at"?: string,"created_by_token_id"?: string | null,"created_by_user_id"?: string | null,"customer_id"?: string | null,"description"?: string | null,"external_id"?: string | null,"first_ai_response_at"?: string | null,"first_responded_at"?: string | null,"first_response_breached_at"?: string | null,"first_response_due_at"?: string,"id"?: string,"idempotency_key"?: string | null,"number"?: never,"priority"?: string,"product_id"?: string | null,"reopened_count"?: number,"resolution_breached_at"?: string | null,"resolution_due_at"?: string,"resolved_at"?: string | null,"search_title"?: never,"sla_first_response_minutes"?: number,"sla_paused_at"?: string | null,"sla_paused_seconds"?: number,"sla_resolution_minutes"?: number,"sla_warn_pct"?: number,"source"?: string,"status"?: string,"title"?: string,"updated_at"?: string,"version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "tickets_assigned_to_user_id_fkey"
+      columns: ["assigned_to_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_category_id_fkey"
+      columns: ["category_id"]
+isOneToOne: false
+      referencedRelation: "ticket_categories"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_contact_id_fkey"
+      columns: ["contact_id"]
+isOneToOne: false
+      referencedRelation: "contacts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_contract_id_fkey"
+      columns: ["contract_id"]
+isOneToOne: false
+      referencedRelation: "support_contracts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_conversation_id_fkey"
+      columns: ["conversation_id"]
+isOneToOne: false
+      referencedRelation: "chat_conversations"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_created_by_token_id_fkey"
+      columns: ["created_by_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_priority_fkey"
+      columns: ["priority"]
+isOneToOne: false
+      referencedRelation: "sla_policies"
+      referencedColumns: ["priority"]
+    },{
+      foreignKeyName: "tickets_product_id_fkey"
+      columns: ["product_id"]
+isOneToOne: false
+      referencedRelation: "products"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_status_fkey"
+      columns: ["status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    }
+                  ]
                 },"user_notes": {
                   Row: {
                     "color": string,"content": string,"created_at": string,"id": string,"kind": string,"position": number,"title": string | null,"updated_at": string,"user_id": string
@@ -413,7 +728,74 @@ isOneToOne: false
                 }
           }
           Views: {
-            [_ in never]: never
+            "ticket_queue": {
+                  Row: {
+                    "assigned_to_user_id": string | null,"category_id": string | null,"closed_at": string | null,"contact_id": string | null,"contract_id": string | null,"conversation_id": string | null,"created_at": string | null,"created_by_user_id": string | null,"customer_id": string | null,"description": string | null,"first_ai_response_at": string | null,"first_responded_at": string | null,"first_response_due_at": string | null,"first_response_overdue": boolean | null,"id": string | null,"is_terminal": boolean | null,"last_inbound_at": string | null,"next_due_at": string | null,"number": number | null,"priority": string | null,"priority_rank": number | null,"product_id": string | null,"reopened_count": number | null,"resolution_due_at": string | null,"resolution_overdue": boolean | null,"resolved_at": string | null,"search_text": string | null,"sla_at_risk": boolean | null,"sla_breached": boolean | null,"sla_first_response_minutes": number | null,"sla_mode": string | null,"sla_paused_at": string | null,"sla_paused_seconds": number | null,"sla_resolution_minutes": number | null,"sla_warn_pct": number | null,"source": string | null,"status": string | null,"title": string | null,"updated_at": string | null,"version": number | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "tickets_assigned_to_user_id_fkey"
+      columns: ["assigned_to_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_category_id_fkey"
+      columns: ["category_id"]
+isOneToOne: false
+      referencedRelation: "ticket_categories"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_contact_id_fkey"
+      columns: ["contact_id"]
+isOneToOne: false
+      referencedRelation: "contacts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_contract_id_fkey"
+      columns: ["contract_id"]
+isOneToOne: false
+      referencedRelation: "support_contracts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_conversation_id_fkey"
+      columns: ["conversation_id"]
+isOneToOne: false
+      referencedRelation: "chat_conversations"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_priority_fkey"
+      columns: ["priority"]
+isOneToOne: false
+      referencedRelation: "sla_policies"
+      referencedColumns: ["priority"]
+    },{
+      foreignKeyName: "tickets_product_id_fkey"
+      columns: ["product_id"]
+isOneToOne: false
+      referencedRelation: "products"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "tickets_status_fkey"
+      columns: ["status"]
+isOneToOne: false
+      referencedRelation: "ticket_statuses"
+      referencedColumns: ["key"]
+    }
+                  ]
+                }
           }
           Functions: {
             "assert_contract_refs":
@@ -421,6 +803,9 @@ isOneToOne: false
                            },
 "assert_security_baseline":
 { Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"assert_ticket_refs":
+{ Args: { "p_category_id": string,"p_current_category_id": string,"p_current_product_id": string,"p_product_id": string }; Returns: undefined
                            },
 "clear_chat_conversation":
 { Args: { "p_conversation_id": string }; Returns: Json
@@ -432,6 +817,9 @@ isOneToOne: false
                            },
 "create_support_contract":
 { Args: { "p_actor_id": string,"p_billing_day": number,"p_customer_id": string,"p_ends_on"?: string,"p_monthly_amount": number,"p_plan_id"?: string,"p_product_ids": (string)[],"p_starts_on": string,"p_status": string }; Returns: string
+                           },
+"create_ticket":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_ai_triage"?: Json,"p_assigned_to_user_id"?: string,"p_category_id"?: string,"p_conversation_id": string,"p_description"?: string,"p_external_id"?: string,"p_idempotency_key"?: string,"p_priority"?: string,"p_product_id"?: string,"p_set_active"?: boolean,"p_source"?: string,"p_status"?: string,"p_take_over"?: boolean,"p_title": string }; Returns: Json
                            },
 "delete_app_environment_variable":
 { Args: { "p_name": string }; Returns: boolean
@@ -470,6 +858,9 @@ isOneToOne: false
 "require_active_admin":
 { Args: { "p_actor_id": string }; Returns: undefined
                            },
+"require_ticket_actor":
+{ Args: { "p_token_id": string,"p_user_id": string }; Returns: string
+                           },
 "reset_app_user_password":
 { Args: { "p_actor_id": string,"p_id": string,"p_must_change_password"?: boolean,"p_password": string }; Returns: undefined
                            },
@@ -484,6 +875,79 @@ isOneToOne: false
                            },
 "set_support_contract_status":
 { Args: { "p_actor_id": string,"p_contract_id": string,"p_ends_on"?: string,"p_status": string }; Returns: Json
+                           },
+"ticket_apply_take_over":
+{ Args: { "p_actor_user_id": string,"p_ticket_id": string }; Returns: boolean
+                           },
+"ticket_apply_transition":
+{ Args: { "p_actor_token_id": string,"p_actor_type": string,"p_actor_user_id": string,"p_reason": string,"p_ticket": Database["public"]['Tables']["tickets"]['Row'],"p_to": string }; Returns: {
+              "ai_triage": Json | null,
+"assigned_to_user_id": string | null,
+"category_id": string | null,
+"closed_at": string | null,
+"contact_id": string,
+"contract_id": string | null,
+"conversation_id": string,
+"created_at": string,
+"created_by_token_id": string | null,
+"created_by_user_id": string | null,
+"customer_id": string | null,
+"description": string | null,
+"external_id": string | null,
+"first_ai_response_at": string | null,
+"first_responded_at": string | null,
+"first_response_breached_at": string | null,
+"first_response_due_at": string,
+"id": string,
+"idempotency_key": string | null,
+"number": number,
+"priority": string,
+"product_id": string | null,
+"reopened_count": number,
+"resolution_breached_at": string | null,
+"resolution_due_at": string,
+"resolved_at": string | null,
+"search_title": string | null,
+"sla_first_response_minutes": number,
+"sla_paused_at": string | null,
+"sla_paused_seconds": number,
+"sla_resolution_minutes": number,
+"sla_warn_pct": number,
+"source": string,
+"status": string,
+"title": string,
+"updated_at": string,
+"version": number
+            }
+                          SetofOptions: {
+        from: "*"
+        to: "tickets"
+        isOneToOne: true
+        isSetofReturn: false
+      } },
+"ticket_assign":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_assignee_id"?: string,"p_expected_version": number,"p_ticket_id": string }; Returns: Json
+                           },
+"ticket_current_contract":
+{ Args: { "p_customer_id": string }; Returns: string
+                           },
+"ticket_record_event":
+{ Args: { "p_actor_token_id": string,"p_actor_type": string,"p_actor_user_id": string,"p_event_key"?: string,"p_event_type": string,"p_metadata"?: Json,"p_ticket_id": string }; Returns: undefined
+                           },
+"ticket_set_active":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_conversation_id": string,"p_ticket_id"?: string }; Returns: Json
+                           },
+"ticket_summary":
+{ Args: { "p_ticket_id": string }; Returns: Json
+                           },
+"ticket_take_over":
+{ Args: { "p_actor_user_id": string,"p_reassign"?: boolean,"p_ticket_id": string }; Returns: Json
+                           },
+"ticket_transition":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_expected_version": number,"p_reason"?: string,"p_ticket_id": string,"p_to": string }; Returns: Json
+                           },
+"ticket_update":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_expected_version": number,"p_patch": Json,"p_ticket_id": string }; Returns: Json
                            },
 "update_app_user":
 { Args: { "p_actor_id": string,"p_apelido_atendimento"?: string,"p_assinar_mensagens"?: boolean,"p_avatar_color": string,"p_avatar_url": string,"p_email": string,"p_id": string,"p_is_active": boolean,"p_name": string,"p_role": string }; Returns: {
