@@ -68,6 +68,39 @@ describe("ações de conversa", () => {
     expect(await response.json()).toMatchObject({ cleared: 1, conversation });
   });
 
+  it("recusa limpar conversa com ticket com 409, sem repassar o erro do banco", async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: {
+        message: "CONVERSATION_HAS_TICKETS",
+        code: "P0001",
+        details: "A conversa tem ticket: limpar apagaria o histórico do atendimento.",
+        hint: null,
+      },
+    });
+
+    const response = await DELETE(request("DELETE", "?mode=clear"), params);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "A conversa tem ticket; limpar apagaria o histórico do atendimento.",
+    });
+  });
+
+  it("outro erro ao limpar continua 500 genérico", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { message: "canceling statement due to statement timeout", code: "57014" },
+    });
+
+    const response = await DELETE(request("DELETE", "?mode=clear"), params);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Internal error" });
+    consoleError.mockRestore();
+  });
+
   it("remove a conversa da lista sem apagar a pessoa nem as mensagens", async () => {
     const updateConversation = vi.fn(() => ({
       eq: vi.fn(() => ({
