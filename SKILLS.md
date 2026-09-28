@@ -27,7 +27,7 @@ Curadoria filtrada pela **stack real deste projeto**. Normativo: leia antes de i
 | **Datas** | **date-fns** + `react-day-picker` | |
 | **Testes** | **Vitest + Testing Library + jsdom** · testes de SQL em `supabase/tests/` | `pnpm test`; `./scripts/db-local-test.sh` no banco local. CI: job `qualidade` (typecheck + lint + test + build) e job `banco` (baseline do zero, reaplicar no-op, testes de SQL, tipos gerados sem diff). |
 | **Package manager** | **pnpm 10.33** | Não é npm nem yarn. |
-| **Deploy** | **VPS + Docker Compose + Traefik** | Há `.vercel/` histórico, mas **produção não é Vercel**. |
+| **Deploy** | **VPS compartilhada + Docker Compose + nginx do host** (`deploy/`) | Há `.vercel/` histórico, mas **produção não é Vercel**. |
 
 ### Arquitetura real
 
@@ -148,7 +148,7 @@ Há também o subagente **`engenheiro-de-testes`** (`.claude/agents/`) para trab
 | `prisma-expert`, `drizzle-orm-expert`, ORMs em geral | Sem ORM — `supabase-js` + SQL nas migrations. |
 | `jest-skill` | É **Vitest**. |
 | `playwright-skill`, `cypress-skill`, `webapp-testing`, `browser-testing-with-devtools` | AGENTS §3.12 proíbe teste de browser. Verificação é typecheck + lint + vitest + build. |
-| `vercel-deployment`, `deploy-to-vercel`, `vercel-cli-with-tokens` | Produção é **VPS + Docker Compose + Traefik**. A pasta `.vercel/` é histórica. |
+| `vercel-deployment`, `deploy-to-vercel`, `vercel-cli-with-tokens` | Produção é **VPS + Docker Compose + nginx do host** (`deploy/README.md`). A pasta `.vercel/` é histórica. |
 | Skills que assumem **npm** ou **yarn** | É **pnpm**. |
 | `stripe-integration`, `paypal-integration` | Não há gateway de pagamento integrado. O módulo financeiro registra contratos/pagamentos/despesas, não processa cobrança. |
 

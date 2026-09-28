@@ -189,6 +189,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 | Formulários | react-hook-form + zod | Validação compartilhada entre form e rota | 2026-08-06 |
 | Testes | Vitest + Testing Library; **sem teste de browser** | Verificação por typecheck + lint + unidade + build | 2026-08-06 |
 | Entrega | VPS + Docker Compose atrás do Traefik | Controle de custo e de dado; **não é Vercel** | 2026-08-06 |
+| Produção | VPS compartilhada, stack isolado `crmsup` atrás do **nginx do host** (não Traefik); app em `ticbox.spincode.com.br`, gateway em `api.ticbox.spincode.com.br` | A VPS escolhida já tem nginx na borda; host separado para a API porque a mídia de terceiros não pode ser servida na origem do app | 2026-09-28 |
 
 ## 12. Infraestrutura
 

@@ -231,7 +231,7 @@ Os prazos são ordem de grandeza.
 | **7 · Agenda + Follow-ups** | Telas recuperadas da tag local `legado-clinica` (`agenda-month-view`, `agenda-time-grid`, `agenda-list-view`, `appointment-dialog`, `followups-table`, `novo-followup-dialog`), sem modo venda, sem promoção a paciente, com cor por tipo e vínculo ao ticket | Do ticket se agenda uma visita e um retorno; os dois aparecem na timeline, e o retorno vencido fica destacado | 5–6 |
 | **8 · Financeiro** (paralela à 7) | Contratos (admin), mensalidades e despesas a partir do WIP (`finance-overview-cards`, `finance-entries-list`, `expense-form-dialog`), **com `requireAdminPage` + `requireDashboardAdmin`** (o WIP deixa um member gravar pela API) | Gerar a mesma competência 2× cria 0 linhas; um member recebe 403 na API | 4–5 |
 | **9 · Métricas de suporte** | `dashboard/components/kpi-band.tsx`, `daily-chart` (abertos × resolvidos), `period-links`; backlog, SLA estourado, 1ª resposta, resolução, reabertos, IA × humano, por produto/cliente/analista | Todo número vem de consulta e tem lastro (UI.md) | 3–4 |
-| **10 · Produção** — **bloqueada** até você decidir hospedagem e domínio | Seção G + **política de privacidade definitiva** (revisão jurídica; hoje a página é um aviso provisório) | — | 3–4 |
+| **10 · Produção** — **destravada em 2026-09-28**: VPS compartilhada, nginx do host, `ticbox.spincode.com.br` + `api.ticbox.spincode.com.br`; infra em `deploy/` | Seção G + **política de privacidade definitiva** (revisão jurídica; hoje a página é um aviso provisório) | — | 3–4 |
 
 Total: ~55–70 dias de desenvolvimento. As Fases 4 e 5 correm em paralelo, e as Fases 7 e 8 também.
 
@@ -275,6 +275,8 @@ O SQL legado não é dropado: sai por arquivamento na Fase 2.
 - o worker roda dentro do `web` (`RUN_JOBS=1`).
 
 Para receber WhatsApp **real** em localhost, a uazapi precisa alcançar o webhook: é preciso um túnel HTTPS (ex.: `cloudflared`, `ngrok`). **Requer aprovação**: é ferramenta fora do repo. Sem túnel, a verificação usa fixtures de payload uazapi postadas no webhook local.
+
+**Decidido em 2026-09-28.** VPS compartilhada com outras stacks, **nginx do host** na borda (não Traefik), stack isolado `crmsup`; infra portada da origem em `deploy/` (runbook em `deploy/README.md`). O texto abaixo é o plano original, para o caso Traefik.
 
 **Depois (Fase 10, bloqueada).** Hospedagem e domínio ainda não foram decididos. Os scripts de deploy da origem não vieram para este repo; a Fase 10 os recupera de lá e parametriza. Se o CRM dividir a borda Traefik com outra stack:
 - nomes de **serviço** únicos (`crmsup-*`), não só `container_name`. Na rede compartilhada o nome do serviço vira alias de DNS, e um `http://gateway:80` de outra stack poderia resolver para o gateway novo;

@@ -27,6 +27,67 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-28] Fase 10 — infra de produção em `deploy/` (VPS compartilhada, nginx do host)
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Ter o necessário para subir o CRM em `https://ticbox.spincode.com.br` num stack Docker isolado, numa VPS que já roda outras aplicações de produção, sem tocar em nenhuma delas.
+
+**Arquivos alterados:** branch `feat/fase10-producao`.
+- `deploy/`, todos novos:
+  - `docker-compose.yml`, `gateway.conf`, `nginx-host.conf`;
+  - `crmsup.sh`, `backup.sh`, `publicar.sh`;
+  - `README.md`, o runbook.
+- AGENTS §0.3, §4.1 e §10; SKILLS; PRD (decisão "Produção"); PLANO (Fase 10 destravada); este PROGRESS.
+- **Nenhum arquivo de `src/` nem migration.**
+
+**O que foi feito:**
+- **Levantamento da VPS, só leitura.** Não há Traefik: o nginx do host segura 80/443, com um arquivo por site e certbot. Já existe outro Supabase lá (`supabase-*`, `realtime-dev.supabase-realtime`). As portas livres no loopback eram 3200 e 3201.
+- **Porte do deploy de produção da origem** (tag local `legado-clinica`). Tudo virou `crmsup`: projeto, containers `crmsup-*`, redes e volumes `crmsup_*`, tenant `realtime-dev.crmsup-realtime`.
+  - Sem Traefik: app e gateway publicam só em `127.0.0.1`.
+  - O banco e os serviços ficam numa rede `internal: true`; só web e gateway ficam também na `borda`.
+- **`crmsup.sh`**, a operação no servidor:
+  - `segredos` é idempotente, grava em arquivos 0600 e não imprime nada;
+  - `build` faz o rollback tag;
+  - `papeis` junta o bootstrap da origem com o `docker/db-init.sql`;
+  - `migrations` usa o mesmo livro-razão do `db-local-apply.sh` e **nunca** roda o seed;
+  - `admin` usa `create_app_user` com troca obrigatória de senha, que vai para um arquivo 0600;
+  - há ainda `subir`, `verificar` e `nginx http|https`.
+- **Borda com dois hosts:** `api.ticbox…` para o gateway, com `CSP: sandbox`. É a mesma separação da origem, contra XSS armazenado via mídia.
+- **Certificado por `certbot certonly --webroot`**, que não reescreve configuração de ninguém.
+
+**Decisões tomadas:**
+- Hospedagem, domínios e subir o `origin/main` atual (sem o PR 6) são decisões do dono.
+- **Um vhost novo é o único ponto compartilhado.** Não tem como evitar, porque o nginx do host é dono das portas 80/443.
+- **Label com o hash do `gateway.conf` em vez de comparar conteúdo.** Veja em Armadilhas por que a comparação falhava.
+- **O vhost sobrescreve o `X-Forwarded-For`** (`$remote_addr`), porque o `clientKeyFromRequest` do rate limit usa a 1ª entrada.
+
+**Verificação:** tudo no Mac, com o stack de produção inteiro no projeto `crmsup`, portas 3300/3301, depois derrubado com `down -v`.
+- **Roteiro do README seguido à risca:** 12 migrations com `baseline ok`. Reaplicar resulta em 0; o `admin` não duplica.
+- **`verificar`:** `anon` alcança 0 tabelas e 0 funções; `authenticated` só `chat_conversations` e `chat_messages`; 0 tabelas sem RLS; nenhuma porta fora do loopback.
+- **Fumaça:**
+  - app e login: `/login` 200 com HSTS; login com o admin do script; cookie com `Secure`; token do navegador emitido;
+  - gateway: raiz 404 e `CSP: sandbox`; `anon` recebe 42501; `authenticated` lê o chat e recebe 403 em `tickets`; o bucket `chat-media` existe;
+  - Realtime: **o evento de INSERT chega ao cliente**.
+- **Vault:** um segredo gravado **sobreviveu à recriação do container do banco**.
+- **Backup:** banco, mídia e chave; a chave no arquivo é idêntica à do container. A restauração num banco novo funcionou, e a trava contra restaurar em `postgres` também.
+- **`nginx -t` do vhost** no nginx 1.28, a mesma versão do servidor: ✓ em http e em https.
+- **Gateway:** recriado quando a config muda (inclusive editada no lugar) e intacto quando não muda.
+- **Checks do repo:** o `next build` passou dentro do `Dockerfile.production`. typecheck ✓ · lint ✓ (0 erros; os 9 avisos são antigos, em `verify-webhook.test.ts`) · test ✓ (2303).
+- **Não executados:** as skills `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. Fiz revisão manual e a varredura do diff atrás de IP, segredo e nomes da origem.
+
+**Pendências / próximos passos:**
+1. Merge deste PR (dono).
+2. 1ª instalação na VPS, **com autorização literal**, seguindo `deploy/README.md`. Antes, pedir o e-mail e o nome do 1º admin e a autorização para o cron de backup.
+3. **Cópia do backup fora da VPS**: requisito de go-live, ainda sem destino.
+4. A política de privacidade definitiva continua pendente (PLANO, Fase 10).
+
+**Armadilhas descobertas:**
+- **Chave raiz do Vault.** `vault.getkey_script` gera `/etc/postgresql-custom/pgsodium_root.key` no 1º boot, **dentro do container**. Nem o compose local nem o de produção da origem montavam esse diretório. Recriar o `db` apagaria a chave e deixaria ilegível todo segredo do Vault. Na produção, ela fica no volume `crmsup_db-config`. **No compose local o problema continua** (fora do escopo deste PR).
+- **O disco virtual do Docker Desktop encheu** (31 GB), e o daemon travou antes de dar "no space left on device". O `docker builder prune -af` liberou 10,7 GB.
+- **Arquivo montado e editado no lugar:** o container **vê** o conteúdo novo, mas o nginx segue com a config lida ao iniciar. Comparar o conteúdo dá "igual" e não recria. Por isso a troca pelo label.
+- **`command -v a b c`** no `sh` dessas imagens só imprime o primeiro nome. Não conclua que falta ferramenta por isso.
+- **Na VPS, nunca `docker … prune`:** apaga imagem e cache das outras stacks. No Mac é seguro para o cache.
+
 ## [2026-09-26] Fase 4 · PR 5 — ticket no chat (chip, painel, Novo ticket, Assumir) e fila no Início
 
 **Agente/Modelo:** Claude Opus 5.5 (workflow em 2 ondas: fundação do chat → Início ‖ painel → cabeçalho; revisão adversarial em 4 frentes; correções por agentes; migration aprovada pelo dono; roteiro ponta a ponta com Realtime)

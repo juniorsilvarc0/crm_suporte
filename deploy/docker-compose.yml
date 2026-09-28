@@ -1,0 +1,185 @@
+# ============================================================================
+# STACK DE PRODUÇÃO — CRM Suporte + Supabase auto-hospedado (projeto `crmsup`).
+#
+# Roda numa VPS COMPARTILHADA com outras stacks. O isolamento é por nome:
+# projeto `crmsup`, containers `crmsup-*`, redes `crmsup_*`, volumes `crmsup_*`.
+# Nada aqui referencia rede, volume ou container de outra stack.
+#
+# Use SEMPRE `deploy/crmsup.sh compose ...`, nunca `docker compose` cru: as
+# variáveis `${X:?}` fazem QUALQUER subcomando (ps, logs, exec) falhar sem os
+# --env-file. Operação completa em deploy/README.md.
+#
+# ⚠️ NENHUMA porta pública. App e gateway escutam só no loopback do host; a
+# borda é o nginx do host (deploy/nginx-host.conf), que termina o TLS.
+#
+# ⚠️ DOIS HOSTS, de propósito:
+#   APP_DOMAIN → web      API_DOMAIN → gateway (REST, Realtime, Storage)
+# Servir mídia enviada por terceiros na MESMA origem do app seria XSS
+# armazenado com sequestro de sessão: qualquer pessoa manda um HTML pelo
+# WhatsApp e ele roda com a sessão do operador.
+# ============================================================================
+name: crmsup
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.140
+    container_name: crmsup-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ausente no stack.env}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET:?ausente no stack.env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # ⚠️ CHAVE RAIZ DO VAULT. A imagem gera a chave em
+      # /etc/postgresql-custom/pgsodium_root.key no 1º boot. Fora de um volume
+      # ela morre com o container, e todo segredo do Vault (token da uazapi,
+      # chave da OpenAI) vira lixo ilegível no próximo `up` que recriar o db.
+      - db-config:/etc/postgresql-custom
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [interna]
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.14
+    container_name: crmsup-rest
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      # ⚠️ Só `public`. Ampliar aqui publica outro schema na internet.
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    networks: [interna]
+
+  realtime:
+    image: supabase/realtime:v2.102.3
+    # ⚠️ O prefixo `realtime-dev.` faz parte da configuração: o Realtime deriva
+    # o tenant do primeiro rótulo do Host, e o gateway manda este nome.
+    container_name: realtime-dev.crmsup-realtime
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      # supabase_admin, não `postgres` nem `authenticator` — é o que o oficial usa.
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: postgres
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?exatos 16 caracteres}
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?mínimo 64 caracteres}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+    # ⚠️ Não use o healthcheck oficial (`/api/tenants/realtime-dev/health`):
+    # nesta versão ele responde 403 mesmo com tudo certo. Conferimos só se o
+    # processo aceita HTTP — `curl` sem `-f` falha apenas sem conexão.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:4000/ || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 30s
+    networks: [interna]
+
+  storage:
+    image: supabase/storage-api:v1.60.4
+    container_name: crmsup-storage
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      rest: { condition: service_started }
+    environment:
+      ANON_KEY: ${ANON_KEY:?ausente no stack.env}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?ausente no stack.env}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      POSTGREST_URL: http://rest:3000
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      STORAGE_PUBLIC_URL: https://${API_DOMAIN:?ausente no stack.env}
+      # 50 MB, o mesmo teto do bucket `chat-media`; o efetivo é o menor dos dois.
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: crm-suporte
+      REGION: local
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      # Sem imgproxy no stack: ligar isto faria /render/image/* falhar.
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      # ⚠️ `127.0.0.1`, não `localhost`: o storage-api escuta só em IPv4 e
+      # `localhost` resolve primeiro para `::1` dentro do container.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5000/status || exit 1"]
+      interval: 15s
+      timeout: 8s
+      retries: 6
+      start_period: 30s
+    networks: [interna]
+
+  gateway:
+    image: nginx:1.29-alpine
+    container_name: crmsup-gateway
+    restart: unless-stopped
+    depends_on:
+      rest: { condition: service_started }
+      realtime: { condition: service_started }
+      storage: { condition: service_started }
+    ports:
+      - "127.0.0.1:${CRMSUP_GATEWAY_PORT:?ausente no stack.env}:80"
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    labels:
+      # Hash do gateway.conf, calculado pelo crmsup.sh. O nginx só lê a config
+      # ao iniciar: quando o arquivo muda, o label muda, e o `up` recria o
+      # gateway sozinho. Sem isto ele seguiria servindo a config antiga.
+      crmsup.gateway-conf-sha: ${CRMSUP_GATEWAY_CONF_SHA:?use deploy/crmsup.sh compose}
+    networks: [interna, borda]
+
+  web:
+    image: ${APP_IMAGE:?rode `crmsup.sh build` antes — ele grava o image.env}
+    container_name: crmsup-web
+    restart: unless-stopped
+    depends_on:
+      gateway: { condition: service_started }
+    env_file:
+      - ${APP_ENV_FILE:?ausente no stack.env}
+    ports:
+      - "127.0.0.1:${CRMSUP_WEB_PORT:?ausente no stack.env}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks: [interna, borda]
+
+volumes:
+  db-data:
+  db-config:
+  storage-data:
+
+networks:
+  # `internal: true` — sem rota para a internet. Banco, REST, Realtime e
+  # Storage não alcançam nem são alcançados de fora.
+  interna:
+    internal: true
+  # Só gateway e web: publicam porta no loopback, e o web sai para a uazapi,
+  # a OpenAI e o n8n.
+  borda: {}
