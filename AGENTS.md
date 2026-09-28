@@ -52,7 +52,7 @@ Se não puder preencher honestamente, **pare e pergunte** (§7). Depois execute 
 
 ### §0.3 Stack real (para não escrever código de versão/ferramenta errada)
 
-**Next.js 16.2.6 App Router** · **React 19.2.4** · **TypeScript `strict: true`** · **Tailwind v4** (CSS-first, `@theme` em `src/app/globals.css` — **não existe `tailwind.config.js`**) · UI **Base UI (`@base-ui/react`)** + primitivos próprios em `src/components/ui` · **react-hook-form + zod** · **Supabase** (service role no servidor; JWT `authenticated` curto só para o Realtime do chat) · **Vitest + Testing Library** · **pnpm 10.33** · Node ≥20 · deploy em **VPS com Docker Compose atrás do Traefik**. Detalhe completo e skills por área: [`SKILLS.md`](SKILLS.md).
+**Next.js 16.2.6 App Router** · **React 19.2.4** · **TypeScript `strict: true`** · **Tailwind v4** (CSS-first, `@theme` em `src/app/globals.css` — **não existe `tailwind.config.js`**) · UI **Base UI (`@base-ui/react`)** + primitivos próprios em `src/components/ui` · **react-hook-form + zod** · **Supabase** (service role no servidor; JWT `authenticated` curto só para o Realtime do chat) · **Vitest + Testing Library** · **pnpm 10.33** · Node ≥20 · deploy em **VPS compartilhada com Docker Compose atrás do nginx do host** ([`deploy/README.md`](deploy/README.md)). Detalhe completo e skills por área: [`SKILLS.md`](SKILLS.md).
 
 ### §0.4 Verificação e fechamento
 
@@ -212,6 +212,7 @@ src/lib/
   formatters/            # phone, date, money, numbers, percentage, clean-name
 src/config/              # navigation.ts (menu + allowedRoles), site.ts (marca)
 supabase/migrations/     # fonte da verdade do schema
+deploy/                  # produção: compose, gateway, vhost, crmsup.sh, backup (README lá)
 ```
 
 ### §4.2 Hotspots — leia antes de editar
@@ -348,7 +349,9 @@ Formatos canônicos de `PROGRESS.md` e `UI.md` estão nos próprios arquivos, no
 
 ## §10. Operação e produção
 
-Produção **ainda não foi definida** (decisão do dono em 2026-09-25): por enquanto o produto roda só em **Docker em localhost**. Hospedagem, domínio e scripts de deploy entram na Fase 10 do [`docs/PLANO-IMPLANTACAO.md`](docs/PLANO-IMPLANTACAO.md). Regras de conduta ficam aqui.
+Produção definida em **2026-09-28**: `https://ticbox.spincode.com.br` (app) e `https://api.ticbox.spincode.com.br` (gateway do Supabase), num stack Docker **isolado** (projeto `crmsup`) numa VPS **compartilhada** com outras aplicações, atrás do **nginx do host**. Runbook e scripts: [`deploy/README.md`](deploy/README.md). Regras de conduta ficam aqui.
+
+- ⚠️ **A VPS é compartilhada. Nada de outra stack se toca.** O CRM só mexe no que é dele por nome: `/opt/crm-suporte`, o projeto `crmsup`, e um vhost. Nunca `docker … prune`, nunca editar vhost alheio, nginx só com `reload` depois de `nginx -t`.
 
 - Não é Vercel.
 - **Deploy sai sempre de `git archive origin/main`**, nunca da árvore de trabalho. O que não está commitado não pode estar em produção.
