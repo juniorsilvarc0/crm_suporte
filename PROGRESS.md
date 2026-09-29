@@ -72,12 +72,25 @@ A cada ação em produção foi tirado um retrato das outras stacks antes e depo
 - typecheck ✓ · lint ✓ (0 erros) · build ✓. `bash -n` em todos os scripts.
 - **`backup.sh`** em container Debian com `docker` falso, em quatro cenários, todos corretos: sucesso; falha no meio (sem sobras); sem folga (nada gravado); retenção (mídia de 8 dias sai, banco fica). O teste **pegou um bug meu**: variável `local` no `trap`.
 - **`nginx -t`** do vhost novo no nginx 1.28, nas duas etapas e **sem** o arquivo de `map` da outra stack.
-- **Testes:** 2314 de 2315. A falha é o teste instável descrito nas armadilhas: não é deste PR (falha igual na `main` local) e passa no CI.
+- **Testes:** novo teste da rota do avatar, que **falha quando a correção é removida**. Na suíte, só os dois testes instáveis antigos descritos nas armadilhas falham, e nenhum é deste PR.
+- **Revisão adversarial** (7 agentes): 12 achados.
+  - Confirmados:
+    - **o procedimento de rotação estava errado**: reconectar não troca o segredo; README e pendências corrigidos;
+    - rollback marcando imagem quebrada;
+    - `publicar.sh` repetido após falha descartando o `app.anterior` bom.
+  - Também corrigidos:
+    - retenção preserva os 3 mais novos;
+    - checagem do sharp reprova de verdade;
+    - `error_log /dev/null` na rota do webhook;
+    - teste da rota do avatar;
+    - diagrama do README.
+  - Refutado por medição: o `du -sb` funciona no BusyBox da imagem do storage.
+- **`backup.sh`** passou em mais dois cenários: 5 dumps de 40 dias com backup falhando mantêm os 3 mais novos; diretório vazio não quebra.
 
 **Pendências / próximos passos:**
-1. **Deploy deste PR, com "pode subir".** Depois dele, **reinstalar o vhost** (README §Atualizar o vhost) e **desconectar e reconectar o WhatsApp**: o segredo atual ficou gravado 25 vezes no `access.log` compartilhado antes da correção.
+1. **Deploy deste PR, com "pode subir".** Depois dele, **reinstalar o vhost** (README §Atualizar o vhost) e **rotacionar o segredo do webhook** (README §Armadilhas: `set_chat_integration_secret` + salvar as credenciais em Conexão). O segredo atual ficou gravado 25 vezes no `access.log` compartilhado antes da correção. ⚠️ Reconectar o WhatsApp **não** troca o segredo.
 2. **Cópia do backup fora da VPS:** requisito de go-live, ainda sem destino.
-3. **Teste instável** `contact-info-sheet.test.tsx`: investigar em PR próprio.
+3. **Testes instáveis** `contact-info-sheet.test.tsx` e `media-key.test.ts`: investigar e corrigir em PR próprio.
 
 **Armadilhas descobertas:**
 - **Teste instável** `contact-info-sheet.test.tsx › "toque fora com o Novo ticket sujo pergunta Descartar?"`:
@@ -85,6 +98,10 @@ A cada ação em produção foi tirado um retrato das outras stacks antes e depo
   - passa no CI Linux, que rodou às 00:05 UTC;
   - com `Date` falso, passa às 12:00 e 00:01 UTC e falha às 23:59 UTC. Não é um limiar de data: é corrida sensível a tempo;
   - sintoma: o clique fora **fecha** o painel em vez de perguntar, porque o formulário não se considera sujo.
+- **Teste instável** `media-key.test.ts › "não leva telefone"`: a chave contém um UUID aleatório, e às vezes o UUID traz por acaso 10 dígitos hexadecimais seguidos, o que casa com `\d{10,}`. Falha rara, observada 1 vez; passou 8/8 isolado. A correção é gerar a chave com UUID fixo no teste.
+- **Reconectar o WhatsApp NÃO troca o segredo do webhook** (`ensure_chat_integration_secret` reaproveita o existente). Rotação: `set_chat_integration_secret` + salvar as credenciais em Conexão (README §Armadilhas).
+- **Teste de rota com multipart** precisa de `// @vitest-environment node`: no jsdom, o `request.formData()` trava até o timeout.
+- **`tail` num pipe mascara o código de saída:** `pnpm typecheck | tail -1 && echo ✓` imprime ✓ com o typecheck falhando. Confira `$?` do comando, não do pipe.
 - **`trap` de EXIT com variável `local`:** quando o `set -e` derruba o script, o bash já desfez as locais, e o trap morre com "unbound variable". Variável lida em trap é global.
 - **`certbot certonly --webroot` com `--deploy-hook`** grava o hook só na renovação desta lineage. Os hooks globais (`renewal-hooks/*`) estavam vazios na VPS.
 
