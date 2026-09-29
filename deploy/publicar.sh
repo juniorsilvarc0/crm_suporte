@@ -23,8 +23,26 @@ RAIZ=/opt/crm-suporte
 # Web no ar precisa estar healthy. Depois de um deploy que falhou, publicar de
 # novo descartaria o app.anterior bom e marcaria a versão quebrada como
 # rollback: faça o rollback (deploy/README.md) antes.
-saude=$(ssh "$HOST" "docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' crmsup-web" </dev/null || true)
-[ "$saude" = "healthy" ] || { echo "ERRO: crmsup-web no ar está '${saude:-ausente}'. Faça o rollback antes de publicar de novo." >&2; exit 1; }
+# As duas réplicas precisam existir e estar healthy. Réplica ausente = a
+# migração de uma para duas réplicas ainda não foi feita (README §Migração).
+# O deploy anterior precisa ter TERMINADO: com o image.env apontando uma
+# imagem que as réplicas não rodam (o `subir` recusou por causa do apoio, ou
+# caiu depois do build), publicar de novo giraria app → app.anterior e apagaria
+# a única cópia do código que está no ar.
+alvo=$(ssh "$HOST" "sed -n 's/^APP_IMAGE=//p' $RAIZ/env/image.env" </dev/null | tr -d '[:space:]' || true)
+for replica in crmsup-web crmsup-web-2; do
+  existe=$(ssh "$HOST" "docker ps -aq --filter name=^${replica}\$" </dev/null || true)
+  [ -n "$existe" ] || { echo "ERRO: $replica não existe. Migração para duas réplicas pendente: siga deploy/README.md §Migração." >&2; exit 1; }
+  saude=$(ssh "$HOST" "docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $replica" </dev/null | tr -d '[:space:]' || true)
+  [ "$saude" = "healthy" ] || { echo "ERRO: $replica no ar está '${saude:-sem status}'. Faça o rollback antes de publicar de novo." >&2; exit 1; }
+  imagem=$(ssh "$HOST" "docker inspect -f '{{.Config.Image}}' $replica" </dev/null | tr -d '[:space:]' || true)
+  [ "$imagem" = "$alvo" ] || { echo "ERRO: $replica roda '$imagem', mas o image.env aponta '$alvo': o deploy anterior não terminou. Conclua-o com $RAIZ/app/deploy/crmsup.sh subir (leia a mensagem dele) ou faça o rollback. Nada foi mudado." >&2; exit 1; }
+done
+# Migração pela metade: as duas existem e estão healthy, mas a web antiga
+# ainda tem a porta na configuração. O `subir` recusaria só DEPOIS de o
+# app.anterior (código de uma réplica) ser apagado.
+portas=$(ssh "$HOST" "docker inspect -f '{{len .HostConfig.PortBindings}}' crmsup-web" </dev/null | tr -d '[:space:]' || true)
+[ "$portas" = 0 ] || { echo "ERRO: crmsup-web ainda publica porta: migração para duas réplicas pela metade. Termine-a (deploy/README.md §Migração). Nada foi mudado." >&2; exit 1; }
 
 git fetch --quiet origin main
 REV=$(git rev-parse --short=12 origin/main)

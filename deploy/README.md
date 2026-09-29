@@ -19,14 +19,15 @@ Stack Docker **isolado** (projeto `crmsup`) numa VPS **compartilhada** com outra
 
 ```
 internet ─► nginx do HOST :443 (TLS, certbot)
-             ├─ APP_DOMAIN ─► 127.0.0.1:3200 ─► crmsup-web ─────────┐
-             └─ API_DOMAIN ─► 127.0.0.1:3201 ─► crmsup-gateway      │ SUPABASE_URL=http://gateway
+             ├─ APP_DOMAIN ─► 127.0.0.1:3203 ─► crmsup-appgw ─► web / web2  (2 réplicas, sem porta;
+             │                                                    o deploy drena e troca uma por vez)
+             └─ API_DOMAIN ─► 127.0.0.1:3201 ─► crmsup-gateway ◄── web/web2 (SUPABASE_URL=http://gateway)
                                                   ├─ /rest/v1/      ─► crmsup-rest
                                                   ├─ /realtime/v1/  ─► realtime-dev.crmsup-realtime
                                                   └─ /storage/v1/   ─► crmsup-storage
                                                                     └─► crmsup-db
-rede crmsup_interna (internal: sem internet): db, rest, realtime, storage, gateway, web
-rede crmsup_borda: só gateway e web (porta no loopback; o web sai para uazapi/OpenAI/n8n)
+rede crmsup_interna (internal: sem internet): db, rest, realtime, storage, gateway, appgw, web, web2
+rede crmsup_borda: gateway e appgw (porta no loopback); web e web2 (saída para uazapi/OpenAI/n8n)
 ```
 
 **Por que dois hosts:** a mídia do WhatsApp é servida pelo Storage. Se ela saísse da mesma origem do app, um HTML enviado por qualquer pessoa rodaria com a sessão do operador. O gateway ainda responde com `Content-Security-Policy: sandbox`.
@@ -111,6 +112,57 @@ EOF
 - **Falha no meio:** os arquivos daquele backup são apagados. Nunca sobra um `.dump` truncado com cara de bom.
 - **Conferir um backup** sem tocar no banco de produção: `backup.sh restaurar <arquivo.dump> conferencia`. Ele restaura num banco **novo**.
 
+## Duas réplicas: deploy sem interrupção
+
+O app roda em **duas réplicas** (`crmsup-web` e `crmsup-web-2`), **sem porta publicada**. O nginx do host manda o app para `127.0.0.1:3203` (`CRMSUP_APP_PORT`), publicado pelo **appgw** (`crmsup-appgw`, `deploy/app-gateway.conf`), que reparte entre as réplicas container a container, pela rede do Docker, sem docker-proxy no caminho.
+
+O **gateway da API** (`crmsup-gateway`) é outro container. Ele continua sendo o caminho do app até o banco (`SUPABASE_URL=http://gateway`), e **o deploy do app nunca o recria**.
+
+O `subir` troca **uma réplica de cada vez**, e só as que mudaram (`crmsup.sh trocar`):
+1. a réplica sai do rodízio (` down` na config do appgw + reload), e requisição nova vai à outra;
+2. espera **drenar** o que ela já está atendendo (`CRMSUP_DRENO_SEGUNDOS`, padrão 40 s, acima de um webhook com mídia e do relay à IA que ele dispara depois de responder);
+3. recria a réplica com **parada graciosa** de até 160 s (`stop_grace_period`: o Next termina o que ainda está em curso e sai) e espera ficar healthy;
+4. ela volta ao rodízio. **Se não ficar healthy, fica fora**, a outra segue atendendo e o deploy para.
+
+O deploy passa a levar ~2 min. Requisição de até ~200 s (dreno + parada) termina: cabem o webhook e o envio de vídeo pelo chat (ffmpeg até 120 s + uazapi até 60 s). Com uma réplica só, cada deploy deixava o webhook da uazapi **sem resposta por ~20 s**, e mensagem recebida nesse intervalo não entrava no CRM.
+
+- `hash` pelo IP real (`X-Real-IP`) prende cada cliente numa réplica. O rate limit do login é por processo.
+- ⚠️ **Só o deploy tira réplica do rodízio** (`max_fails=0`). Com `max_fails=1`, um único reset transitório tirou a réplica saudável por 2 s enquanto a outra estava em troca, e o appgw ficou sem destino (216 falhas no teste). Réplica que recusa conexão continua contornada por `proxy_next_upstream`, requisição a requisição.
+- **O deploy olha a saúde.** Réplica que não está healthy fica **fora** do rodízio e é trocada **primeiro**, mesmo sem mudança. O `trocar` se recusa a tirar a única réplica boa. Assim, rodar o `subir` de novo depois de um deploy que falhou nunca devolve a réplica quebrada ao tráfego.
+- **Queda fora do roteiro** (o node cai, `docker restart`): a réplica que some da rede não recusa conexão. Cada requisição para ela espera o `proxy_connect_timeout` (500 ms) e vai à outra, mas a que estiver esperando quando o resolver atualizar a lista (≤ 3 s) volta 502. É limite do nginx com `resolve`. No webhook, esse 502 não aparece em log nenhum.
+- ⚠️ **POST nunca é repetido depois de chegar à réplica** (`non_idempotent` proibido): o webhook repassa a mensagem à IA a cada processamento, e ela responderia duas vezes.
+- **Versões misturadas:** durante a troca, as duas versões convivem por ~1 min. O app não usa Server Actions, então isso é seguro. **Ressalva:** cada processo guarda em cache (até 60 s) os segredos do cofre, como a chave da OpenAI. Ao apagar ou trocar a chave, a outra réplica pode usar a antiga por até 1 min: revogue a chave antiga na OpenAI primeiro.
+- A config do appgw mora num caminho estável (`APPGW_CONF_FILE`, fora do código). O script grava **no mesmo arquivo** e aplica com `nginx -t` + reload; se reprovar, a anterior volta. **Não recrie o appgw**: todo o app passa por ele.
+- O `subir` **se recusa a rodar** enquanto o `crmsup-web` ainda tem porta na configuração (migração pendente), rodando ou não.
+- O `publicar.sh` recusa **antes de mexer em qualquer coisa** em três casos: alguma réplica não existe ou não está healthy; uma réplica roda imagem diferente da do `image.env`, sinal de que o deploy anterior não terminou; ou a migração está pela metade. Publicar de novo nesses estados apagaria o `app.anterior` bom.
+- **Uma operação de rodízio por vez.** `subir`, `trocar` e `rodizio` pegam uma trava (`/opt/crm-suporte/.rodizio.lock`, com o PID). Uma 2ª operação ao mesmo tempo desfaria o dreno da 1ª, então ela recusa. A trava de um processo que já morreu é retomada sozinha.
+- **Se a outra réplica cair durante o dreno**, a réplica em troca, que era a boa, volta ao rodízio **sem** ser recriada, e o deploy para com erro.
+- O `subir` também **se recusa a recriar serviço de apoio** (db, rest, realtime, storage, gateway da API, appgw): ele pergunta ao compose com `--dry-run` antes. Se recusar, **nada mudou no ar**. Veja §Armadilhas para quando isso acontece e como fazer numa janela.
+
+### Migração de uma para duas réplicas (uma vez, sem interrupção)
+
+Pré-checagem: a porta 3203 precisa estar livre (`ss -Hltn 'sport = :3203'` sem saída).
+
+A ordem garante que o tráfego nunca fique sem destino e que **o gateway da API nunca seja recriado**:
+
+```bash
+R=/opt/crm-suporte
+# 1) Código novo em app.novo e a imagem, SEM subir (não use o publicar.sh aqui):
+#    na sua máquina, git archive origin/main | ssh <vps> "... tar -x -C $R/app.novo ..." (como no publicar.sh)
+$R/app.novo/deploy/crmsup.sh segredos        # só ACRESCENTA CRMSUP_APP_PORT=3203 e APPGW_CONF_FILE
+$R/app.novo/deploy/crmsup.sh migrations
+$R/app.novo/deploy/crmsup.sh build <revisão>
+cd $R && rm -rf app.anterior && mv app app.anterior && mv app.novo app
+C=$R/app/deploy/crmsup.sh
+# 2) appgw e 2ª réplica: containers NOVOS, nada do que está no ar muda.
+$C compose up -d --wait --no-deps appgw
+$C compose up -d --wait --no-deps web2       # o appgw já atende por web (antigo) e web2
+# 3) vhost do host → 127.0.0.1:3203 (§Atualizar o vhost): nginx -t + reload
+# 4) a réplica antiga perde a porta 3200 e entra no rodízio, drenada antes:
+$C trocar web
+$C verificar
+```
+
 ## Deploy seguinte
 
 ```bash
@@ -122,7 +174,7 @@ O script faz, nesta ordem:
 2. migrations novas, a partir da cópia nova. Se falharem, nada mais mudou;
 3. build da imagem, antes de trocar qualquer coisa;
 4. troca `app` por `app.novo`;
-5. `subir`: recria só o que mudou, normalmente só o web;
+5. `subir`: troca as réplicas que mudaram, uma de cada vez, drenando antes;
 6. `verificar`.
 
 Se a migration ou o build falharem, o que está no ar continua intacto. As migrations são aditivas, então a versão no ar convive com o schema novo durante o build.
@@ -140,15 +192,57 @@ nginx -t && systemctl reload nginx   # se o -t falhar: volte o .bak NA HORA
 
 ## Rollback
 
-`build` marca a imagem **do container que está no ar** como `crmsup-web:prd-rollback`, antes de trocar o `image.env`, e só se ele estiver **healthy**: um deploy que falhou não vira alvo de rollback. O `publicar.sh` se recusa a rodar enquanto o web no ar não estiver healthy — **faça o rollback antes de publicar de novo**, senão o `app.anterior` bom seria descartado. O código anterior fica em `app.anterior`. Volte **os dois**: o `docker-compose.yml` e o `gateway.conf` da versão nova podem não servir para a imagem antiga.
+`build` marca a imagem **do container que está no ar** como `crmsup-web:prd-rollback`, antes de trocar o `image.env`, e só se ele estiver **healthy**: um deploy que falhou não vira alvo de rollback.
+
+**Rollback do app (o normal): só a imagem, sem interrupção.** Mantém o código de deploy atual e troca as réplicas uma por vez, drenando:
 
 ```bash
 cd /opt/crm-suporte
-mv app app.falho && mv app.anterior app
 printf 'APP_IMAGE=crmsup-web:prd-rollback\n' > env/image.env
 /opt/crm-suporte/app/deploy/crmsup.sh subir
 /opt/crm-suporte/app/deploy/crmsup.sh verificar
 ```
+
+**O `subir` recusou por causa dos serviços de apoio** (§Armadilhas)? Não espere a janela para um rollback urgente. Com `C=/opt/crm-suporte/app/deploy/crmsup.sh`, `$C trocar web2 && $C trocar web` troca só as réplicas, drenando e sem tocar no apoio. Se uma réplica não estiver healthy, troque essa primeiro; o `trocar` recusa a outra ordem. Isso só vale para imagem que já rodou com o apoio atual, como a `prd-rollback`.
+
+**Rollback do código de deploy** (só se o próprio `deploy/` novo estiver quebrado). Primeiro, qual é o caso:
+
+```bash
+R=/opt/crm-suporte
+grep -q '^  appgw:' $R/app.anterior/deploy/docker-compose.yml && echo 'duas réplicas' || echo 'uma réplica'
+```
+
+**Duas réplicas** (o normal depois da migração): volte o código e a imagem. O `subir` troca as réplicas uma por vez, drenando, e a borda continua na 3203:
+
+```bash
+cd $R && mv app app.falho && mv app.anterior app
+printf 'APP_IMAGE=crmsup-web:prd-rollback\n' > env/image.env
+$R/app/deploy/crmsup.sh subir
+$R/app/deploy/crmsup.sh verificar
+```
+
+**Uma réplica** (o `app.anterior` é de antes da migração): o compose antigo não conhece o appgw nem a porta 3203. Faça a migração ao contrário, que também drena e só aponta a borda para destino healthy:
+
+```bash
+R=/opt/crm-suporte
+# 1) Com o código NOVO ainda em app: a web sai do rodízio e drena (a web2 atende).
+$R/app/deploy/crmsup.sh rodizio web && sleep 40
+# 2) Código e imagem anteriores.
+cd $R && mv app app.falho && mv app.anterior app
+printf 'APP_IMAGE=crmsup-web:prd-rollback\n' > env/image.env
+# 3) A web volta COM a porta antiga, e espera ficar healthy. Se não ficar, PARE:
+#    a borda segue na 3203 e o appgw atende pela web2.
+$R/app/deploy/crmsup.sh compose up -d --wait --wait-timeout 300 --no-deps web
+# 4) Vhost de volta à porta do web (CRMSUP_WEB_PORT), como em §Atualizar o vhost,
+#    com o `crmsup.sh nginx https` antigo: backup, nginx -t, reload.
+# 5) Os workers antigos do nginx do host terminam o que mandaram à 3203; só
+#    então sai o appgw (parada graciosa) e, por último, a web2. Nunca `rm -f`.
+sleep 40
+docker stop -t 160 crmsup-appgw && docker stop -t 160 crmsup-web-2
+docker rm crmsup-appgw crmsup-web-2
+```
+
+No caso de uma réplica, nunca rode o `subir` antigo com o vhost apontando para a 3203.
 
 Migration não volta: elas são aditivas, e a versão anterior do app convive com o schema novo. Se não conviver, isso é bug da migration.
 
@@ -159,16 +253,27 @@ Sempre pelo **caminho absoluto**, nunca com `cd` para dentro de `app/deploy`: um
 ```bash
 C=/opt/crm-suporte/app/deploy/crmsup.sh
 $C compose ps
-$C compose logs -f --tail 200 web
+$C compose logs -f --tail 200 web web2
 $C compose exec db psql -U postgres
-$C compose up -d web     # mudou o app.env? `restart` NÃO relê env_file; `up -d` recria
+$C subir                 # mudou o app.env? o subir troca as duas réplicas, uma por vez (`restart` NÃO relê env_file)
+$C rodizio web           # tira uma réplica do rodízio à mão; recusa tirar a única boa. `nenhuma` devolve as duas, sem conferir saúde (avisa)
 ```
 
 ## Armadilhas
 
 - **`NEXT_PUBLIC_*` vão embutidos no build.** Trocar o domínio da API exige `build`, não restart.
 - **A chave raiz do Vault mora no volume `crmsup_db-config`** (`/etc/postgresql-custom`). Sem o volume, recriar o `db` deixaria ilegíveis os segredos do Vault: o token da uazapi e a chave da OpenAI.
-- **O nginx do gateway só lê a config ao iniciar.** O `crmsup.sh` põe o hash do `gateway.conf` num label, e o `up` recria o gateway quando o arquivo muda. Um `docker compose` cru, sem o script, nem sobe: o label é obrigatório.
+- **O nginx do gateway da API só lê a config ao iniciar.** O `crmsup.sh` põe o hash do `gateway.conf` num label, e o `up` recria o gateway quando o arquivo muda. Um `docker compose` cru, sem o script, nem sobe: o label é obrigatório.
+- ⚠️ **Recriar o gateway da API interrompe o app inteiro, webhook incluído.** O app fala com o banco por ele (`SUPABASE_URL=http://gateway`): enquanto ele recria, o webhook responde 500 e a mensagem da uazapi não entra. Com WebSockets do Realtime abertos, o nginx espera até o SIGKILL (10 s). Mudança no `gateway.conf` só em janela sem conversa, com `compose up -d -t 1 ... gateway`.
+- ⚠️ **O nginx 1.29 mudou o padrão do keepalive com o upstream.** Ele guarda a conexão ociosa por 60 s e não manda mais `Connection: close`. O Node 22 fecha a conexão ociosa aos ~6 s. Sem o `keepalive_timeout 4s` no upstream do appgw, uma requisição que reaproveita a conexão no instante em que ela fecha leva RST, e o POST vira 502: medido, 2 em ~17 mil. O gateway da API não é afetado, porque `proxy_pass` com variável não guarda conexão (também medido).
+- ⚠️ **O upstream do appgw usa o nome do container** (`crmsup-web`), nunca o do serviço (`web`). Enquanto a réplica é recriada, o DNS do Docker não a acha e manda a pergunta para fora. `web` é um domínio de topo de verdade, e a resposta foi `127.0.53.53` (colisão de nome da ICANN).
+- **O appgw é o contrário:** a config dele é aplicada com reload (`crmsup.sh subir`/`trocar`/`rodizio`) e o container nunca é recriado no deploy. Recriá-lo derrubaria o app.
+- ⚠️ **O `subir` recusou porque "recriaria" um serviço de apoio.** O compose recria sozinho quando:
+  - o `gateway.conf` muda;
+  - a imagem de um serviço muda, inclusive por um `docker pull nginx:1.29-alpine` feito por **outra stack** da VPS, que move a tag compartilhada;
+  - o **Docker Compose da VPS é atualizado**, porque o hash de configuração muda com a versão. Medido: a 5.5 julga **todos** os containers criados pela 2.39 como "Recreate", db incluído.
+
+  O deploy parou antes de mexer em qualquer container, e a versão anterior segue no ar. Se veio do `publicar.sh`, o código novo já está em `app/` e o `image.env` já aponta a imagem nova, e publicar de novo é recusado. Conclua numa janela sem conversa com `CRMSUP_RECRIAR_APOIO=sim /opt/crm-suporte/app/deploy/crmsup.sh subir`. O app fica fora durante a recriação, uns segundos com o db. Para um rollback urgente antes da janela, veja §Rollback.
 - **A borda sobrescreve o `X-Forwarded-For`.** O rate limit do login usa a 1ª entrada desse cabeçalho; se a borda só acrescentasse ao valor recebido, um IP inventado pelo cliente escaparia do limite.
 - **O tenant do Realtime é `realtime-dev`**, tirado do Host que o gateway envia. Não renomeie o container `realtime-dev.crmsup-realtime`.
 - **`SUPABASE_JWT_SECRET` ≠ `AUTH_JWT_SECRET`.** Com os dois iguais, o cookie de sessão valeria como credencial de banco.

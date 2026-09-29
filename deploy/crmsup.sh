@@ -9,7 +9,11 @@
 #   crmsup.sh papeis             senha dos papéis internos, _realtime, publication
 #   crmsup.sh migrations         aplica supabase/migrations/ (livro-razão; nunca o seed)
 #   crmsup.sh admin              cria o 1º admin (troca de senha no 1º login)
-#   crmsup.sh subir              sobe/atualiza o stack e espera ficar healthy
+#   crmsup.sh subir              sobe/atualiza o stack; réplicas do app uma por
+#                                vez, drenando antes (sem interrupção)
+#   crmsup.sh trocar web|web2    drena, recria e devolve UMA réplica ao rodízio
+#   crmsup.sh rodizio web|web2|nenhuma
+#                                tira uma réplica do rodízio à mão (ou nenhuma)
 #   crmsup.sh verificar          segurança do banco e portas publicadas
 #   crmsup.sh nginx http|https   imprime o vhost do nginx do host
 #   crmsup.sh compose <args>     `docker compose` com os --env-file certos
@@ -45,9 +49,19 @@ compose() {
   # VPS compartilhada, outras stacks usam os mesmos nomes (POSTGRES_PASSWORD,
   # JWT_SECRET...): um `set -a; . <outra>/.env` esquecido no shell faria este
   # stack subir com a senha da outra. Tiramos do ambiente o que o stack.env define.
+  # O appgw monta a config de um caminho estável: se o arquivo não existe, o
+  # Docker criaria uma PASTA com esse nome no bind mount.
+  local appgw_conf
+  appgw_conf=$(env_get "$STACK_ENV" APPGW_CONF_FILE)
+  if [ -n "$appgw_conf" ] && [ ! -f "$appgw_conf" ]; then
+    mkdir -p "$(dirname "$appgw_conf")"
+    renderizar_appgw nenhuma > "$appgw_conf"
+    chmod 644 "$appgw_conf"
+  fi
   env -u POSTGRES_PASSWORD -u JWT_SECRET -u SECRET_KEY_BASE -u REALTIME_DB_ENC_KEY \
       -u ANON_KEY -u SERVICE_ROLE_KEY -u APP_DOMAIN -u API_DOMAIN -u APP_ENV_FILE \
-      -u APP_IMAGE -u CRMSUP_WEB_PORT -u CRMSUP_GATEWAY_PORT -u COMPOSE_PROJECT_NAME \
+      -u APP_IMAGE -u CRMSUP_WEB_PORT -u CRMSUP_APP_PORT -u CRMSUP_GATEWAY_PORT \
+      -u APPGW_CONF_FILE -u COMPOSE_PROJECT_NAME \
     docker compose --env-file "$STACK_ENV" --env-file "$IMAGE_ENV" -f "$COMPOSE_FILE" "$@"
 }
 
@@ -105,6 +119,11 @@ cmd_segredos() {
   env_set "$STACK_ENV" APP_DOMAIN "$app_domain"
   env_set "$STACK_ENV" API_DOMAIN "$api_domain"
   env_set "$STACK_ENV" CRMSUP_WEB_PORT "${CRMSUP_WEB_PORT:-3200}"
+  # Porta do app no loopback, publicada pelo appgw (que reparte entre as duas
+  # réplicas). 3203, não 3200: na migração de uma para duas réplicas o web
+  # antigo ainda ocupa a 3200 até o vhost do host apontar para cá.
+  env_set "$STACK_ENV" CRMSUP_APP_PORT "${CRMSUP_APP_PORT:-3203}"
+  env_set "$STACK_ENV" APPGW_CONF_FILE "$RAIZ/appgw/default.conf"
   env_set "$STACK_ENV" CRMSUP_GATEWAY_PORT "${CRMSUP_GATEWAY_PORT:-3201}"
   env_set "$STACK_ENV" APP_ENV_FILE "$APP_ENV"
 
@@ -287,10 +306,205 @@ SQL
 }
 
 # ----------------------------------------------------------------------------
+# Config do appgw com uma réplica fora do rodízio (`web`, `web2` ou `nenhuma`).
+renderizar_appgw() {
+  local fora=${1:-nenhuma} web_down="" web2_down=""
+  [ "$fora" = web ] && web_down=" down"
+  [ "$fora" = web2 ] && web2_down=" down"
+  sed -e "s/__WEB_DOWN__/$web_down/" -e "s/__WEB2_DOWN__/$web2_down/" "$APP_DIR/deploy/app-gateway.conf"
+}
+
+# Grava a config do appgw NO MESMO arquivo (o bind mount segue o inode; cp/mv
+# trocariam o arquivo) e aplica com reload. Reprovou no `nginx -t`? Volta a
+# anterior e para: o appgw no ar segue com a config de antes.
+aplicar_appgw() {
+  local fora=${1:-nenhuma} conf
+  conf=$(env_get "$STACK_ENV" APPGW_CONF_FILE)
+  [ -n "$conf" ] || erro "APPGW_CONF_FILE ausente no stack.env — rode 'segredos'"
+  cp -p "$conf" "$conf.anterior"
+  renderizar_appgw "$fora" > "$conf"
+  if compose exec -T appgw nginx -t </dev/null >/dev/null 2>&1; then
+    compose exec -T appgw nginx -s reload </dev/null >/dev/null
+  else
+    cat "$conf.anterior" > "$conf"
+    erro "config do appgw reprovou no nginx -t (ou o appgw não respondeu) — anterior restaurada, nada recarregado"
+  fi
+}
+
+# Uma operação de rodízio por vez (subir, trocar, rodizio): `aplicar_appgw`
+# grava o rodízio INTEIRO, e uma 2ª operação ao mesmo tempo desfaria o dreno
+# da 1ª (appgw sem destino). `mkdir` é atômico; a trava guarda o PID, e a de
+# processo que já morreu é retomada.
+travar() {
+  local trava="$RAIZ/.rodizio.lock" pid
+  if ! mkdir "$trava" 2>/dev/null; then
+    pid=$(cat "$trava/pid" 2>/dev/null || true)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      erro "outra operação de deploy em andamento (pid $pid): espere terminar. Nada foi mudado"
+    fi
+    rm -rf "$trava"
+    mkdir "$trava" 2>/dev/null || erro "trava $trava ocupada: tente de novo"
+  fi
+  echo $$ > "$trava/pid"
+  trap 'rm -rf "$RAIZ/.rodizio.lock"' EXIT
+}
+
+# Saúde de um container: healthy, unhealthy, starting, ou vazio (não existe).
+saude() { docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$1" 2>/dev/null || true; }
+
+# Qual réplica fica fora do rodízio: a que não está healthy, se a outra
+# estiver. Assim a réplica que um deploy deixou fora CONTINUA fora no próximo
+# `subir`, em vez de voltar a receber tráfego. As duas boas (ou as duas
+# ruins): nenhuma.
+replica_fora() {
+  local w w2
+  w=$(saude crmsup-web); w2=$(saude crmsup-web-2)
+  if [ "$w" = healthy ] && [ "$w2" != healthy ]; then echo web2
+  elif [ "$w2" = healthy ] && [ "$w" != healthy ]; then echo web
+  else echo nenhuma; fi
+}
+
+# A réplica precisa ser trocada? (imagem, env ou compose mudaram, está parada,
+# não está healthy ou não existe). Pergunta ao próprio compose com `--dry-run`,
+# que usa a mesma lógica do `up` de verdade. ⚠️ Não use `compose config
+# --hash`: ele NÃO bate com o hash que o `up` grava no container (medido em
+# 2026-09-29), e toda réplica pareceria mudada. A saída vai para uma variável
+# antes do grep: com `grep -q` no pipe, o compose levaria SIGPIPE e o
+# `pipefail` inverteria a resposta.
+precisa_recriar() {
+  local servico=$1 nome=$2 saida
+  docker inspect "$nome" >/dev/null 2>&1 || return 0
+  [ "$(saude "$nome")" = healthy ] || return 0
+  saida=$(compose up -d --dry-run --no-deps "$servico" 2>&1) || erro "dry-run do compose falhou ($servico): $saida"
+  ! grep -qE "Container ${nome} +Running" <<<"$saida"
+}
+
+cmd_trocar() {
+  local servico=${1:?uso: crmsup.sh trocar web|web2} nome outro outro_srv fora era_boa=nao t=0 dreno=${CRMSUP_DRENO_SEGUNDOS:-40}
+  case "$servico" in
+    web)  nome=crmsup-web;   outro=crmsup-web-2; outro_srv=web2 ;;
+    web2) nome=crmsup-web-2; outro=crmsup-web;   outro_srv=web ;;
+    *) erro "réplica inválida: $servico" ;;
+  esac
+
+  if docker inspect "$nome" >/dev/null 2>&1; then
+    if [ "$(saude "$nome")" = healthy ]; then era_boa=sim; fi
+    # ⚠️ Nunca tirar a única réplica boa: a outra, quebrada, ficaria sozinha no
+    # rodízio (o appgw não a tira por conta própria, `max_fails=0`). Com as
+    # duas ruins, trocar não piora nada, e é o caminho do rollback.
+    if [ "$era_boa" = sim ] && [ "$(saude "$outro")" != healthy ]; then
+      erro "$outro não está healthy: tirar $servico deixaria o app sem réplica boa. Troque $outro_srv primeiro"
+    fi
+    # 1) Fora do rodízio: requisição nova vai para a outra réplica.
+    aplicar_appgw "$servico"
+    # 2) Drena: o que ela já está atendendo termina (webhook com mídia baixa,
+    #    envia e grava; leva segundos), e o relay à IA, disparado depois da
+    #    resposta, também. A outra é conferida a cada 2 s: se cair agora, esta
+    #    (a boa) volta ao rodízio SEM ser recriada, e o deploy para.
+    msg "$servico fora do rodízio; drenando ${dreno}s"
+    while [ "$t" -lt "$dreno" ]; do
+      sleep 2
+      t=$((t + 2))
+      if [ "$era_boa" = sim ] && [ "$(saude "$outro")" != healthy ]; then
+        aplicar_appgw "$(replica_fora)"
+        erro "$outro deixou de estar healthy durante o dreno: $servico voltou ao rodízio SEM ser recriada. Veja 'docker logs $outro' antes de repetir"
+      fi
+    done
+  elif [ "$(saude "$outro")" = healthy ]; then
+    # Não existe: nada a drenar, mas fica fora até ficar healthy (a outra atende).
+    aplicar_appgw "$servico"
+  fi
+  # 3) Recria e espera ficar healthy. `--force-recreate`: réplica quebrada com
+  #    a MESMA config também é recriada (sem ele, o compose só esperaria ela
+  #    ficar healthy). `--timeout 160` é a parada graciosa (o
+  #    `stop_grace_period` do compose, que o container antigo pode não ter): o
+  #    Next termina o que ainda está em curso e sai. Com os 10 s padrão, o
+  #    SIGKILL cortaria um envio de vídeo (ffmpeg até 120 s + uazapi até 60 s).
+  #    Se não ficar healthy, ela SEGUE FORA do rodízio e o deploy para.
+  if ! compose up -d --wait --wait-timeout 300 --timeout 160 --force-recreate --no-deps "$servico"; then
+    [ "$(saude "$outro")" = healthy ] \
+      || erro "$servico não ficou healthy e $outro também não está: o app está FORA DO AR. Rollback: deploy/README.md §Rollback"
+    erro "$servico não ficou healthy: segue FORA do rodízio, $outro atende. Rollback: deploy/README.md §Rollback"
+  fi
+  # 4) De volta ao rodízio. A outra, se não estiver healthy, fica fora.
+  fora=$(replica_fora)
+  aplicar_appgw "$fora"
+  msg "$servico de volta ao rodízio"
+  [ "$fora" = nenhuma ] || msg "⚠️ $fora segue FORA do rodízio: não está healthy"
+}
+
+# Tira uma réplica do rodízio à mão (`web`, `web2`) ou devolve as duas
+# (`nenhuma`), com `nginx -t` + reload. Para operação fora do roteiro, como a
+# migração ao contrário (README §Rollback).
+cmd_rodizio() {
+  local fora=${1:-} outro=""
+  case "$fora" in
+    web)  outro=crmsup-web-2 ;;
+    web2) outro=crmsup-web ;;
+    nenhuma) ;;
+    *) erro "uso: crmsup.sh rodizio web|web2|nenhuma" ;;
+  esac
+  if [ -n "$outro" ] && [ "$(saude "$outro")" != healthy ]; then
+    erro "$outro não está healthy: tirar $fora deixaria o app sem réplica boa"
+  fi
+  aplicar_appgw "$fora"
+  msg "appgw recarregado; fora do rodízio: $fora"
+  if [ "$fora" = nenhuma ] && [ "$(replica_fora)" != nenhuma ]; then
+    msg "⚠️ $(replica_fora) não está healthy e voltou ao rodízio mesmo assim"
+  fi
+}
+
 cmd_subir() {
-  # Recria só o que mudou: imagem nova do web, gateway.conf novo (label com o
-  # hash, ver compose()) ou config do compose.
-  compose up -d --wait --wait-timeout 300
+  # ⚠️ Trava: com o web antigo ainda publicando porta (instalação de UMA
+  # réplica), o vhost do host aponta para ele. Recriá-lo agora tiraria a porta
+  # e derrubaria o app e o webhook. Siga a migração do README. Lê a
+  # CONFIGURAÇÃO do container, não o estado: parado ou reiniciando em loop, o
+  # `docker port` não mostraria porta nenhuma.
+  # (Container inexistente: o inspect imprime uma linha vazia E falha, daí o tr.)
+  local portas
+  portas=$(docker inspect -f '{{len .HostConfig.PortBindings}}' crmsup-web 2>/dev/null | tr -d '[:space:]' || true)
+  if [ -n "$portas" ] && [ "$portas" != 0 ]; then
+    erro "crmsup-web ainda publica porta: migração para duas réplicas pendente — siga deploy/README.md §Migração"
+  fi
+
+  # ⚠️ Serviços de apoio: aqui o `up` só deve CRIAR o que falta e ligar o que
+  # está parado. Recriar algum deles interrompe o app e o webhook: o gateway da
+  # API é o caminho até o banco, e o appgw é a entrada do app. O compose recria
+  # sozinho quando o gateway.conf muda (label com o hash, ver compose()), quando
+  # a imagem muda (inclusive um `docker pull nginx:1.29-alpine` de OUTRA stack
+  # da VPS, que move a tag) e quando o Docker Compose da VPS é atualizado (muda
+  # o hash de todos: medido de 2.39 para 5.5). Por isso perguntamos antes, com
+  # `--dry-run`. Recriar é decisão de janela sem conversa: CRMSUP_RECRIAR_APOIO=sim.
+  local apoio=(db rest realtime storage gateway appgw) saida recriar
+  saida=$(compose up -d --dry-run --no-deps "${apoio[@]}" 2>&1) || erro "dry-run do compose falhou: $saida"
+  recriar=$(sed -nE 's/.*Container ([^ ]+) +Recreate *$/\1/p' <<<"$saida" | sort -u | tr '\n' ' ')
+  if [ -n "$recriar" ] && [ "${CRMSUP_RECRIAR_APOIO:-}" != sim ]; then
+    msg "Nenhum container foi mexido: a versão anterior segue no ar."
+    msg "Veio do publicar.sh? O código novo já está em app/ e o image.env já aponta a imagem nova: NÃO publique de novo."
+    msg "Concluir numa janela sem conversa (recria o apoio; o app cai por segundos): CRMSUP_RECRIAR_APOIO=sim $0 subir"
+    msg "Rollback urgente para imagem que já rodou com este apoio (prd-rollback), sem tocar nele: $0 trocar web2 && $0 trocar web"
+    erro "o subir recriaria ${recriar}— isso interrompe o app e o webhook (deploy/README.md §Armadilhas)"
+  fi
+  compose up -d --wait --wait-timeout 300 "${apoio[@]}"
+
+  # Config do appgw sempre em dia (reload é barato e não derruba nada). A
+  # réplica que não está healthy fica fora e é trocada PRIMEIRO: trocar a boa
+  # antes deixaria a quebrada sozinha no rodízio (e o `trocar` recusaria).
+  local fora ordem="web2 web" servico nome
+  fora=$(replica_fora)
+  aplicar_appgw "$fora"
+  [ "$fora" = web ] && ordem="web web2"
+
+  # ⚠️ Réplicas UMA DE CADA VEZ, drenando antes. Um `up` único recriaria as
+  # duas juntas e o webhook ficaria sem resposta.
+  for servico in $ordem; do
+    nome=crmsup-web; [ "$servico" = web2 ] && nome=crmsup-web-2
+    if precisa_recriar "$servico" "$nome"; then
+      cmd_trocar "$servico"
+    else
+      msg "$servico sem mudança"
+    fi
+  done
   compose ps
 }
 
@@ -330,7 +544,7 @@ cmd_nginx() {
   local modo=${1:-} src="$APP_DIR/deploy/nginx-host.conf" app api web gw
   app=$(env_get "$STACK_ENV" APP_DOMAIN)
   api=$(env_get "$STACK_ENV" API_DOMAIN)
-  web=$(env_get "$STACK_ENV" CRMSUP_WEB_PORT)
+  web=$(env_get "$STACK_ENV" CRMSUP_APP_PORT)
   gw=$(env_get "$STACK_ENV" CRMSUP_GATEWAY_PORT)
   { [ -n "$app" ] && [ -n "$api" ] && [ -n "$web" ] && [ -n "$gw" ]; } || erro "stack.env incompleto — rode 'segredos' antes"
 
@@ -341,7 +555,7 @@ cmd_nginx() {
     https) cat "$src" ;;
     *)     erro "uso: crmsup.sh nginx http|https" ;;
   esac | sed -e "s/__APP_DOMAIN__/$app/g" -e "s/__API_DOMAIN__/$api/g" \
-             -e "s/__WEB_PORT__/$web/g" -e "s/__GATEWAY_PORT__/$gw/g"
+             -e "s/__APP_PORT__/$web/g" -e "s/__GATEWAY_PORT__/$gw/g"
 }
 
 case "${1:-}" in
@@ -350,9 +564,11 @@ case "${1:-}" in
   papeis)     cmd_papeis ;;
   migrations) cmd_migrations ;;
   admin)      cmd_admin ;;
-  subir)      cmd_subir ;;
+  subir)      travar; cmd_subir ;;
+  trocar)     shift; travar; cmd_trocar "$@" ;;
+  rodizio)    shift; travar; cmd_rodizio "$@" ;;
   verificar)  cmd_verificar ;;
   nginx)      shift; cmd_nginx "$@" ;;
   compose)    shift; compose "$@" ;;
-  *) erro "uso: $0 {segredos|build <revisão>|papeis|migrations|admin|subir|verificar|nginx http|https|compose <args>}" ;;
+  *) erro "uso: $0 {segredos|build <revisão>|papeis|migrations|admin|subir|trocar web|web2|rodizio web|web2|nenhuma|verificar|nginx http|https|compose <args>}" ;;
 esac

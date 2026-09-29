@@ -27,6 +27,120 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Deploy sem interrupção (duas réplicas) + incidente do segredo do webhook
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Que atualizar o app nunca deixe o webhook da uazapi sem resposta, e registrar o incidente de produção desta madrugada.
+
+**Arquivos alterados:** branch `feat/deploy-sem-interrupcao`.
+- `deploy/app-gateway.conf` (novo), `deploy/docker-compose.yml`, `deploy/crmsup.sh`, `deploy/publicar.sh`, `deploy/nginx-host.conf`, `deploy/README.md`.
+- Este PROGRESS.
+
+**Regra do dono (2026-09-29):** durante o desenvolvimento, **nunca** mexer na conexão do WhatsApp de produção (credenciais, segredo, reconexão, registro de webhook) e **nunca** alterar nem perder dado do banco de produção. Leitura para diagnóstico é permitida.
+
+**Incidente, produção: o quê, quando e como foi revertido**
+
+| Quando | O quê |
+|---|---|
+| 2026-09-29 01:39:57–01:49:42 UTC (22:39–22:49 Brasília) | Rotacionei o `webhook_secret` no Vault, seguindo o README do PR #14, **antes** de o dono estar pronto para salvar as credenciais em Conexão. Ele decidiu não mexer na conexão de produção. Nesse intervalo, todo webhook da uazapi recebeu 401 |
+| 01:49:42 UTC | **Revertido:** o segredo anterior, tirado do `access.log` do nginx sem ser exibido e conferido pelo hash (`1e9ca4cf…`), foi regravado com `set_chat_integration_secret`. A uazapi não foi tocada |
+
+- **Impacto:** não houve atividade no chat na janela (a última mensagem foi às 21:31 de Brasília), então é provável que nada tenha se perdido. Não dá para provar: nem o nginx (sem log nessa rota) nem o app registram os 401.
+- **Decisão do dono:** o segredo antigo continua valendo. Ele segue nos logs rotacionados do nginx, com o risco aceito.
+
+**Janelas de reinício do app hoje** (motivo deste PR): **16:08** (correção da mídia), **~21:10** (deploy da identidade) e **22:33** (deploy do PR #14), horário de Brasília, de ~20–30s cada. Em 16:08 e 21:10 havia conversa em andamento, e não há sinal de perda: as mensagens de antes e de depois entraram. Uma mensagem que caísse exatamente nesses segundos teria sido recusada.
+
+**O que foi feito:**
+- **Duas réplicas do app** (`web` e `web2`, âncora YAML), **sem porta publicada**. O nginx do host manda o app para `127.0.0.1:3203`, publicado por um container novo, o **appgw** (`crmsup-appgw`, `deploy/app-gateway.conf`). Ele reparte entre as réplicas container a container, pela rede do Docker, sem docker-proxy (`resolve`, `hash $http_x_real_ip`, `proxy_next_upstream error timeout`, `max_fails=0`).
+- **O gateway da API não muda.** Ele continua sendo o caminho do app até o banco, com a mesma config e o mesmo label de hash de antes.
+- **`crmsup.sh trocar <réplica>`** faz a troca em quatro passos:
+  1. tira a réplica do rodízio (` down` + reload do appgw);
+  2. drena o que ela já atende (`CRMSUP_DRENO_SEGUNDOS`, padrão 40 s);
+  3. recria a réplica (`--force-recreate`) com **parada graciosa de até 160 s** e espera ficar healthy;
+  4. devolve ao rodízio. Se não ficar healthy, ela fica fora e o deploy para com erro.
+- **`subir`** sobe o resto do stack e troca só as réplicas que mudaram (`compose up --dry-run`). Sem mudança, não drena nada. Ele se recusa a rodar enquanto o `crmsup-web` publica porta, ou seja, enquanto a migração está pendente.
+- **O deploy olha a saúde.** Réplica que não está healthy fica fora do rodízio e é trocada primeiro, mesmo sem mudança. O `trocar` se recusa a tirar a única réplica boa. `crmsup.sh rodizio web|web2|nenhuma` faz o mesmo à mão, com a mesma recusa.
+- **Trava dos serviços de apoio:** o `subir` pergunta ao compose (`--dry-run`) se recriaria db, rest, realtime, storage, gateway da API ou appgw, e recusa antes de mexer em qualquer coisa. Recriar exige `CRMSUP_RECRIAR_APOIO=sim`, numa janela sem conversa.
+- **`stop_grace_period: 160s`** nas réplicas: no SIGTERM o Next termina o que está em curso. Com os 10 s padrão, um envio de vídeo seria cortado.
+- `proxy_connect_timeout` do appgw de 2 s para 500 ms (queda fora do roteiro; ver Armadilhas).
+- **`keepalive_timeout 4s` no upstream do appgw**, que fecha a corrida de keep-alive com o Node (ver Verificação).
+- **Upstream pelo nome do container** (`crmsup-web`, `crmsup-web-2`), não pelo do serviço.
+- Segunda revisão:
+  - **trava de concorrência** (`$RAIZ/.rodizio.lock`) em `subir`, `trocar` e `rodizio`;
+  - o `trocar` **confere a outra réplica durante o dreno**: se ela cair, a réplica em troca volta ao rodízio sem ser recriada;
+  - `trocar` de réplica inexistente a tira do rodízio antes de criá-la;
+  - a trava da migração lê a porta da **configuração** do container, não do estado em execução;
+  - o `publicar.sh` recusa, antes de mexer em qualquer coisa, deploy anterior não terminado e migração pela metade;
+  - mensagens de recusa com o caminho certo;
+  - README com o rollback dos dois casos.
+- A config do appgw mora num caminho estável (`APPGW_CONF_FILE`, fora do código). O script grava no mesmo arquivo e aplica com `nginx -t` + reload; se a nova reprovar, a anterior volta.
+- **`publicar.sh`** exige as duas réplicas existentes e healthy.
+- **README** com o roteiro de migração de uma para duas réplicas, a migração ao contrário (que também drena e só aponta a borda para destino healthy), o rollback e as armadilhas.
+
+**Decisões tomadas:**
+- **Um appgw próprio, separado do gateway da API.** A 2ª tentativa pôs o rodízio num servidor `:8080` do gateway da API, e a migração exigia recriá-lo uma vez. Só que recriar o gateway da API interrompe o app inteiro, webhook incluído, porque ele é o caminho até o banco. O appgw é um container novo: a migração não recria nada do que está no ar.
+- **Container a container, não porta por réplica.** A 1ª tentativa (`upstream` no nginx do host com a porta de cada réplica) deu 215 falhas no teste. O docker-proxy aceita a conexão e a derruba enquanto o app ainda sobe, e um POST já enviado não pode ser repetido.
+- **Drenar antes de recriar**, em vez de confiar só no `proxy_next_upstream`. Uma requisição em curso numa réplica que para é cortada, e o POST cortado não pode ser repetido.
+- **`max_fails=0`: só o deploy tira réplica do rodízio.** Com `max_fails=1` vieram 216 falhas, detalhadas em Verificação.
+- **Revisão adversarial antes da produção** (5 revisores + 1 cético por achado, só leitura): 26 achados, 13 confirmados, que se reduziram a 5 defeitos. Todos corrigidos neste PR: saúde ignorada no deploy, corte de rotas longas, recriação silenciosa dos serviços de apoio, migração inversa sem dreno e queda fora do roteiro.
+- **Segunda revisão, sobre o delta das correções** (3 revisores + 1 cético por achado): 13 confirmados, que se reduziram a 7 defeitos, todos corrigidos.
+- **Fechar a conexão ociosa do lado do nginx** (`keepalive_timeout 4s`), e não desligar o keepalive nem mexer no `KEEP_ALIVE_TIMEOUT` do Next. É a correção padrão (o proxy fecha antes do backend), fica só na config do appgw, que é aplicada com reload, e preserva o reaproveitamento.
+- **Parada graciosa longa em vez de dreno longo.** Subir o dreno para ~190 s cobraria 3 min fixos por réplica em todo deploy. Com a parada longa o Next sai assim que termina o que está em curso, e a réplica ociosa para na hora.
+- **Testes com a Compose da produção (5.5.0).** Ela e a 2.39 do Mac discordam no hash e no texto do `--dry-run` (ver Armadilhas).
+- **`non_idempotent` proibido.** O webhook repassa à IA a cada processamento, **mesmo quando a mensagem é repetida**. É uma lacuna pré-existente: se a uazapi reenviar, a IA recebe duas vezes. Fica como pendência.
+
+**Verificação:**
+- **Harness:** a stack de produção roda no Mac, com o nginx e o gerador de carga **dentro da VM Linux** do Docker (`--network host`), o mesmo mecanismo de porta da produção. A carga é de ~40 req/s, metade POST no webhook. As rodadas finais usam a **Compose 5.5.0**, a da produção (binário oficial, checksum conferido).
+  - **Migração completa**, com código antigo e novo no mesmo caminho: appgw e `web2`, vhost → appgw, `trocar web`. Em seguida, sob a mesma carga contínua, um deploy normal (as duas réplicas trocadas, uma por vez) e um `subir` sem mudança. Com a Compose 2.39: **0 falhas em 10.836** (5.418 no webhook). Com a 5.5.0 e o código final: **0 falhas em 10.799** (5.400 no webhook). Nas duas, o gateway da API não foi recriado, o `subir` novo rodado no estado antigo foi recusado, e o `subir` sem mudança não drenou nada.
+  - **O 502 isolado depois do deploy: causa achada e corrigida.** Nas rodadas com a 5.5.0 apareceu 1 webhook com 502 por rodada (1 em ~10,7 mil), sempre 2 a 4 minutos depois de um deploy. Em 8 min de carga estável a ~330 req/s, longe de deploy, deu **0 em 158.181**. Com o log ligado só nas cópias de teste e captura de pacotes no appgw:
+    - o RST veio da réplica nova, pelo MAC dela;
+    - a conexão já tinha várias requisições, ou seja, estava sendo reaproveitada;
+    - o RST saiu **6,0 s** depois da última resposta, e 5 a 17 ms depois de a requisição nova chegar.
+
+    Causa: o **nginx 1.29 passou a fazer keepalive com o upstream por padrão** (guarda a conexão por 60 s), e o **Node 22 fecha a ociosa aos ~6 s**. Se o timer do Node dispara com a requisição recém-chegada ainda não lida, o `close()` vira RST (`TCPAbortOnClose`). O GET vai à outra réplica, mas o POST não pode ser repetido e vira 502. Na captura com a config antiga houve 135 reaproveitamentos entre 5,5 e 6,1 s de ociosidade, e 2 deles bateram na corrida. Com `keepalive_timeout 4s`: 10.239 reaproveitamentos, ociosidade máxima de **3,993 s**, nenhum acima de 4 s, **0 resets e 0 falhas em 10.584**, com deploy no meio. Rajadas cronometradas não reproduziram a corrida (a janela é de frações de ms), por isso a prova é pela ociosidade medida.
+  - **O gateway da API não tem essa corrida:** 1.460 requisições em 1.460 conexões, porque o `proxy_pass` com variável não guarda conexão.
+  - **Deploy de imagem quebrada:** a `web2` ficou fora do rodízio, o `subir` terminou em erro e a `web` atendeu sozinha, com **0 falhas em 5.620** (2.810 no webhook). Voltar a imagem boa devolveu a `web2` ao rodízio.
+  - **O mesmo teste com `max_fails=1` deu 216 falhas.** A `web`, saudável, resetou uma conexão; o appgw a tirou do rodízio por 2 s e ficou sem destino ("no live upstreams"), duas vezes.
+  - **Saúde, sob carga contínua:** **0 falhas em 29.330**, e todas as asserções passaram.
+    - Imagem quebrada: a `web2` fica fora. Com o `subir` repetido, ela continua fora e a `web` nunca é tocada.
+    - `trocar web` e `rodizio web`, com a `web2` quebrada: recusados.
+    - Rollback: a réplica quebrada é trocada primeiro, e a outra fica "sem mudança". Vale tanto com a `web2` quanto com a `web` quebrada.
+  - **Correções da 2ª revisão** (bateria com a 5.5.0, 0 falhas de asserção):
+    - a `web2` caiu (`kill 1`) durante o dreno da `web`: o `trocar` terminou com erro, a `web` voltou ao rodízio sem ser recriada, e a `web2` ficou fora até voltar healthy;
+    - uma 2ª operação durante um `trocar` foi recusada, a trava foi liberada no fim, e a trava de processo morto foi retomada;
+    - `trocar` de réplica inexistente com imagem quebrada: ela ficou fora do rodízio;
+    - `publicar.sh` com um `ssh` falso que só executa leituras: passou a pré-checagem no estado bom e recusou com o `image.env` divergente.
+  - **Trava dos serviços de apoio:** com o `gateway.conf` mudado, o `subir` recusou e o gateway não foi recriado. Com `CRMSUP_RECRIAR_APOIO=sim`, recriou.
+  - **Parada graciosa:** um POST com corpo lento, direto na `web2`, durante o `trocar web2`, **terminou com resposta aos 58 s**. O `trocar` esperou. Controle com `docker stop -t 10`, o padrão antigo: **cortado aos 13,7 s, sem resposta**.
+  - **Controle, com as duas réplicas recriadas juntas:** 247 falhas em 1.890 (123 no webhook).
+- `bash -n` dos scripts ✓. `nginx -t` da config do appgw ✓ (1.29, e a cada aplicação). `verificar` ✓ (sharp, sem porta pública). `nginx -t` 1.28 do vhost ✓.
+- typecheck ✓ · lint ✓ (9 warnings, todos anteriores) · test ✓ (2.313). Nenhum arquivo de `src/` mudou.
+
+**Pendências / próximos passos:**
+1. **Deploy em produção com "pode subir"**, seguindo o roteiro de migração do README. Vai junto o PR #15 (Atendimento), que já está na `main` e ainda não chegou à produção. Nada do que está no ar é recriado, exceto a `web` antiga no último passo, que é drenada antes.
+2. **Relay à IA idempotente:** repassar só quando a mensagem é nova. Hoje o `upsertMessage` não informa se inseriu.
+
+**Armadilhas descobertas:**
+- **Porta publicada ≠ conexão recusada.** Com o docker-proxy, uma réplica que ainda está subindo parece aceitar a conexão. Failover de POST só funciona container a container, sem docker-proxy no caminho.
+- **Teste de carga no Mac:** o encaminhador de portas do Docker Desktop atrasa conexões sob carga e gera timeouts falsos. Teste com nginx e cliente em `--network host`, dentro da VM.
+- **Bind mount de arquivo único** fica preso ao inode. Para recarregar sem recriar, grave **no** arquivo (`cat > f`); `cp`, `mv` e `install` criam um arquivo novo.
+- **Réplica saudável também reseta conexão.** Era a corrida de keepalive do nginx 1.29 com o Node, descrita em Verificação e corrigida com `keepalive_timeout 4s`. Com `max_fails>0` e a outra réplica em troca, um único reset desses esvaziava o rodízio.
+- **`compose config --hash` ≠ label `com.docker.compose.config-hash` do container.** Para saber se o `up` recriaria um serviço, use `compose up --dry-run --no-deps <serviço>` e procure `Running`.
+- ⚠️ **A versão do Docker Compose muda o hash.** A 5.5.0, a da produção, julga **todos** os containers criados pela 2.39 como `Recreate`, db incluído. Atualizar o Compose na VPS faria o próximo `up` recriar o stack inteiro, e é por isso que existe a trava do `subir`. O texto do `--dry-run` também muda: a 2.39 prefixa `DRY-RUN MODE -` e usa dois espaços; a 5.5 imprime ` Container <nome> Running ` com espaço no fim. Teste com a versão da produção.
+- **Um `docker pull nginx:1.29-alpine` de outra stack da VPS** move a tag compartilhada, e o próximo `up` recriaria o gateway da API e o appgw.
+- **`compose up` sem `--force-recreate` não recria réplica quebrada com a mesma config:** só espera ela ficar healthy, o que nunca acontece.
+- **`grep -q` no fim de um pipe com `pipefail`:** o grep sai no 1º casamento, o compose leva SIGPIPE, e o pipe falha mesmo tendo casado. Guarde a saída numa variável antes.
+- **SIGTERM no Next 16 é gracioso** (`server.close()` espera o que está em curso). Quem corta é o SIGKILL do Docker, 10 s depois, se não houver `stop_grace_period`/`--timeout`. O `stop_grace_period` só vale para container criado depois dele; na recriação, o `--timeout` do `up` é que manda.
+- **O relay à IA é `void fetch` depois da resposta do webhook.** O `process.exit` que vem depois do `server.close()` o mata se ainda estiver pendente: o dreno antes do SIGTERM é o que o protege.
+- **Réplica que some da rede não recusa conexão:** o SYN vai para um MAC que não existe e o connect espera o timeout. Se o resolver atualizar a lista nesse meio-tempo, o nginx não faz a 2ª tentativa (NGX_BUSY, "no live upstreams") e devolve 502.
+- **O webhook responde 401 sem ler o corpo** (o segredo é conferido antes do `request.json()`). No uso real o segredo é válido e o corpo é lido.
+- ⚠️ **nginx 1.29 mudou os padrões do proxy:** keepalive com o upstream ligado, `proxy_http_version 1.1` e nada de `Connection: close`. Todo nginx novo na frente de um Node precisa de `keepalive_timeout` menor que o do Node (~6 s no Node 22).
+- ⚠️ **Nome de serviço curto pode ser domínio de topo.** Quando o container some, o DNS do Docker manda a pergunta para fora; `web` voltou `127.0.53.53` (colisão de nome da ICANN). Aponte pelo nome do container.
+- **O Docker reaproveita o IP da réplica recriada**, com MAC novo.
+- **`docker inspect -f` de container inexistente imprime uma linha vazia E falha.** Com `|| echo 0`, o resultado é `"\n0"`, não `0`. Normalize com `tr -d '[:space:]'`.
+- **O `docker port` só mostra porta de container rodando.** Para saber se um container foi CRIADO com porta, use `{{len .HostConfig.PortBindings}}`.
+- **O healthcheck com `node -e fetch(...)` sai sem ler a resposta toda** e gera um RST no loopback a cada 15 s. É inofensivo, mas polui o contador `TCPAbortOnClose`.
+
 ## [2026-09-29] Testes instáveis: `media-key` corrigido, `contact-info-sheet` investigado
 
 **Agente/Modelo:** Claude Opus 5.5
@@ -49,6 +163,7 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 - **Próximo passo:** instrumentar o `requestExit`/`isDirty` no teste; ver se o `register` tardio do rádio de "Fila" (que só aparece quando `productsLoading` vira false) reavalia o `isDirty` depois da digitação; considerar ler o estado na hora (`getValues`/`getFieldState`) em vez do snapshot do render. **Verificar se é bug de produto** (rascunho perdido) antes de mexer no teste.
 
 **Verificação:** `media-key` 10/10, 5 execuções seguidas verdes · typecheck ✓.
+
 
 ## [2026-09-29] PR 6 (Atendimento) trazido para a main atual e adaptado à identidade Ticbox
 
@@ -75,6 +190,7 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 **Armadilhas descobertas:**
 - O registro do PR 6 dizia "typecheck ✓", mas o `tsc` reprovava. O cache incremental (`tsconfig.tsbuildinfo`) pode esconder erro: numa cópia limpa, o `tsc --noEmit` pegou.
 - **Varredura com `grep` sobre uma lista em `$F`:** ela voltou vazia sem erro visível, e deixou passar a aba sem o `!`. Varra arquivo por arquivo, sem `2>/dev/null`.
+
 
 ## [2026-09-29] Produção no ar + correções pós-deploy (mídia, segredo no log, rollback, backup)
 
