@@ -27,6 +27,49 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Fase 5 · PR 5: tokens com escopo, tipo, limite e validade pela tela
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O admin emite pelo CRM um token que a API v1 aceita, em especial o da IA, com o preset "IA de triagem".
+**Arquivos alterados:**
+- `src/features/settings/`: `schemas/api-token-actions.ts`, `lib/api-token-access.ts` (novo), `types.ts`, `queries/get-api-tokens.ts`, `components/api-tokens-manager.tsx`, com testes;
+- `src/app/api/api-tokens/route.ts` e `[id]/route.ts`, com testes;
+- `UI.md` (§5.19), `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **Back:**
+  - o POST aceita `scopes`, `actor_type`, `rate_limit_per_min` e `expires_at`;
+  - a **rota `PATCH /api/api-tokens/[id]` é nova**: altera só o que veio, só em token **não revogado**, e dá 404 se não achar;
+  - a lista, a query e as duas rotas usam as mesmas colunas (`API_TOKEN_LIST_COLUMNS`), **nunca o hash**.
+- **Validação:** escopo só do catálogo da v1, ou `recurso:*` de recurso existente. O banco conferia só o formato, e um escopo digitado errado seria aceito sem dar acesso a nada. Validade tem de estar no futuro e ter fuso, e é gravada em UTC; limite vai de 1 a 6.000.
+- **Front mínimo** (decisão minha, registrada no plano):
+  - gerar token pede **Acesso**, com "Sem acesso" como padrão e "IA de triagem" (escopos D4, tipo `ai`, 300/min);
+  - a lista mostra o acesso e o status **Vencido**.
+
+  Sem isso, a IA só poderia usar a API depois do PR 13.
+
+**Verificação:**
+- Testes novos de schema, acesso, POST, PATCH e da tela, que gera token nos dois presets pelo combobox.
+- **Mutação:** 7 garantias quebradas de propósito, todas pegas:
+  - PATCH em token revogado, escopo fora do catálogo, preset trocado e PATCH sem guard;
+  - o filtro antigo, `...row` no mapeamento e `select("*")` no POST.
+- **Revisão adversarial:** 6 achados confirmados, que eram 4 defeitos baixos, todos corrigidos; 3 refutados.
+  - O filtro "Ativos" trazia vencidos. Agora há um status só (Ativo, Vencido ou Revogado) para o filtro, o selo e o esmaecimento, e o filtro ganhou "Vencidos".
+  - O teste "nunca o hash" não podia falhar. Agora o `toApiTokenListItem` monta **campo a campo**, então um `select("*")` futuro não vaza o hash, e o teste confere as colunas pedidas.
+  - Validade com fuso acima de ±15:59 dava 500 no Postgres; agora é normalizada para UTC.
+  - O PATCH vazio perdia a mensagem "Nada para alterar."
+- typecheck ✓ · lint ✓ · test ✓ · build ✓ (resultados no PR).
+
+**Pendências / próximos passos:**
+1. Deploy dos PRs 3, 4 e 5 juntos com "pode subir". Depois, emitir o token da IA pela tela e passá-lo ao agente.
+2. PR 6: catálogos, clientes e contatos na v1.
+
+**Armadilhas descobertas:**
+- **Mapear linha do banco com `...row` repassa qualquer coluna a mais**, e o hash junto. Na lista de tokens, o mapeamento é campo a campo.
+- **O Postgres recusa fuso acima de ±15:59**, que o ISO 8601 e o zod aceitam. Normalize a data para UTC antes de gravar.
+- **Nome de teste que coincide com texto de status** ("Vencido") quebra o `getByText`. Use nomes que não colidam com rótulos da tela.
+- **O Dialog responsivo usa `matchMedia`**, que o jsdom não tem: todo teste de componente com modal precisa do stub.
+
 ## [2026-09-29] Fase 5 · PR 4: withApi e o esqueleto da API v1
 
 **Agente/Modelo:** Claude Opus 5.5.
