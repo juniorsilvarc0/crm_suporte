@@ -5,15 +5,34 @@ export type Database = {
   
   "public": {
           Tables: {
-            "api_tokens": {
+            "api_idempotency_keys": {
                   Row: {
-                    "created_at": string,"created_by": string | null,"expires_at": string | null,"id": string,"last_used_at": string | null,"name": string,"rate_limit_per_min": number,"revoked_at": string | null,"scopes": (string)[],"token_hash": string,"token_prefix": string
+                    "api_token_id": string,"attempt_id": string | null,"completed_at": string | null,"created_at": string,"expires_at": string,"id": string,"idempotency_key": string,"locked_until": string | null,"method": string,"request_hash": string,"response_body": Json | null,"response_status": number | null,"route": string,"state": string
                   }
                   Insert: {
-                    "created_at"?: string,"created_by"?: string | null,"expires_at"?: string | null,"id"?: string,"last_used_at"?: string | null,"name": string,"rate_limit_per_min"?: number,"revoked_at"?: string | null,"scopes"?: (string)[],"token_hash": string,"token_prefix": string
+                    "api_token_id": string,"attempt_id"?: string | null,"completed_at"?: string | null,"created_at"?: string,"expires_at"?: string,"id"?: string,"idempotency_key": string,"locked_until"?: string | null,"method": string,"request_hash": string,"response_body"?: Json | null,"response_status"?: number | null,"route": string,"state"?: string
                   }
                   Update: {
-                    "created_at"?: string,"created_by"?: string | null,"expires_at"?: string | null,"id"?: string,"last_used_at"?: string | null,"name"?: string,"rate_limit_per_min"?: number,"revoked_at"?: string | null,"scopes"?: (string)[],"token_hash"?: string,"token_prefix"?: string
+                    "api_token_id"?: string,"attempt_id"?: string | null,"completed_at"?: string | null,"created_at"?: string,"expires_at"?: string,"id"?: string,"idempotency_key"?: string,"locked_until"?: string | null,"method"?: string,"request_hash"?: string,"response_body"?: Json | null,"response_status"?: number | null,"route"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "api_idempotency_keys_api_token_id_fkey"
+      columns: ["api_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"api_tokens": {
+                  Row: {
+                    "actor_type": string,"created_at": string,"created_by": string | null,"expires_at": string | null,"id": string,"last_used_at": string | null,"name": string,"rate_limit_per_min": number,"revoked_at": string | null,"scopes": (string)[],"token_hash": string,"token_prefix": string
+                  }
+                  Insert: {
+                    "actor_type"?: string,"created_at"?: string,"created_by"?: string | null,"expires_at"?: string | null,"id"?: string,"last_used_at"?: string | null,"name": string,"rate_limit_per_min"?: number,"revoked_at"?: string | null,"scopes"?: (string)[],"token_hash": string,"token_prefix": string
+                  }
+                  Update: {
+                    "actor_type"?: string,"created_at"?: string,"created_by"?: string | null,"expires_at"?: string | null,"id"?: string,"last_used_at"?: string | null,"name"?: string,"rate_limit_per_min"?: number,"revoked_at"?: string | null,"scopes"?: (string)[],"token_hash"?: string,"token_prefix"?: string
                   }
                   Relationships: [
                     {
@@ -798,7 +817,19 @@ isOneToOne: false
                 }
           }
           Functions: {
-            "assert_contract_refs":
+            "api_idempotency_begin":
+{ Args: { "p_key": string,"p_lease_seconds"?: number,"p_method": string,"p_request_hash": string,"p_route": string,"p_token_id": string }; Returns: Json
+                           },
+"api_idempotency_finish":
+{ Args: { "p_attempt_id": string,"p_body": Json,"p_key": string,"p_status": number,"p_token_id": string }; Returns: undefined
+                           },
+"api_idempotency_purge":
+{ Args: Record<PropertyKey, never>; Returns: number
+                           },
+"api_idempotency_release":
+{ Args: { "p_attempt_id": string,"p_key": string,"p_token_id": string }; Returns: undefined
+                           },
+"assert_contract_refs":
 { Args: { "p_contract_id": string,"p_plan_id": string,"p_product_ids": (string)[] }; Returns: undefined
                            },
 "assert_security_baseline":
@@ -854,6 +885,9 @@ isOneToOne: false
                            },
 "phone_match_key":
 { Args: { "p_phone": string }; Returns: string
+                           },
+"purge_integration_logs":
+{ Args: { "p_older_than"?: string }; Returns: number
                            },
 "require_active_admin":
 { Args: { "p_actor_id": string }; Returns: undefined
