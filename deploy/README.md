@@ -97,14 +97,19 @@ nginx -t && systemctl reload nginx      # se o -t falhar: volte o arquivo para o
 ### Backup diário
 
 ```bash
+systemctl is-active cron                # precisa responder "active"
+/opt/crm-suporte/app/deploy/backup.sh   # 1ª execução na mão: vê passar e cria a pasta do log
 cat > /etc/cron.d/crmsup-backup <<'EOF'
-# CRM Suporte — backup diário (deploy/backup.sh). Local: NÃO protege de perder a VPS.
+# CRM Suporte — backup diário (deploy/backup.sh). 03:30 UTC = 00:30 em Brasília.
+# Local: NÃO protege de perder a VPS (a cópia externa ainda é pendência).
 30 3 * * * root /opt/crm-suporte/app/deploy/backup.sh >> /opt/crm-suporte/backups/backup.log 2>&1
 EOF
-/opt/crm-suporte/app/deploy/backup.sh   # 1ª execução na mão, para ver passar
 ```
 
-Para conferir um backup sem tocar no banco de produção: `backup.sh restaurar <arquivo.dump> conferencia`. Ele restaura num banco **novo**.
+- **Retenção:** banco e chave do Vault ficam 30 dias. A mídia, que é cópia **cheia** a cada dia, fica 7 dias: a mais recente já contém tudo. A retenção roda **antes** do backup, então um disco cheio não trava a limpeza.
+- **Folga de disco:** o backup se recusa a gravar se sobrarem menos de 10% do disco (`CRMSUP_BACKUP_RESERVA_PCT`). A VPS é compartilhada: encher o disco derrubaria o Postgres das outras stacks.
+- **Falha no meio:** os arquivos daquele backup são apagados. Nunca sobra um `.dump` truncado com cara de bom.
+- **Conferir um backup** sem tocar no banco de produção: `backup.sh restaurar <arquivo.dump> conferencia`. Ele restaura num banco **novo**.
 
 ## Deploy seguinte
 
@@ -114,34 +119,49 @@ CRMSUP_HOST=<vps> deploy/publicar.sh
 
 O script faz, nesta ordem:
 1. `git archive origin/main`;
-2. build da imagem, antes de trocar qualquer coisa;
-3. troca `app` por `app.novo`;
-4. migrations novas;
-5. `subir`;
+2. migrations novas, a partir da cópia nova. Se falharem, nada mais mudou;
+3. build da imagem, antes de trocar qualquer coisa;
+4. troca `app` por `app.novo`;
+5. `subir`: recria só o que mudou, normalmente só o web;
 6. `verificar`.
 
-Se o build falhar, o que está no ar continua intacto.
+Se a migration ou o build falharem, o que está no ar continua intacto. As migrations são aditivas, então a versão no ar convive com o schema novo durante o build.
+
+### Atualizar o vhost
+
+Mudou `deploy/nginx-host.conf`? O deploy **não** mexe no nginx sozinho. Depois do `publicar.sh`:
+
+```bash
+V=/etc/nginx/sites-available/ticbox.spincode.com.br
+cp -p "$V" "$V.bak-$(date +%Y%m%d-%H%M%S)"
+/opt/crm-suporte/app/deploy/crmsup.sh nginx https > "$V.novo" && mv "$V.novo" "$V"
+nginx -t && systemctl reload nginx   # se o -t falhar: volte o .bak NA HORA
+```
 
 ## Rollback
 
-`build` marca a imagem que estava no ar como `crmsup-web:prd-rollback` antes de trocar o `image.env`.
+`build` marca a imagem **do container que está no ar** como `crmsup-web:prd-rollback`, antes de trocar o `image.env`. O código anterior fica em `app.anterior`. Volte **os dois**: o `docker-compose.yml` e o `gateway.conf` da versão nova podem não servir para a imagem antiga.
 
 ```bash
 cd /opt/crm-suporte
+mv app app.falho && mv app.anterior app
 printf 'APP_IMAGE=crmsup-web:prd-rollback\n' > env/image.env
-app/deploy/crmsup.sh subir
+/opt/crm-suporte/app/deploy/crmsup.sh subir
+/opt/crm-suporte/app/deploy/crmsup.sh verificar
 ```
 
 Migration não volta: elas são aditivas, e a versão anterior do app convive com o schema novo. Se não conviver, isso é bug da migration.
 
 ## Operação do dia a dia
 
+Sempre pelo **caminho absoluto**, nunca com `cd` para dentro de `app/deploy`: uma sessão parada ali durante um deploy passaria a rodar o script e o compose da versão anterior (`app.anterior`).
+
 ```bash
-cd /opt/crm-suporte/app/deploy
-./crmsup.sh compose ps
-./crmsup.sh compose logs -f --tail 200 web
-./crmsup.sh compose exec db psql -U postgres
-./crmsup.sh compose up -d web     # mudou o app.env? `restart` NÃO relê env_file; `up -d` recria
+C=/opt/crm-suporte/app/deploy/crmsup.sh
+$C compose ps
+$C compose logs -f --tail 200 web
+$C compose exec db psql -U postgres
+$C compose up -d web     # mudou o app.env? `restart` NÃO relê env_file; `up -d` recria
 ```
 
 ## Armadilhas
@@ -152,3 +172,6 @@ cd /opt/crm-suporte/app/deploy
 - **A borda sobrescreve o `X-Forwarded-For`.** O rate limit do login usa a 1ª entrada desse cabeçalho; se a borda só acrescentasse ao valor recebido, um IP inventado pelo cliente escaparia do limite.
 - **O tenant do Realtime é `realtime-dev`**, tirado do Host que o gateway envia. Não renomeie o container `realtime-dev.crmsup-realtime`.
 - **`SUPABASE_JWT_SECRET` ≠ `AUTH_JWT_SECRET`.** Com os dois iguais, o cookie de sessão valeria como credencial de banco.
+- **`SUPABASE_URL=http://gateway`, sem `:80`.** O supabase-js tira a porta padrão ao montar as URLs. Em 2026-09-28, com `:80`, nenhuma mídia do chat abria: o navegador recebia o host interno. Hoje o `toPublicOrigin` normaliza os dois lados, mas o valor certo é sem a porta.
+- **O segredo do webhook da uazapi vai na query (`?s=`).** A rota do webhook não tem log de acesso no vhost, porque o `access.log` do host é compartilhado. Se o segredo vazar, desconecte e reconecte o WhatsApp em Conexão: isso gera outro.
+- **Variável do shell vence o `--env-file` no compose.** O `crmsup.sh` limpa do ambiente os nomes do `stack.env` antes do `docker compose`. Não o contorne com `docker compose` cru.

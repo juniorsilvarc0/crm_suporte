@@ -41,7 +41,14 @@ compose() {
   # Vira label do gateway: config nova = container recriado no próximo `up`.
   CRMSUP_GATEWAY_CONF_SHA=$(openssl dgst -sha256 -r "$APP_DIR/deploy/gateway.conf" | cut -c1-16)
   export CRMSUP_GATEWAY_CONF_SHA
-  docker compose --env-file "$STACK_ENV" --env-file "$IMAGE_ENV" -f "$COMPOSE_FILE" "$@"
+  # ⚠️ Na interpolação do compose, variável do SHELL vence o --env-file. Numa
+  # VPS compartilhada, outras stacks usam os mesmos nomes (POSTGRES_PASSWORD,
+  # JWT_SECRET...): um `set -a; . <outra>/.env` esquecido no shell faria este
+  # stack subir com a senha da outra. Tiramos do ambiente o que o stack.env define.
+  env -u POSTGRES_PASSWORD -u JWT_SECRET -u SECRET_KEY_BASE -u REALTIME_DB_ENC_KEY \
+      -u ANON_KEY -u SERVICE_ROLE_KEY -u APP_DOMAIN -u API_DOMAIN -u APP_ENV_FILE \
+      -u APP_IMAGE -u CRMSUP_WEB_PORT -u CRMSUP_GATEWAY_PORT -u COMPOSE_PROJECT_NAME \
+    docker compose --env-file "$STACK_ENV" --env-file "$IMAGE_ENV" -f "$COMPOSE_FILE" "$@"
 }
 
 # `postgres` roda as migrations. Não é superusuário nesta imagem.
@@ -113,7 +120,10 @@ cmd_segredos() {
   # Com os dois iguais, um cookie de sessão valeria como credencial de banco.
   env_set "$APP_ENV" SUPABASE_JWT_SECRET "$jwt"
   # O servidor fala com o gateway por dentro da rede interna.
-  env_set "$APP_ENV" SUPABASE_URL "http://gateway:80"
+  # ⚠️ SEM `:80`. O supabase-js tira a porta padrão ao montar as URLs; com ela
+  # aqui, a troca pela origem pública falhava e nenhuma mídia abria (produção,
+  # 2026-09-28 — o toPublicOrigin hoje normaliza, mas o valor certo é este).
+  env_set "$APP_ENV" SUPABASE_URL "http://gateway"
   env_set "$APP_ENV" SUPABASE_ANON_KEY "$(env_get "$STACK_ENV" ANON_KEY)"
   env_set "$APP_ENV" SUPABASE_SERVICE_ROLE_KEY "$(env_get "$STACK_ENV" SERVICE_ROLE_KEY)"
   # NEXT_PUBLIC_* aqui por completude; quem vale é o build-arg de `build`.
@@ -140,14 +150,22 @@ cmd_build() {
     --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$anon" \
     -t "$tag" "$APP_DIR"
 
-  # Rollback: a imagem no ar vira :prd-rollback ANTES de o image.env mudar.
-  atual=$(env_get "$IMAGE_ENV" APP_IMAGE)
+  # Rollback: a imagem que está NO AR (a do container, não a do image.env —
+  # um deploy interrompido deixaria o image.env apontando para uma imagem que
+  # nunca rodou) vira :prd-rollback ANTES de o image.env mudar.
+  atual=$(docker inspect -f '{{.Config.Image}}' crmsup-web 2>/dev/null || env_get "$IMAGE_ENV" APP_IMAGE)
   if [ -n "$atual" ] && [ "$atual" != "$tag" ] && docker image inspect "$atual" >/dev/null 2>&1; then
     docker tag "$atual" crmsup-web:prd-rollback
-    msg "imagem anterior ($atual) marcada como crmsup-web:prd-rollback"
+    msg "imagem no ar ($atual) marcada como crmsup-web:prd-rollback"
   fi
   printf 'APP_IMAGE=%s\n' "$tag" > "$IMAGE_ENV"
   msg "image.env → $tag (entra no ar no próximo 'subir')"
+
+  # Limpeza SÓ das imagens do CRM: fica a nova, a do ar e a de rollback. Nunca
+  # `docker image prune` — apagaria imagem das outras stacks da VPS.
+  docker image ls crmsup-web --format '{{.Repository}}:{{.Tag}}' \
+    | grep -vxF -e "$tag" -e "crmsup-web:prd-rollback" -e "${atual:-crmsup-web:<nenhuma>}" \
+    | xargs -r docker image rm >/dev/null 2>&1 || true
 }
 
 # ----------------------------------------------------------------------------
@@ -288,6 +306,10 @@ select 'admins ativos ....................... ' || count(*) from public.app_user
 SQL
   psql_db -c 'select public.assert_security_baseline();' >/dev/null
   msg "assert_security_baseline() ✓"
+
+  # O sharp é o único addon nativo: se a libvips não entrou no standalone, o
+  # 1º upload de foto e o webhook com mídia quebram com o resto verde.
+  compose exec -T -w /app web node -e "require('sharp')" </dev/null && msg "sharp carrega na imagem ✓"
 
   msg "portas publicadas fora do loopback (deve ser vazio):"
   docker ps --filter "label=com.docker.compose.project=crmsup" --format '{{.Names}} {{.Ports}}' \
