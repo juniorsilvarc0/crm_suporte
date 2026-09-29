@@ -27,6 +27,29 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Testes instáveis: `media-key` corrigido, `contact-info-sheet` investigado
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Tirar da suíte as falhas que não dependem do código testado.
+
+**Arquivos alterados:** `src/lib/storage/media-key.test.ts` e este PROGRESS. Nenhum código de produto mudou.
+
+**O que foi feito:**
+- **`media-key` › "não leva telefone"** procurava `\d{10,}` na chave inteira, e o UUID aleatório às vezes traz 10+ dígitos seguidos. A verificação agora é feita sem o UUID (`semUuid`). Um caso novo, com UUID fixo cheio de dígitos, prova que a falha rara está coberta.
+
+**`contact-info-sheet` › "toque fora com o Novo ticket sujo pergunta Descartar?"**: investigado, **sem causa raiz ainda**.
+- **Sintoma:** o clique fora **fecha** o painel em vez de perguntar, porque `requestExit()` do `NewTicketForm` responde "limpo".
+- **Descartado:**
+  - fuso horário: falha em `America/Sao_Paulo`, UTC e Tóquio;
+  - versão do Node: falha no 25 e no 22;
+  - carga da prévia local: falha também sem ela;
+  - remontagem por `key`: o formulário não tem `key` e a `ref` é estável.
+- **Parcial:** 50ms de espera entre digitar e clicar reduz a falha (de 2/3 para 1/3), mas não elimina. A corrida com o `isDirty` do último render explica só parte.
+- **Ambiente:** passa no CI Linux; no macOS falha na maioria das execuções desde 2026-09-28 ~21h de Brasília.
+- **Próximo passo:** instrumentar o `requestExit`/`isDirty` no teste; ver se o `register` tardio do rádio de "Fila" (que só aparece quando `productsLoading` vira false) reavalia o `isDirty` depois da digitação; considerar ler o estado na hora (`getValues`/`getFieldState`) em vez do snapshot do render. **Verificar se é bug de produto** (rascunho perdido) antes de mexer no teste.
+
+**Verificação:** `media-key` 10/10, 5 execuções seguidas verdes · typecheck ✓.
+
 ## [2026-09-29] Produção no ar + correções pós-deploy (mídia, segredo no log, rollback, backup)
 
 **Agente/Modelo:** Claude Opus 5.5. Toda ação em produção teve autorização literal do dono.
