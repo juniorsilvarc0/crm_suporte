@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] PR 6 (Atendimento) trazido para a main atual e adaptado à identidade Ticbox
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Publicar o PR 6, que estava pronto mas sem commit desde 2026-09-26 (entrada abaixo), sobre a `main` de hoje: identidade Ticbox, produção e correções.
+
+**Arquivos alterados:** branch `feat/fase4-atendimento`, a partir da `main` (`a19db5e`).
+- Os 26 arquivos do PR 6 (9 modificados, 17 novos).
+- Ajustes: `service-settings-tabs.tsx`, `configuracoes/atendimento/loading.tsx`, `ticket-request.test.ts` e este PROGRESS.
+
+**O que foi feito:**
+- **Cópia do trabalho sem commit:** o diff e os arquivos novos da árvore do dono foram aplicados com `git apply --3way`. **A árvore original não foi tocada**; ela continua na branch `feat/fase4-front-atendimento`, sem commit.
+- **Três conflitos resolvidos juntando os dois lados:**
+  - `navigation.ts`: ícones da identidade + item Atendimento com `HeadsetIcon`, e Ajustes com engrenagem e as 4 rotas;
+  - abas das Configurações: `h-11` do PR 6 + `text-primary-foreground!` da identidade;
+  - PROGRESS: as quatro entradas mantidas, em ordem cronológica.
+- **Adaptação à identidade:**
+  - a aba ativa do Atendimento ganhou `data-active:text-primary-foreground!`; sem ele, o texto ficaria claro sobre lima no tema escuro, a 1,29:1 (UI §3.3);
+  - os skeletons de botão ficaram `rounded-md`.
+- **Typecheck:** o PR 6 estreitou o parâmetro de `ticketFieldError` para `{ errors }`, e o teste antigo passava um objeto literal com propriedades a mais. O teste passou a tipar o corpo como `TicketTakeOverErrorBody`, que é o que os chamadores fazem.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros) · test ✓ (2445, com os do PR 6) · build ✓ (`/app/configuracoes/atendimento` gerada).
+
+**Armadilhas descobertas:**
+- O registro do PR 6 dizia "typecheck ✓", mas o `tsc` reprovava. O cache incremental (`tsconfig.tsbuildinfo`) pode esconder erro: numa cópia limpa, o `tsc --noEmit` pegou.
+- **Varredura com `grep` sobre uma lista em `$F`:** ela voltou vazia sem erro visível, e deixou passar a aba sem o `!`. Varra arquivo por arquivo, sem `2>/dev/null`.
+
 ## [2026-09-29] Produção no ar + correções pós-deploy (mídia, segredo no log, rollback, backup)
 
 **Agente/Modelo:** Claude Opus 5.5. Toda ação em produção teve autorização literal do dono.
