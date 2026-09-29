@@ -33,6 +33,19 @@ export const dynamic = "force-dynamic";
 /** Tipos cuja mídia chega separada da mensagem (ver passo 4). */
 const MEDIA_TYPES = ["image", "audio", "video", "document", "sticker"];
 
+/** Teto do repasse ao agente: sem ele, um agente que não responde deixa o fetch pendurado. */
+const RELAY_TIMEOUT_MS = 10_000;
+
+/**
+ * O envelope que vai ao agente: o da uazapi SEM o `token` da instância. O
+ * agente tem credencial própria da uazapi; o token é do CRM e não sai daqui.
+ */
+function relayEnvelope(payload: UazapiEnvelope): Omit<UazapiEnvelope, "token"> {
+  const body = { ...payload };
+  delete body.token;
+  return body;
+}
+
 export async function POST(request: Request) {
   try {
     // 1) Autenticação via query param (?s=): a uazapi não manda header
@@ -272,15 +285,24 @@ export async function POST(request: Request) {
 
     const conv = await upsertMessage(integration.id, identity.contactId, normalized, stored);
 
-    // 5) Repassa ao agente/automação só inbound e enquanto status='bot'.
+    // 5) Repassa ao agente/automação só inbound, só mensagem NOVA e enquanto
+    // status='bot'. Um reenvio da uazapi (a mesma mensagem de novo) não insere
+    // nada, e repassá-lo faria a IA responder duas vezes.
+    // ⚠️ É "no máximo uma vez": se a mensagem foi gravada e a resposta do banco
+    // se perdeu (500 aqui), o reenvio não repassa, e a IA não a recebe. O log
+    // abaixo torna isso visível; o conserto é o outbox (Fase 6).
     // URL configurável na UI (Configurações), com fallback para N8N_WEBHOOK_URL.
-    if (normalized.direction === "inbound" && conv?.status === "bot") {
+    if (normalized.direction === "inbound" && conv?.status === "bot" && !conv.inserted) {
+      console.info("[webhook/uazapi] inbound repetido, sem relay:", { conversationId: conv.id });
+    }
+    if (normalized.direction === "inbound" && conv?.inserted && conv.status === "bot") {
       const relayUrl = await getRelayUrl();
       if (relayUrl) {
         void fetch(relayUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(relayEnvelope(payload)),
+          signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
         }).catch((e) => console.warn("[webhook/uazapi] relay falhou:", e));
       }
     }

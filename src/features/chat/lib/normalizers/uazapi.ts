@@ -111,6 +111,8 @@ export type UazapiEnvelope = {
   data?: RawUazapiMessage;
   chat?: { image?: string; imagePreview?: string; name?: string };
   owner?: string;
+  /** Token da INSTÂNCIA uazapi: credencial. Nunca sai do CRM (log, relay). */
+  token?: string;
 };
 
 export function uazapiEventType(payload: UazapiEnvelope): string {
