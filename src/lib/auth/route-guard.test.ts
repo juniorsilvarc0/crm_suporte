@@ -42,6 +42,16 @@ describe("decideRouteAccess", () => {
       });
     });
 
+    it("deixa a API v1 com o withApi (token com escopo), sem pedir sessão", () => {
+      expect(decideRouteAccess("/api/v1/me", false)).toEqual({ type: "allow" });
+      expect(decideRouteAccess("/api/v1/tickets/1", false)).toEqual({ type: "allow" });
+    });
+
+    it("não confunde /api/v1 com um prefixo parecido", () => {
+      expect(decideRouteAccess("/api/v10/me", false)).toEqual({ type: "unauthorized" });
+      expect(decideRouteAccess("/api/v1", false)).toEqual({ type: "unauthorized" });
+    });
+
     it("não libera mais as rotas que saíram (Meta, n8n, integração antiga)", () => {
       // Prefixo público que sobrasse sem rota viraria porta aberta para a
       // próxima rota criada ali.
@@ -120,6 +130,7 @@ describe("decideRouteAccess", () => {
     it("reconhece rotas públicas", () => {
       expect(isPublicApiRoute("/api/chat/webhook/uazapi")).toBe(true);
       expect(isPublicApiRoute("/api/auth/login")).toBe(true);
+      expect(isPublicApiRoute("/api/v1/health")).toBe(true);
     });
 
     it("reconhece rotas internas como não-públicas", () => {

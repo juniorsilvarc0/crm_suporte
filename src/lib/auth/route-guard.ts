@@ -27,12 +27,14 @@ const ADMIN_PAGE_PREFIXES = [
 // dashboard:
 //   - /api/chat/webhook/* → uazapi, verificação própria
 //   - /api/auth/*        → login e logout
-// A API de integração para agentes e sistemas externos volta como /api/v1/*
-// (token com escopo) na Fase 5 de docs/PLANO-IMPLANTACAO.md. Prefixo novo
-// aqui = handler que PRECISA autenticar sozinho.
+//   - /api/v1/*          → API para integradores e para a IA: token com escopo,
+//                          conferido por withApi (src/lib/api/v1/with-api.ts);
+//                          src/app/api/v1/api-v1-guards.test.ts garante
+// Prefixo novo aqui = handler que PRECISA autenticar sozinho.
 const PUBLIC_API_PREFIXES = [
   "/api/chat/webhook/",
   "/api/auth/",
+  "/api/v1/",
 ];
 
 export function isPublicApiRoute(pathname: string) {
