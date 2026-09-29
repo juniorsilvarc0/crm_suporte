@@ -141,6 +141,30 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 - **O `docker port` só mostra porta de container rodando.** Para saber se um container foi CRIADO com porta, use `{{len .HostConfig.PortBindings}}`.
 - **O healthcheck com `node -e fetch(...)` sai sem ler a resposta toda** e gera um RST no loopback a cada 15 s. É inofensivo, mas polui o contador `TCPAbortOnClose`.
 
+## [2026-09-29] Testes instáveis: `media-key` corrigido, `contact-info-sheet` investigado
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Tirar da suíte as falhas que não dependem do código testado.
+
+**Arquivos alterados:** `src/lib/storage/media-key.test.ts` e este PROGRESS. Nenhum código de produto mudou.
+
+**O que foi feito:**
+- **`media-key` › "não leva telefone"** procurava `\d{10,}` na chave inteira, e o UUID aleatório às vezes traz 10+ dígitos seguidos. A verificação agora é feita sem o UUID (`semUuid`). Um caso novo, com UUID fixo cheio de dígitos, prova que a falha rara está coberta.
+
+**`contact-info-sheet` › "toque fora com o Novo ticket sujo pergunta Descartar?"**: investigado, **sem causa raiz ainda**.
+- **Sintoma:** o clique fora **fecha** o painel em vez de perguntar, porque `requestExit()` do `NewTicketForm` responde "limpo".
+- **Descartado:**
+  - fuso horário: falha em `America/Sao_Paulo`, UTC e Tóquio;
+  - versão do Node: falha no 25 e no 22;
+  - carga da prévia local: falha também sem ela;
+  - remontagem por `key`: o formulário não tem `key` e a `ref` é estável.
+- **Parcial:** 50ms de espera entre digitar e clicar reduz a falha (de 2/3 para 1/3), mas não elimina. A corrida com o `isDirty` do último render explica só parte.
+- **Ambiente:** passa no CI Linux; no macOS falha na maioria das execuções desde 2026-09-28 ~21h de Brasília.
+- **Próximo passo:** instrumentar o `requestExit`/`isDirty` no teste; ver se o `register` tardio do rádio de "Fila" (que só aparece quando `productsLoading` vira false) reavalia o `isDirty` depois da digitação; considerar ler o estado na hora (`getValues`/`getFieldState`) em vez do snapshot do render. **Verificar se é bug de produto** (rascunho perdido) antes de mexer no teste.
+
+**Verificação:** `media-key` 10/10, 5 execuções seguidas verdes · typecheck ✓.
+
+
 ## [2026-09-29] PR 6 (Atendimento) trazido para a main atual e adaptado à identidade Ticbox
 
 **Agente/Modelo:** Claude Opus 5.5
