@@ -34,6 +34,14 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 msg() { printf '%s  %s\n' "$(date '+%F %T')" "$*"; }
 falha() { msg "ERRO: $*"; exit 1; }
 
+# Apaga por idade só entre os arquivos FORA dos 3 mais novos do padrão.
+reter() {
+  local padrao=$1 dias=$2 f
+  { ls -1t "$DESTINO"/$padrao 2>/dev/null || true; } | tail -n +4 | while read -r f; do
+    find "$f" -maxdepth 0 -mtime +"$dias" -delete
+  done
+}
+
 cmd_backup() {
   mkdir -p "$DESTINO"
   chmod 700 "$DESTINO"
@@ -48,8 +56,11 @@ cmd_backup() {
 
   # Retenção PRIMEIRO: rodando só no fim, um backup que falha (ex.: disco
   # cheio) nunca mais apagaria os antigos, e o disco não se recuperaria.
-  find "$DESTINO" -maxdepth 1 -name 'storage-*.tgz' -mtime +"$RETENCAO_MIDIA_DIAS" -delete
-  find "$DESTINO" -maxdepth 1 \( -name '*.dump' -o -name 'vault-key-*.tgz' \) -mtime +"$RETENCAO_DIAS" -delete
+  # E sempre preserva os 3 mais novos de cada tipo: dias seguidos de falha não
+  # podem deixar o disco sem nenhum backup bom.
+  reter 'storage-*.tgz' "$RETENCAO_MIDIA_DIAS"
+  reter 'db-*.dump' "$RETENCAO_DIAS"
+  reter 'vault-key-*.tgz' "$RETENCAO_DIAS"
 
   # Espaço: estimativa = mídia atual + o último dump; exige a reserva livre depois.
   avail=$(df --output=avail -B1 "$DESTINO" | tail -1 | tr -d '[:space:]')

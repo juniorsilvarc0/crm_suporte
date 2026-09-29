@@ -20,7 +20,7 @@ Stack Docker **isolado** (projeto `crmsup`) numa VPS **compartilhada** com outra
 ```
 internet ─► nginx do HOST :443 (TLS, certbot)
              ├─ APP_DOMAIN ─► 127.0.0.1:3200 ─► crmsup-web ─────────┐
-             └─ API_DOMAIN ─► 127.0.0.1:3201 ─► crmsup-gateway      │ SUPABASE_URL=http://gateway:80
+             └─ API_DOMAIN ─► 127.0.0.1:3201 ─► crmsup-gateway      │ SUPABASE_URL=http://gateway
                                                   ├─ /rest/v1/      ─► crmsup-rest
                                                   ├─ /realtime/v1/  ─► realtime-dev.crmsup-realtime
                                                   └─ /storage/v1/   ─► crmsup-storage
@@ -106,7 +106,7 @@ cat > /etc/cron.d/crmsup-backup <<'EOF'
 EOF
 ```
 
-- **Retenção:** banco e chave do Vault ficam 30 dias. A mídia, que é cópia **cheia** a cada dia, fica 7 dias: a mais recente já contém tudo. A retenção roda **antes** do backup, então um disco cheio não trava a limpeza.
+- **Retenção:** banco e chave do Vault ficam 30 dias. A mídia, que é cópia **cheia** a cada dia, fica 7 dias: a mais recente já contém tudo. A retenção roda **antes** do backup, então um disco cheio não trava a limpeza, e **sempre preserva os 3 mais novos de cada tipo**: dias seguidos de falha nunca apagam o último backup bom.
 - **Folga de disco:** o backup se recusa a gravar se sobrarem menos de 10% do disco (`CRMSUP_BACKUP_RESERVA_PCT`). A VPS é compartilhada: encher o disco derrubaria o Postgres das outras stacks.
 - **Falha no meio:** os arquivos daquele backup são apagados. Nunca sobra um `.dump` truncado com cara de bom.
 - **Conferir um backup** sem tocar no banco de produção: `backup.sh restaurar <arquivo.dump> conferencia`. Ele restaura num banco **novo**.
@@ -140,7 +140,7 @@ nginx -t && systemctl reload nginx   # se o -t falhar: volte o .bak NA HORA
 
 ## Rollback
 
-`build` marca a imagem **do container que está no ar** como `crmsup-web:prd-rollback`, antes de trocar o `image.env`. O código anterior fica em `app.anterior`. Volte **os dois**: o `docker-compose.yml` e o `gateway.conf` da versão nova podem não servir para a imagem antiga.
+`build` marca a imagem **do container que está no ar** como `crmsup-web:prd-rollback`, antes de trocar o `image.env`, e só se ele estiver **healthy**: um deploy que falhou não vira alvo de rollback. O `publicar.sh` se recusa a rodar enquanto o web no ar não estiver healthy — **faça o rollback antes de publicar de novo**, senão o `app.anterior` bom seria descartado. O código anterior fica em `app.anterior`. Volte **os dois**: o `docker-compose.yml` e o `gateway.conf` da versão nova podem não servir para a imagem antiga.
 
 ```bash
 cd /opt/crm-suporte
@@ -173,5 +173,12 @@ $C compose up -d web     # mudou o app.env? `restart` NÃO relê env_file; `up -
 - **O tenant do Realtime é `realtime-dev`**, tirado do Host que o gateway envia. Não renomeie o container `realtime-dev.crmsup-realtime`.
 - **`SUPABASE_JWT_SECRET` ≠ `AUTH_JWT_SECRET`.** Com os dois iguais, o cookie de sessão valeria como credencial de banco.
 - **`SUPABASE_URL=http://gateway`, sem `:80`.** O supabase-js tira a porta padrão ao montar as URLs. Em 2026-09-28, com `:80`, nenhuma mídia do chat abria: o navegador recebia o host interno. Hoje o `toPublicOrigin` normaliza os dois lados, mas o valor certo é sem a porta.
-- **O segredo do webhook da uazapi vai na query (`?s=`).** A rota do webhook não tem log de acesso no vhost, porque o `access.log` do host é compartilhado. Se o segredo vazar, desconecte e reconecte o WhatsApp em Conexão: isso gera outro.
+- **O segredo do webhook da uazapi vai na query (`?s=`).** A rota do webhook não tem log de acesso no vhost, porque o `access.log` do host é compartilhado.
+- ⚠️ **Desconectar e reconectar o WhatsApp NÃO troca o segredo.** O `/api/connection/persist` reaproveita o que já existe (`ensure_chat_integration_secret`). Para **rotacionar** (ex.: o segredo vazou em log), faça os dois passos em seguida, num horário calmo: entre eles o webhook responde 401, e mensagens que chegarem nesse intervalo não entram no CRM (continuam no celular).
+  1. No servidor, com o valor gerado **dentro** do banco (nunca na linha de comando):
+     ```bash
+     /opt/crm-suporte/app/deploy/crmsup.sh compose exec -T db psql -U postgres -c \
+       "select public.set_chat_integration_secret(id, 'webhook_secret', encode(extensions.gen_random_bytes(32), 'hex')) from public.chat_integrations where provider = 'uazapi';"
+     ```
+  2. Em **Conexão › Trocar credenciais**, salve de novo a URL e o token da uazapi: o persist registra na uazapi o webhook com o segredo novo.
 - **Variável do shell vence o `--env-file` no compose.** O `crmsup.sh` limpa do ambiente os nomes do `stack.env` antes do `docker compose`. Não o contorne com `docker compose` cru.

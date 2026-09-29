@@ -153,18 +153,26 @@ cmd_build() {
   # Rollback: a imagem que está NO AR (a do container, não a do image.env —
   # um deploy interrompido deixaria o image.env apontando para uma imagem que
   # nunca rodou) vira :prd-rollback ANTES de o image.env mudar.
+  # Só vira rollback se estiver HEALTHY: depois de um `subir` que falhou, o
+  # container no ar é a versão quebrada, e marcá-la apagaria a última boa.
   atual=$(docker inspect -f '{{.Config.Image}}' crmsup-web 2>/dev/null || env_get "$IMAGE_ENV" APP_IMAGE)
-  if [ -n "$atual" ] && [ "$atual" != "$tag" ] && docker image inspect "$atual" >/dev/null 2>&1; then
+  saude=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' crmsup-web 2>/dev/null || true)
+  if [ -n "$atual" ] && [ "$atual" != "$tag" ] && [ "$saude" = "healthy" ] && docker image inspect "$atual" >/dev/null 2>&1; then
     docker tag "$atual" crmsup-web:prd-rollback
     msg "imagem no ar ($atual) marcada como crmsup-web:prd-rollback"
+  elif [ -n "$atual" ] && [ "$saude" != "healthy" ]; then
+    msg "web no ar não está healthy ($saude): prd-rollback mantido como estava"
   fi
   printf 'APP_IMAGE=%s\n' "$tag" > "$IMAGE_ENV"
   msg "image.env → $tag (entra no ar no próximo 'subir')"
 
-  # Limpeza SÓ das imagens do CRM: fica a nova, a do ar e a de rollback. Nunca
+  # Limpeza SÓ das imagens do CRM: ficam a nova, a do ar, a de rollback e as 3
+  # mais recentes (margem para voltar mais de uma versão). Nunca
   # `docker image prune` — apagaria imagem das outras stacks da VPS.
   docker image ls crmsup-web --format '{{.Repository}}:{{.Tag}}' \
-    | grep -vxF -e "$tag" -e "crmsup-web:prd-rollback" -e "${atual:-crmsup-web:<nenhuma>}" \
+    | grep -vxF -e "crmsup-web:prd-rollback" \
+    | tail -n +4 \
+    | grep -vxF -e "$tag" -e "${atual:-crmsup-web:<nenhuma>}" \
     | xargs -r docker image rm >/dev/null 2>&1 || true
 }
 
@@ -309,7 +317,8 @@ SQL
 
   # O sharp é o único addon nativo: se a libvips não entrou no standalone, o
   # 1º upload de foto e o webhook com mídia quebram com o resto verde.
-  compose exec -T -w /app web node -e "require('sharp')" </dev/null && msg "sharp carrega na imagem ✓"
+  compose exec -T -w /app web node -e "require('sharp')" </dev/null || erro "sharp não carrega na imagem do web"
+  msg "sharp carrega na imagem ✓"
 
   msg "portas publicadas fora do loopback (deve ser vazio):"
   docker ps --filter "label=com.docker.compose.project=crmsup" --format '{{.Names}} {{.Ports}}' \

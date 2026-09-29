@@ -20,6 +20,12 @@ set -Eeuo pipefail
 HOST=${CRMSUP_HOST:?defina CRMSUP_HOST (alias ssh da VPS)}
 RAIZ=/opt/crm-suporte
 
+# Web no ar precisa estar healthy. Depois de um deploy que falhou, publicar de
+# novo descartaria o app.anterior bom e marcaria a versão quebrada como
+# rollback: faça o rollback (deploy/README.md) antes.
+saude=$(ssh "$HOST" "docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' crmsup-web" </dev/null || true)
+[ "$saude" = "healthy" ] || { echo "ERRO: crmsup-web no ar está '${saude:-ausente}'. Faça o rollback antes de publicar de novo." >&2; exit 1; }
+
 git fetch --quiet origin main
 REV=$(git rev-parse --short=12 origin/main)
 echo "▶ origin/main @ $REV → $HOST:$RAIZ"
