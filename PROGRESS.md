@@ -27,6 +27,42 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Fase 5 · PR 6a: catálogos na API v1
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e os integradores leem pela v1 as filas, categorias, status (com as transições permitidas), políticas de SLA e a equipe atribuível.
+**Arquivos alterados:**
+- `src/app/api/v1/{products,ticket-categories,ticket-statuses,sla-policies,users}/route.ts` (novos) e `catalogs.test.ts`;
+- `src/lib/api/v1/catalog.ts` e `responses.ts` (novos), `openapi.ts`;
+- `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **Cinco GET com `catalog:read`**, reaproveitando `getTicketCatalog`, `getProducts` e `getAssignableUsers`.
+- **DTO campo a campo, estável:** sem cor, posição de tela nem `archived_at`. Os schemas são `strictObject`: um campo a mais reprova o teste, como o OpenAPI (`additionalProperties: false`) promete.
+- `ticket-statuses` vem na ordem do quadro, com `transitions` de cada status.
+- `sla-policies` vai da **menos urgente para a mais**: `rank` crescente, maior = mais urgente (baixa=1 … critica=4). Está no OpenAPI e no schema.
+- **`users`:** só os ativos, com `id` e `name`. Sem e-mail, papel nem foto.
+- **Leitura que falha é 503 `unavailable`, com `Retry-After`**, nunca `[]`. Uma lista vazia diria "não há status", e a IA agiria em cima disso.
+- As cinco rotas estão no OpenAPI, com os schemas zod que os testes também usam.
+
+**Decisões tomadas:** o PR 6 do plano foi **dividido** em 6a (catálogos) e 6b (empresas e contatos), para caber numa revisão.
+
+**Verificação:**
+- Testes das rotas: respostas no schema publicado, ordem e transições dos status, só usuários ativos, 403 sem escopo e 503 na falha.
+- O varredor da v1 cobre as 8 rotas sozinho: identidade do `withApi`, 401 sem token e método no OpenAPI.
+- **Varredor da v1, regra nova:** toda rota com token, exceto `/me`, recusa com 403 um token **sem escopo**. Isso cobre também as rotas futuras.
+- **Mutação:** 6 garantias quebradas de propósito, todas pegas: inativo em `users`, falha virando `[]` (status e categorias), rota sem escopo e campo a mais no DTO.
+- **Revisão adversarial:** 4 achados confirmados, todos corrigidos; 1 refutado.
+  - O mais sério: o texto do OpenAPI dizia que `/sla-policies` vinha "da mais urgente para a menos", ao contrário da ordem real, e a IA escolheria "baixa" para um incidente grave.
+  - Os outros três eram de cobertura: 403 e 503 testados em todas as rotas e partes, e DTO estrito.
+- typecheck ✓ · lint ✓ · test ✓ · build ✓ (resultados no PR).
+
+**Pendências / próximos passos:** PR 6b (empresas e contatos). Deploy dos PRs 3 a 6a com "pode subir".
+
+**Armadilhas descobertas:**
+- **Na tabela `sla_policies`, `rank` menor = MENOS urgente** (baixa=1). Qualquer texto de "ordem de urgência" precisa conferir o seed, não o nome da coluna.
+- **`z.object` descarta chave desconhecida no `safeParse`.** Para o teste reprovar um campo a mais, use `z.strictObject`; o JSON Schema gerado é o mesmo.
+
 ## [2026-09-29] Fase 5 · PR 5: tokens com escopo, tipo, limite e validade pela tela
 
 **Agente/Modelo:** Claude Opus 5.5.
