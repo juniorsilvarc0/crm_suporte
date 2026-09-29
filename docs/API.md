@@ -375,7 +375,7 @@ O CRM conecta a uma instância **uazapi** e traz o chat de WhatsApp para dentro 
 
 ### 🔁 Integração com o n8n (a IA "Valquíria")
 
-Toda mensagem que **ENTRA** é repassada (fire-and-forget) para `N8N_WEBHOOK_URL` **enquanto a conversa está em `status='bot'`**. O corpo é o **envelope cru da uazapi**:
+Toda mensagem **nova** que **ENTRA** é repassada (fire-and-forget, timeout de 10 s) para a URL do agente **enquanto a conversa está em `status='bot'`**. Um reenvio da mesma mensagem pela uazapi não é repassado de novo. O corpo é o **envelope da uazapi sem o `token` da instância**, que é credencial do CRM e nunca sai dele:
 
 ```json
 {
@@ -388,7 +388,7 @@ Toda mensagem que **ENTRA** é repassada (fire-and-forget) para `N8N_WEBHOOK_URL
 }
 ```
 
-A IA no n8n gera a resposta e **envia direto pela uazapi** (`POST {apiUrl}/send/text`, header `token`) — a resposta volta como `fromMe` e aparece no chat. Ao **Assumir** o atendimento (status → `human`), o repasse **para** (a IA silencia); ao **Devolver à IA**, volta a `bot`.
+A IA no n8n gera a resposta e **envia direto pela uazapi** (`POST {apiUrl}/send/text`, header `token` com a credencial **configurada no próprio agente**) — a resposta volta como `fromMe` e aparece no chat. Ao **Assumir** o atendimento (status → `human`), o repasse **para** (a IA silencia); ao **Devolver à IA**, volta a `bot`.
 
 > **🧲 Lead automático:** toda mensagem inbound também **cria/atualiza um lead** (nome limpo de emojis, dedup por telefone; **não** sobrescreve o funil de um lead existente).
 

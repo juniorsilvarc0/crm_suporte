@@ -27,6 +27,49 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Fase 5 aberta: plano com as decisões do dono + relay sem o token da uazapi
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Abrir a Fase 5 com um plano executável e fechar primeiro o que é urgente no relay: ele repassava o `token` da instância ao agente, repetia mensagens reenviadas pela uazapi e não tinha prazo.
+**Arquivos alterados:**
+- `docs/PLANO-FASE-5.md` (novo);
+- `src/app/api/chat/webhook/uazapi/route.ts` e o teste dela;
+- `src/features/chat/lib/upsert-message.ts`;
+- `src/features/chat/lib/normalizers/uazapi.ts`;
+- `docs/API.md`, `docs/GUIA-AGENTE-IA.md`, `.claude/skills/uazapi-integration/SKILL.md`.
+
+**O que foi feito:**
+- **Plano da Fase 5** em `docs/PLANO-FASE-5.md`: estado atual com `arquivo:linha`, 14 PRs em ordem (banco → back → front), decisões e riscos. Saiu de 6 leitores em paralelo mais uma síntese.
+- **Relay sem o `token`:** o envelope vai ao agente sem a chave `token` da raiz (`relayEnvelope`), e o resto segue idêntico. O tipo `UazapiEnvelope` passou a declarar o `token`.
+- **Só mensagem nova:** `upsertMessage` devolve `inserted`, tirado do `select("id")` do upsert com `ignoreDuplicates`. Um reenvio da uazapi não insere, e o webhook não repassa de novo. A IA deixa de responder duas vezes à mesma mensagem.
+- **Prazo de 10 s** no `fetch` do relay (`AbortSignal.timeout`).
+
+**Decisões tomadas** (as do dono, em 2026-09-29):
+- a IA tem credencial própria da uazapi, então tirar o token não a quebra;
+- a mudança do contrato do relay é compatível, no mesmo endpoint;
+- o token da instância não será trocado por ora;
+- as recomendações D4 a D14 do plano foram aceitas;
+- a D3 (URL e segredo do agente) fica em aberto até o PR 11.
+
+Minha: juntei os PRs 1 e 2 do plano num só. Os dois mexem no mesmo arquivo crítico, e assim é um deploy em vez de dois.
+
+Troca consciente, apontada pela revisão: o relay passou de "pode repetir" para "**no máximo uma vez**". Uma mensagem pode ser gravada e a resposta do banco se perder antes do relay: aí o webhook dá 500, a uazapi reenvia, o reenvio já não insere, e a IA nunca a recebe. É raro (falha de rede depois do commit) e agora fica no log: `[webhook/uazapi] inbound repetido, sem relay`. O conserto é o outbox da Fase 6, ou uma marca de repasse no relay v1 (`docs/PLANO-FASE-5.md`, PR 11). Antes, o preço era a IA responder duas vezes a todo reenvio.
+
+**Verificação:**
+- Teste do Postgres real (stack local, dentro de transação desfeita com `ROLLBACK`): `INSERT … ON CONFLICT DO NOTHING RETURNING id` devolve a linha na 1ª vez e nenhuma na 2ª (`INSERT 0 0`).
+- 3 testes novos na rota: sem o token, reenvio sem 2º relay (e com log), prazo de 10 s. **Mutação:** desfazer cada correção quebra exatamente o seu teste.
+- O banco falso só deduplica com `onConflict` + `ignoreDuplicates` + `select("id")`. Sem eles, devolve o 42501 que o banco real daria, porque o `service_role` não tem UPDATE nessas colunas.
+- Revisão adversarial (2 revisores + 1 cético por achado): 5 confirmados, todos baixos, todos tratados; 4 refutados, entre eles "credencial aninhada ainda sai".
+- typecheck ✓ · lint ✓ · test ✓ · build ✓ (resultados no PR).
+
+**Pendências / próximos passos:**
+1. **Deploy com "pode subir".** É só imagem: `publicar.sh` troca uma réplica por vez.
+2. Seguir o `docs/PLANO-FASE-5.md` a partir do PR 3 (fundação da API no banco).
+
+**Armadilhas descobertas:**
+- **`limit 1` sem `ORDER BY` num teste de SQL pode pegar outra linha** depois de um UPDATE: o trigger mexe na conversa e a linha muda de lugar no heap. O primeiro teste de dedup "passou a inserir 2×" por isso.
+- **Descartar uma chave com `const { token: _, ...resto }`** gera warning do `no-unused-vars` nesta config. Use cópia + `delete`.
+
 ## [2026-09-29] Produção: migração para duas réplicas (appgw) + Atendimento (#15)
 
 **Agente/Modelo:** Claude Opus 5.5. Autorização literal do dono: "Pode subir agora".

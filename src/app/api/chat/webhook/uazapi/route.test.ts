@@ -120,13 +120,17 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
   let conversationReads: number;
   // Os `.eq` de cada leitura da conversa: [0] é a 1ª leitura, [1] a releitura.
   let conversationFilters: unknown[][][];
+  // Mensagens já gravadas, pelo `external_id`: o ON CONFLICT DO NOTHING.
+  let storedExternalIds: Set<string | null>;
   let fetchMock: ReturnType<typeof vi.fn>;
 
   // O banco nas partes que o upsertMessage toca. O INSERT da mensagem faz o
   // que o trigger increment_unread faz com o status (migration _tickets §10.1):
-  // inbound em `resolved` volta para `bot`. `rereadFails` derruba a 2ª leitura
-  // da conversa (a releitura depois do INSERT). O fake devolve a mesma linha
-  // qualquer que seja o filtro: quem confere o filtro é o teste.
+  // inbound em `resolved` volta para `bot`. Como no banco, um `external_id` já
+  // gravado não insere nem devolve linha, e o trigger não roda. `rereadFails`
+  // derruba a 2ª leitura da conversa (a releitura depois do INSERT). O fake
+  // devolve a mesma linha qualquer que seja o filtro: quem confere o filtro é
+  // o teste.
   function fakeDatabase({ rereadFails = false } = {}) {
     const conversationRow = () => ({
       id: CONVERSATION_ID,
@@ -162,12 +166,32 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
       }),
     };
     const messages = {
-      upsert: async (row: { direction: string }) => {
-        if (row.direction === "inbound" && conversationStatus === "resolved") {
-          conversationStatus = "bot";
-        }
-        return { error: null };
-      },
+      upsert: (
+        row: { direction: string; external_id: string | null },
+        options?: { onConflict?: string; ignoreDuplicates?: boolean }
+      ) => ({
+        select: async (columns?: string) => {
+          // Só um DO NOTHING com `select("id")` diz se inseriu. Sem ele o
+          // PostgREST gera DO UPDATE, e o service_role não tem UPDATE em
+          // direction/sender_type/conversation_id: toda mensagem daria 500.
+          if (
+            options?.onConflict !== "conversation_id,external_id" ||
+            options.ignoreDuplicates !== true
+          ) {
+            return {
+              data: null,
+              error: { code: "42501", message: "permission denied for table chat_messages" },
+            };
+          }
+          if (columns !== "id") throw new Error(`select inesperado: ${columns}`);
+          if (storedExternalIds.has(row.external_id)) return { data: [], error: null };
+          storedExternalIds.add(row.external_id);
+          if (row.direction === "inbound" && conversationStatus === "resolved") {
+            conversationStatus = "bot";
+          }
+          return { data: [{ id: "message-1" }], error: null };
+        },
+      }),
     };
     return {
       from: (table: string) => (table === "chat_messages" ? messages : conversations),
@@ -177,6 +201,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
   beforeEach(() => {
     conversationReads = 0;
     conversationFilters = [];
+    storedExternalIds = new Set();
     adminClientMock.mockImplementation(() => fakeDatabase());
     identityMock.mockResolvedValue({
       contactId: "contact-1",
@@ -208,6 +233,48 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
       RELAY_URL,
       expect.objectContaining({ method: "POST", body: JSON.stringify(inbound) })
     );
+  });
+
+  it("o relay não leva o token da instância; o resto do envelope vai igual", async () => {
+    conversationStatus = "bot";
+    const withToken = { ...inbound, owner: "5511900000000", token: "token-da-instancia" };
+
+    await POST(webhook(SECRET, withToken));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const sent = JSON.parse(String(init.body));
+    expect(sent).not.toHaveProperty("token");
+    expect(String(init.body)).not.toContain("token-da-instancia");
+    expect(sent).toEqual({ ...inbound, owner: "5511900000000" });
+  });
+
+  it("reenvio da mesma mensagem pela uazapi não vai de novo à IA, e fica no log", async () => {
+    conversationStatus = "bot";
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const first = await POST(webhook(SECRET, inbound));
+    const retry = await POST(webhook(SECRET, inbound));
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith("[webhook/uazapi] inbound repetido, sem relay:", {
+      conversationId: CONVERSATION_ID,
+    });
+    info.mockRestore();
+  });
+
+  it("o relay tem prazo de 10 s: um agente que não responde não fica pendurado", async () => {
+    conversationStatus = "bot";
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+
+    await POST(webhook(SECRET, inbound));
+
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBe(timeout.mock.results[0].value);
+    timeout.mockRestore();
   });
 
   it("conversa com humano continua sem relay", async () => {

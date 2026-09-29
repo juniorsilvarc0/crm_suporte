@@ -74,7 +74,8 @@ Pontos-chave:
 - **Receber:** o CRM já repassa cada mensagem que entra para o **webhook do agente**
   configurado na UI (enquanto a conversa está em modo **bot**). Sem polling.
 - **Responder:** o agente envia pela **uazapi** (`POST {apiUrl}/send/text`, header `token`);
-  a resposta aparece no chat e é gravada automaticamente.
+  a resposta aparece no chat e é gravada automaticamente. O `token` é o da credencial
+  da uazapi **configurada no agente**: o CRM não repassa o token da instância.
 - **Humano assume:** quando um atendente clica em **Assumir** no painel, a conversa
   vira **human** e o CRM **para** de repassar (o bot silencia). Ao **Devolver à IA**,
   volta a repassar.

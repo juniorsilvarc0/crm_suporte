@@ -144,9 +144,9 @@ Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vaul
 
 ## 6. Relay ao agente + contato automático
 
-- **Relay:** o webhook repassa o **payload cru** ao `N8N_WEBHOOK_URL` (fire-and-forget) **só p/ inbound e enquanto `conversation.status='bot'`**. A IA "Valquíria" responde enviando **direto pela uazapi** (`/send/text`), e o echo volta como fromMe. Ao **Assumir** (status `human`), o relay para.
+- **Relay:** o webhook repassa o envelope da uazapi **sem o `token` da instância** à URL do agente (Configurações; fallback `N8N_WEBHOOK_URL`), fire-and-forget com timeout de 10 s, **só p/ inbound, só mensagem NOVA (um reenvio da uazapi não repassa de novo) e enquanto `conversation.status='bot'`**. A IA responde enviando **direto pela uazapi** (`/send/text`) com a credencial DELA, e o echo volta como fromMe. Ao **Assumir** (status `human`), o relay para.
 - **Contato:** todo evento de mensagem chama `resolveContactIdentity` (sem reativar; quem reativa e toca `last_message_at` é o trigger do INSERT real da mensagem, uma vez só) — cria o contato (`source=whatsapp`) ou acha o existente pelo telefone normalizado. O nome do provedor **só preenche nome vazio**; nunca sobrescreve o editado. `cleanContactName` remove emojis, bandeiras e o `~` de auto-update do pushname.
-- ⚠️ O relay ainda manda o **envelope cru**, com o `token` da instância. Sai na Fase 5 (relay v1).
+- O relay v1 (contato, empresa, contrato e ticket ativo na raiz; Fase 5) ainda não entrou: hoje o envelope é o da uazapi, só sem o `token`.
 
 ## 7. Realtime
 

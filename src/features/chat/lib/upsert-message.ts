@@ -36,6 +36,8 @@ const CONVERSATION_COLUMNS = "id, contact_id, status, unread_count";
  * fica com a `media_url` do provedor (que expira).
  *
  * No inbound, a conversa devolvida é a de DEPOIS da mensagem (passo 4).
+ * `inserted` diz se a mensagem é nova: `false` num reenvio da uazapi, que o
+ * webhook não repassa de novo ao agente.
  */
 export async function upsertMessage(
   integrationId: string,
@@ -111,7 +113,9 @@ export async function upsertMessage(
       ? { ...((msg.metadata ?? {}) as Record<string, Json>), ...(mediaMeta ?? {}) }
       : null;
 
-  const { error: msgErr } = await supabase.from("chat_messages").upsert(
+  // `select("id")` devolve só a linha INSERIDA: no retry, o DO NOTHING não
+  // devolve nada, e é assim que se sabe que a mensagem já estava lá.
+  const { data: insertedRows, error: msgErr } = await supabase.from("chat_messages").upsert(
     {
       id: messageId,
       conversation_id: conv.id,
@@ -132,11 +136,12 @@ export async function upsertMessage(
       created_at: msg.created_at,
     },
     { onConflict: "conversation_id,external_id", ignoreDuplicates: true }
-  );
+  ).select("id");
 
   if (msgErr) {
     throw new Error(`Message upsert failed: ${msgErr.message}`);
   }
+  const inserted = (insertedRows?.length ?? 0) > 0;
 
   // 4. Inbound em conversa `resolved`: o trigger do INSERT a devolve para `bot`
   //    no mesmo UPDATE do unread (migration _tickets, §10.1). O status do passo
@@ -154,11 +159,11 @@ export async function upsertMessage(
     if (currentErr) {
       console.warn("[upsertMessage] reler o status da conversa falhou:", currentErr.message);
     } else if (current) {
-      return current;
+      return { ...current, inserted };
     }
   }
 
-  return conv;
+  return { ...conv, inserted };
 }
 
 type JsonObject = { [key: string]: Json | undefined };
