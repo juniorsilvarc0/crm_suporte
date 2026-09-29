@@ -21,6 +21,12 @@ umask 077
 
 DESTINO=${CRMSUP_BACKUP_DIR:-/opt/crm-suporte/backups}
 RETENCAO_DIAS=${CRMSUP_BACKUP_RETENCAO:-30}
+# A mídia sai como cópia CHEIA todo dia; a mais recente já tem tudo. Guardar 30
+# cópias cheias multiplicaria o volume de mídia por 30 no disco compartilhado.
+RETENCAO_MIDIA_DIAS=${CRMSUP_BACKUP_RETENCAO_MIDIA:-7}
+# Folga mínima que o backup deixa livre no disco (a VPS é compartilhada: encher
+# o disco derruba o Postgres das outras stacks também).
+RESERVA_PCT=${CRMSUP_BACKUP_RESERVA_PCT:-10}
 DB=crmsup-db
 STORAGE=crmsup-storage
 STAMP=$(date +%Y%m%d-%H%M%S)
@@ -28,14 +34,47 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 msg() { printf '%s  %s\n' "$(date '+%F %T')" "$*"; }
 falha() { msg "ERRO: $*"; exit 1; }
 
+# Apaga por idade só entre os arquivos FORA dos 3 mais novos do padrão.
+reter() {
+  local padrao=$1 dias=$2 f
+  { ls -1t "$DESTINO"/$padrao 2>/dev/null || true; } | tail -n +4 | while read -r f; do
+    find "$f" -maxdepth 0 -mtime +"$dias" -delete
+  done
+}
+
 cmd_backup() {
   mkdir -p "$DESTINO"
   chmod 700 "$DESTINO"
 
-  local dump="$DESTINO/db-$STAMP.dump"
-  local midia="$DESTINO/storage-$STAMP.tgz"
-  local chave="$DESTINO/vault-key-$STAMP.tgz"
-  local n_origem tam_db tam_md
+  # Globais de propósito (sem `local`): o trap de EXIT lê estes nomes, e quando
+  # o `set -e` derruba o script o bash já desfez as variáveis locais — o trap
+  # morreria com "unbound variable" e deixaria o backup parcial no disco.
+  dump="$DESTINO/db-$STAMP.dump"
+  midia="$DESTINO/storage-$STAMP.tgz"
+  chave="$DESTINO/vault-key-$STAMP.tgz"
+  local n_origem tam_db tam_md avail total estimativa ultimo_dump
+
+  # Retenção PRIMEIRO: rodando só no fim, um backup que falha (ex.: disco
+  # cheio) nunca mais apagaria os antigos, e o disco não se recuperaria.
+  # E sempre preserva os 3 mais novos de cada tipo: dias seguidos de falha não
+  # podem deixar o disco sem nenhum backup bom.
+  reter 'storage-*.tgz' "$RETENCAO_MIDIA_DIAS"
+  reter 'db-*.dump' "$RETENCAO_DIAS"
+  reter 'vault-key-*.tgz' "$RETENCAO_DIAS"
+
+  # Espaço: estimativa = mídia atual + o último dump; exige a reserva livre depois.
+  avail=$(df --output=avail -B1 "$DESTINO" | tail -1 | tr -d '[:space:]')
+  total=$(df --output=size -B1 "$DESTINO" | tail -1 | tr -d '[:space:]')
+  ultimo_dump=$(find "$DESTINO" -maxdepth 1 -name 'db-*.dump' -printf '%s\n' | sort -n | tail -1)
+  estimativa=$(( $(docker exec "$STORAGE" du -sb /var/lib/storage | cut -f1) + ${ultimo_dump:-52428800} ))
+  if [ $(( avail - estimativa )) -lt $(( total * RESERVA_PCT / 100 )) ]; then
+    falha "espaço insuficiente: livre $((avail / 1048576))MB, backup ~$((estimativa / 1048576))MB, reserva ${RESERVA_PCT}% — nada gravado"
+  fi
+
+  # Falhou no meio? Apaga os arquivos DESTE backup: um .dump truncado com nome
+  # e permissão de backup bom é pior que nenhum na hora de restaurar. A saída
+  # No sucesso o trap é desarmado antes de a função retornar.
+  trap 'rm -f "$dump" "$midia" "$chave"' EXIT
 
   # Tudo sai por `docker exec` nos containers do stack, não por `docker run -v`:
   # volume com nome errado no `run` não falha — cria um vazio, e o .tgz de
@@ -62,10 +101,9 @@ cmd_backup() {
   fi
 
   chmod 600 "$dump" "$midia" "$chave"
+  trap - EXIT
   msg "ok: $(basename "$dump") ($((tam_db / 1024))KB) · $(basename "$midia") ($((tam_md / 1024))KB, ${n_origem:-0} arquivo(s)) · $(basename "$chave")"
-
-  find "$DESTINO" -maxdepth 1 \( -name '*.dump' -o -name '*.tgz' \) -mtime +"$RETENCAO_DIAS" -delete
-  msg "retenção de ${RETENCAO_DIAS} dias aplicada"
+  msg "retenção: banco e chave ${RETENCAO_DIAS} dias, mídia ${RETENCAO_MIDIA_DIAS} dias"
 }
 
 cmd_restaurar() {

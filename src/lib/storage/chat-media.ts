@@ -117,14 +117,34 @@ export async function signStorageObject(
   return toPublicOrigin(data.signedUrl);
 }
 
-/** Troca o prefixo interno do Supabase pelo público. Exportada para teste. */
+/**
+ * Troca a origem interna do Supabase pela pública. Exportada para teste.
+ *
+ * ⚠️ Compara por URL, não por texto. O supabase-js monta as URLs com `new URL`,
+ * que tira a porta padrão: com `SUPABASE_URL=http://gateway:80` a URL assinada
+ * sai `http://gateway/storage/...`, e a comparação de texto contra
+ * `http://gateway:80/` nunca casava — o navegador recebia o host interno e
+ * nenhuma mídia do chat abria (produção, 2026-09-28).
+ */
 export function toPublicOrigin(
   signedUrl: string,
   internalBase = process.env.SUPABASE_URL,
   publicBase = process.env.NEXT_PUBLIC_SUPABASE_URL
 ): string {
   if (!internalBase || !publicBase) return signedUrl;
-  const from = internalBase.replace(/\/+$/, "");
-  const to = publicBase.replace(/\/+$/, "");
-  return signedUrl.startsWith(`${from}/`) ? `${to}${signedUrl.slice(from.length)}` : signedUrl;
+  let url: URL;
+  let from: URL;
+  let to: URL;
+  try {
+    url = new URL(signedUrl);
+    from = new URL(internalBase);
+    to = new URL(publicBase);
+  } catch {
+    return signedUrl;
+  }
+  const fromPath = from.pathname.replace(/\/+$/, "");
+  const underBase = url.pathname === fromPath || url.pathname.startsWith(`${fromPath}/`);
+  if (url.origin !== from.origin || !underBase) return signedUrl;
+  const toPath = to.pathname.replace(/\/+$/, "");
+  return `${to.origin}${toPath}${url.pathname.slice(fromPath.length)}${url.search}${url.hash}`;
 }
