@@ -98,6 +98,10 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 
 > **Feito no PR 5, além do back:** um front mínimo. Gerar token pede "Acesso" ("Sem acesso" ou "IA de triagem"), e a lista mostra o acesso e o status Vencido. Sem isso, todo token da tela nasceria inerte até o PR 13, e a IA não teria como usar a API antes. A edição fina de escopos continua no PR 13.
 
+> **PR 6 dividido em dois** (2026-09-29), para caber numa revisão:
+> - **6a, feito:** catálogos (`products`, `ticket-categories`, `ticket-statuses` com as transições, `sla-policies`, `users`), escopo `catalog:read`, 503 `unavailable` quando a leitura falha (nunca `[]`).
+> - **6b:** empresas e contatos, com cursor, `updated_since`, `?cnpj=`, o contrato sem valor, o POST idempotente e o PATCH do contato, e o `access_log off` do vhost.
+
 **PR 6: `feat(api)`, leitura de catálogos, clientes e contatos** · back · M · depende do PR 4
 - **Rotas:** `/api/v1/products`, `ticket-categories`, `ticket-statuses`, `sla-policies`, `users`, `customers` (com `?cnpj=`) e `customers/{id}/contract`, `contacts` (GET/POST/PATCH).
 - **Reaproveita:** `getTicketCatalog`, `getAssignableUsers` (sem e-mail), `resolveContactIdentity` com `'api'`, o ramo 422 do telefone (`contacts/[id]/route.ts:50-62`) e os `CONTRACT_SELECT`/`toContractView` extraídos de `get-customer-detail.ts`.
