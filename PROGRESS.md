@@ -27,6 +27,42 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Produção: migração para duas réplicas (appgw) + Atendimento (#15)
+
+**Agente/Modelo:** Claude Opus 5.5. Autorização literal do dono: "Pode subir agora".
+**Objetivo:** Pôr no ar o deploy sem interrupção (PR #17) e o Atendimento (PR #15) sem deixar o webhook sem resposta.
+**Arquivos alterados:** nenhum código, só este PROGRESS. Na produção, o que está na tabela abaixo.
+
+**O que foi feito** (2026-09-29, UTC), seguindo o `deploy/README.md` §Migração:
+
+| Hora | Passo |
+|---|---|
+| 14:57 | Backup: banco (776 KB), mídia (120 MB, 786 arquivos) e chave do Vault |
+| 14:58 | Código `c12380593f15` (a `main` com o #17) em `app.novo` |
+| 14:58 | `segredos` acrescentou só `CRMSUP_APP_PORT=3203` e `APPGW_CONF_FILE`. O hash de todos os outros valores ficou igual, e há cópia em `env/stack.env.bak-*` |
+| 14:58 | `migrations`: 0 novas. Conferido: nada mudou em `supabase/` entre `a19db5e` e a `main` |
+| 15:00 | Build de `crmsup-web:c12380593f15`. A imagem que estava no ar (`a19db5e`) virou `prd-rollback` |
+| 15:01 | Troca de diretório (`app.anterior` = `a19db5e`). Depois, appgw e `web2`, os dois containers novos |
+| 15:02 | vhost → 3203, com backup em `sites-available/…bak-20260929-150207`, `nginx -t` e reload |
+| 15:03 | `trocar web`: a réplica foi drenada e recriada sem a 3200 |
+
+- Não foram recriados: gateway da API, db, rest, realtime e storage.
+- **A conexão do WhatsApp e os dados do banco não foram tocados.**
+
+**Verificação:**
+- **Sonda externa** do início do backup (14:57) até 15:10 UTC, com uma pausa de ~5 s às 15:04:40 para religá-la: `GET /login` a cada 1 s e POST no webhook com segredo inválido (401, sem efeito) a cada 2 s. Resultado: **716 sucessos e 0 falhas**.
+- **Mensagens reais** continuaram entrando: 723 nas últimas 3 h. A última antes da conferência entrou às 12:03:30 de Brasília, durante a troca da `web`.
+- `verificar` ✓: anon com 0 acessos, baseline ok, sharp ok, nenhuma porta pública. A 3200 fechou.
+- Logs: nenhum erro nas réplicas. O appgw registrou 1 erro, esperado: tentou resolver `crmsup-web-2` 11 s antes de ela existir.
+
+**Como reverter:**
+- **Só a versão do app:** `image.env` = `crmsup-web:prd-rollback` e `crmsup.sh subir` (README §Rollback). Troca uma réplica por vez, sem interrupção.
+- **Voltar a uma réplica:** README §Rollback, caso "uma réplica" (`app.anterior` = `a19db5e`, de antes da migração), que também drena.
+
+**Pendências / próximos passos:** o relay à IA ainda não é idempotente. A cópia do backup fora da VPS é requisito de go-live. PR #16 aberto. Daqui em diante, os deploys usam o `publicar.sh`.
+
+**Armadilhas descobertas:** o appgw sobe antes da `web2`, e isso deixa um `could not be resolved` no log. É inofensivo.
+
 ## [2026-09-29] Deploy sem interrupção (duas réplicas) + incidente do segredo do webhook
 
 **Agente/Modelo:** Claude Opus 5.5.
