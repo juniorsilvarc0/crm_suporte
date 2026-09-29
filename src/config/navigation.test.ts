@@ -1,3 +1,4 @@
+import { MessageCircleIcon, SettingsIcon } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -96,6 +97,18 @@ describe("buildTopNavigation", () => {
         "/app/configuracoes",
       ]);
     }
+  });
+
+  it("dá ao menu Ajustes o ícone de engrenagem, como os links soltos têm o deles", () => {
+    const ajustes = buildTopNavigation(getDashboardNavigation("admin")).find((entry) => entry.kind === "menu");
+
+    expect(ajustes?.kind === "menu" ? ajustes.icon : undefined).toBe(SettingsIcon);
+  });
+
+  it("usa na navegação o balão de traço para o WhatsApp, não o logo preenchido", () => {
+    const whatsapp = getDashboardNavigation("member").find((item) => item.href === "/app/chat");
+
+    expect(whatsapp?.icon).toBe(MessageCircleIcon);
   });
 
   it("não inventa menu de administração para membro", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { UserRoundIcon, XIcon } from "lucide-react";
+import { CircleUserRoundIcon, XIcon } from "lucide-react";
 
 import { LogoutButton } from "@/components/layout/logout-button";
 import {
@@ -50,7 +50,7 @@ export function NavigationDrawer({
       <DrawerContent className="h-[88dvh]">
         <div className="flex items-center gap-3 border-b border-border/70 px-4 pb-3 pt-2">
           <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg">
-            <LogoMark size={23} aria-label="" />
+            <LogoMark size={26} aria-label="" />
           </div>
           <div className="min-w-0 flex-1">
             <DrawerTitle className="truncate text-sm font-semibold">Menu</DrawerTitle>
@@ -97,7 +97,7 @@ export function NavigationDrawer({
         <div className="flex shrink-0 flex-col gap-1 border-t border-border/70 px-2 py-2">
           <DrawerItem
             href="/app/perfil"
-            icon={UserRoundIcon}
+            icon={CircleUserRoundIcon}
             title="Meu perfil"
             active={isActive("/app/perfil")}
             onNavigate={() => onOpenChange(false)}
@@ -137,7 +137,7 @@ function DrawerItem({
           : "text-foreground hover:bg-muted active:bg-muted"
       )}
     >
-      <Icon className={cn("size-[18px] shrink-0", !active && "text-muted-foreground")} />
+      <Icon className={cn("size-[18px] shrink-0 stroke-[1.75]", !active && "text-muted-foreground")} />
       <span className="min-w-0 truncate">{title}</span>
     </Link>
   );

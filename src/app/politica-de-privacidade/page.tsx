@@ -9,7 +9,7 @@ const CONTACT_EMAIL = "privacidade@spincode.com.br";
 
 export const metadata: Metadata = {
   title: "Política de Privacidade",
-  description: `Política de privacidade do ${siteConfig.name} — em revisão.`,
+  description: `Política de privacidade do ${siteConfig.brand} ${siteConfig.name} — em revisão.`,
   robots: { index: false, follow: false },
 };
 
@@ -32,15 +32,15 @@ export default function PoliticaDePrivacidadePage() {
             href="/login"
             className="inline-flex items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <LogoMark size={40} aria-label={siteConfig.name} className="shrink-0" />
-            <span className="text-sm font-semibold">{siteConfig.name}</span>
+            <LogoMark size={40} aria-label="" className="shrink-0" />
+            <span className="text-sm font-semibold">{siteConfig.brand} {siteConfig.name}</span>
           </Link>
 
           <h1 className="mt-9 max-w-3xl text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
             Política de Privacidade
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-7 text-muted-foreground">
-            Esta política está em revisão. O {siteConfig.name} está em implantação
+            Esta política está em revisão. O {siteConfig.brand} {siteConfig.name} está em implantação
             e a versão definitiva — quem trata os dados, quais dados, para quê, por
             quanto tempo e como exercer seus direitos — será publicada aqui antes
             de o sistema entrar em operação.
@@ -63,7 +63,7 @@ export default function PoliticaDePrivacidadePage() {
 
       <footer className="border-t border-border">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-12 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>{siteConfig.name} · política em revisão</p>
+          <p>{siteConfig.brand} {siteConfig.name} · política em revisão</p>
           <Link
             className="rounded-sm underline decoration-border underline-offset-4 outline-none transition-colors hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring"
             href="/login"

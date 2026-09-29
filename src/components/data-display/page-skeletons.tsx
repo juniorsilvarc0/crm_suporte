@@ -5,8 +5,8 @@ export function SkeletonToolbar() {
     <div className="flex flex-col gap-2 border-b border-border/70 py-3 sm:flex-row">
       <Skeleton className="h-11 flex-1 rounded-full sm:h-9 sm:max-w-sm" />
       <div className="flex gap-2 sm:ml-auto">
-        <Skeleton className="h-11 w-28 rounded-full sm:h-9" />
-        <Skeleton className="h-11 w-32 rounded-full sm:h-9" />
+        <Skeleton className="h-11 w-28 rounded-md sm:h-9" />
+        <Skeleton className="h-11 w-32 rounded-md sm:h-9" />
       </div>
     </div>
   );
@@ -17,7 +17,7 @@ export function KanbanPageSkeleton() {
     <div className="flex h-[calc(100dvh-var(--app-chrome-top)-var(--mobile-nav-height)-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col px-4 py-4 lg:h-[calc(100dvh-var(--app-chrome-top))] lg:px-6">
       <div className="flex items-center justify-between gap-4 border-b border-border/70 pb-4">
         <div className="space-y-2"><Skeleton className="h-7 w-32" /><Skeleton className="h-4 w-56" /></div>
-        <Skeleton className="h-9 w-32 rounded-full" />
+        <Skeleton className="h-9 w-32 rounded-md" />
       </div>
       <SkeletonToolbar />
       <div className="flex min-h-0 flex-1 gap-3 overflow-hidden pt-3">

@@ -153,7 +153,7 @@ export function InstallPwaBanner() {
         >
           <div className="flex items-start gap-3 p-3.5 sm:p-4">
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-accent/50">
-              <LogoMark size={30} aria-label={siteConfig.name} />
+              <LogoMark size={30} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-2">
@@ -162,7 +162,7 @@ export function InstallPwaBanner() {
                     id="install-banner-title"
                     className="truncate text-sm font-semibold leading-5"
                   >
-                    Instalar {siteConfig.name}
+                    Instalar {siteConfig.brand} {siteConfig.name}
                   </p>
                   <p
                     id="install-banner-description"

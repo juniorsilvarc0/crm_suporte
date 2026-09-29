@@ -40,12 +40,12 @@ export function LogoutButton({
         variant="ghost"
         onClick={handleClick}
         disabled={pending}
-        className="h-10 w-full justify-start gap-3 px-2 text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        className="h-10 w-full justify-start gap-3 px-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
       >
         {pending ? (
           <Spinner variant="circle-filled" className="size-[18px]" />
         ) : (
-          <LogOutIcon className="size-[18px] stroke-[1.6]" />
+          <LogOutIcon className="size-[18px] stroke-[1.75]" />
         )}
         Sair
       </Button>

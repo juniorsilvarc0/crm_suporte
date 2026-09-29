@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Outfit } from "next/font/google";
+import { Geist, Geist_Mono, Poppins } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,22 +17,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Face de display da marca: geométrica e arredondada, no espírito da assinatura
-// da logomarca. Vive em títulos, navegação e números grandes — o corpo de texto
-// e os dados densos continuam em Geist, que lê melhor em tabela.
-const outfit = Outfit({
-  variable: "--font-outfit",
+// Face de display da marca: a Poppins, fonte única do site da Ticbox. Vive em
+// títulos, navegação e números grandes — o corpo de texto e os dados densos
+// continuam em Geist, que lê melhor em tabela.
+const poppins = Poppins({
+  variable: "--font-poppins",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
   title: {
-    default: `${siteConfig.name} | CRM`,
-    template: `%s | ${siteConfig.name}`,
+    default: `${siteConfig.brand} ${siteConfig.name}`,
+    template: `%s | ${siteConfig.brand} ${siteConfig.name}`,
   },
   description: siteConfig.description,
-  applicationName: siteConfig.name,
+  applicationName: `${siteConfig.brand} ${siteConfig.name}`,
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -45,8 +45,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+    // A barra do navegador continua a faixa verde-escura do app (--sidebar).
+    { media: "(prefers-color-scheme: light)", color: "#15312d" },
+    { media: "(prefers-color-scheme: dark)", color: "#15312d" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -62,7 +63,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${geist.variable} ${geistMono.variable} ${outfit.variable}`}
+      className={`${geist.variable} ${geistMono.variable} ${poppins.variable}`}
       suppressHydrationWarning
     >
       <body>

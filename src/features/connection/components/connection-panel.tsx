@@ -460,7 +460,7 @@ export function ConnectionPanel() {
           {wipeChat ? (
             <div className="grid gap-1.5 text-left">
               <Label htmlFor="wipe-confirm">
-                Digite <span className="font-semibold text-rose-600">excluir</span>{" "}
+                Digite <span className="font-semibold text-rose-600 dark:text-rose-300">excluir</span>{" "}
                 para confirmar
               </Label>
               <Input
@@ -522,7 +522,7 @@ export function ConnectionPanel() {
 
           <div className="grid gap-1.5 text-left">
             <Label htmlFor="delete-confirm">
-              Digite <span className="font-semibold text-rose-600">excluir</span> para
+              Digite <span className="font-semibold text-rose-600 dark:text-rose-300">excluir</span> para
               confirmar
             </Label>
             <Input
@@ -820,7 +820,7 @@ function QrBlock({
         <li>3. Toque em Conectar um aparelho e aponte para este código.</li>
       </ol>
 
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground/80">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <WifiOffIcon className="size-3.5" />O código se renova sozinho a cada ~25s.
       </p>
     </div>

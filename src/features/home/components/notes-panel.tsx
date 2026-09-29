@@ -258,7 +258,7 @@ function StickyCard({
         placeholder="Escreva aqui…"
         aria-label={note.content ? `Post-it: ${note.content.slice(0, 40)}` : "Post-it em branco"}
         // ⚠️ `rounded-none` NÃO é enfeite. O primitivo traz `rounded-lg`, que
-        // nesta base vale `--radius` = 1.1rem ≈ 17,6px, e o navegador recorta o
+        // nesta base vale `--radius` = 0.5rem = 8px, e o navegador recorta o
         // conteúdo do textarea pelo retângulo ARREDONDADO. Com padding zero, a
         // primeira letra da primeira e da última linha cai dentro da curva e
         // aparece cortada ao meio ("hoje" virava "noje"). Reduzir o raio é o

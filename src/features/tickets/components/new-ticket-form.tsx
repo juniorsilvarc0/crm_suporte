@@ -357,7 +357,7 @@ export function NewTicketForm({
             <button
               type="button"
               onClick={onExit}
-              className="min-h-11 rounded-lg bg-destructive px-4 text-[15px] font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-11 rounded-lg bg-destructive px-4 text-[15px] font-medium text-white transition-opacity dark:text-brand-deep hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Descartar
             </button>
