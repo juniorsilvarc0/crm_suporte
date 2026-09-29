@@ -69,6 +69,8 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
   Também entram `supabase/tests/api.sql` e o `pnpm db:types` (`database.types.ts`).
 - **Pronto quando:** o banco vazio aplica tudo, reaplicar dá 0, e o teste SQL cobre begin → replay, reused, in_progress e lease vencida.
 
+> **Contrato da idempotência (feito no PR 3, para o PR 4 seguir):** `begin(token, chave, método, caminho CONCRETO sem query string, sha256 do corpo canônico)` devolve `started` + `attempt_id`, `replay` (status + corpo), `reused` (422) ou `in_progress` (409). Só a tentativa dona (`attempt_id`) chama `finish` (apenas 2xx ou 422) ou `release` (5xx e erros que não se guardam). Se ela perdeu a lease, o `finish` responde P0002: devolva a resposta ao cliente sem guardar. O `route` de `integration_logs` continua sendo o template.
+
 **PR 4: `feat(api)`, `withApi` e o esqueleto da v1** · back · G · depende do PR 3
 - **Arquivos (novos):**
   - `src/lib/api/v1/with-api.ts`, com a ordem request_id → limite por IP → Bearer → 1 SELECT por hash com `revoked_at is null` → `expires_at` → escopo → limite por token → `last_used_at` condicional (>60 s) → handler → log;
