@@ -30,8 +30,8 @@ A interface é **operacional e silenciosa**: hierarquia por tipografia, espaço 
 | CSS | **Tailwind v4, CSS-first.** ⚠️ **Não existe `tailwind.config.js`** — os tokens vivem em `@theme inline` dentro de `src/app/globals.css`. |
 | Primitivos | **Base UI** (`@base-ui/react`). ⚠️ **Não é Radix.** Composição via `render={<Button />}`, **não** `asChild`. |
 | Tema | `next-themes` com classe `.dark` (`@custom-variant dark`). Claro e escuro compartilham os mesmos componentes. |
-| Fontes | **Geist** (`--font-geist-sans`) e **Geist Mono** (`--font-geist-mono`), via `next/font/google` no `src/app/layout.tsx`. |
-| Ícones | `lucide-react` v1. WhatsApp é ícone próprio: `src/features/chat/components/whatsapp-icon.tsx`. |
+| Fontes | **Geist** (`--font-geist-sans`) no corpo e **Geist Mono** (`--font-geist-mono`), e **Poppins** (`--font-poppins` → `font-display`/`font-heading`, a fonte da Ticbox) em títulos e navegação, via `next/font/google` no `src/app/layout.tsx`. |
+| Ícones | `lucide-react` v1, **só traço**, `stroke-[1.75]` no cromo. Na navegação o WhatsApp é o `MessageCircleIcon`; o ícone próprio da marca (`src/features/chat/components/whatsapp-icon.tsx`, preenchido) fica nas telas de conteúdo. |
 | Gráficos | `recharts`. |
 | Drag & drop | `@dnd-kit` (kanban do funil). |
 | Toast | `sonner` (`src/components/ui/sonner.tsx`). |
@@ -43,64 +43,100 @@ A interface é **operacional e silenciosa**: hierarquia por tipografia, espaço 
 
 ### §3.1 Tokens semânticos — use estes, não escalas cruas
 
-`background` · `foreground` · `card` · `card-foreground` · `popover` · `popover-foreground` · `primary` · `primary-foreground` · `secondary` · `secondary-foreground` · `muted` · `muted-foreground` · `accent` · `accent-foreground` · `destructive` · `border` · `input` · `ring` · `chart-1..5` · `sidebar*`
+`background` · `foreground` · `card` · `card-foreground` · `popover` · `popover-foreground` · `primary` · `primary-foreground` · `secondary` · `secondary-foreground` · `muted` · `muted-foreground` · `accent` · `accent-foreground` · `destructive` · `border` · `input` · `ring` · `chart-1..5` · `sidebar*` · `brand-solid` · `brand-solid-foreground` · `primary-hover` · `primary-hover-foreground` · `brand-deep` · `brand-lime` (este só sobre verde-escuro)
 
 > **Hardcode de cor (`#hex`, `oklch(...)`, `rgb(...)`) dentro de componente é anti-padrão.** Se falta um token, o token é que precisa nascer — no `globals.css`, com o par claro/escuro.
 
-### §3.2 Paleta
+### §3.2 Paleta — identidade da Ticbox (2026-09-28)
 
-Tema **branco + azul-petróleo da marca** (`#1d658e`, oklch hue ~236), com apoio em **teal**
-(`#27a9ae`, hue ~199) nos tokens de `accent` e nos gráficos. Valores em `oklch`.
+O cliente é a **Ticbox**, e a paleta é a dela, **medida no CSS do site**
+(`style.css`: `--cor-01..04` e `--sidebar`; cinzas do Bootstrap 5.2 que o site
+usa). Não invente cor da marca: o que não está aqui foi derivado e está marcado.
 
-| Token | Claro | Escuro |
+| Cor | Papel |
+|---|---|
+| `#042D29` verde-petróleo | superfície sólida da marca: botão primário, painel do login, texto sobre lima |
+| `#0A7E4D` verde | hover do primário, anel de foco no claro |
+| `#AFEB2B` lima | ícones e item ativo **sobre verde-escuro**. ⚠️ Sobre branco dá 1,42:1 — nunca como texto em fundo claro |
+| `#EEF7E2` verde-claro | `secondary`/`accent`, rótulos da faixa |
+| `#15312D` faixa | barra superior e inferior (`--sidebar`), igual nos dois temas |
+| `#F8F9FA` · `#FFFFFF` · `#212529` | fundo · card · texto (Bootstrap) |
+
+| Token | Claro | Escuro (derivado — a Ticbox não tem) |
 |---|---|---|
-| `--background` | `oklch(0.99 0.004 235)` | `oklch(0.16 0.012 240)` |
-| `--foreground` | `oklch(0.21 0.025 240)` | `oklch(0.96 0.005 235)` |
-| `--card` | `oklch(1 0 0)` | `oklch(0.20 0.015 240)` |
-| `--primary` | `oklch(0.50 0.10 236)` | `oklch(0.62 0.10 225)` |
-| `--accent` | `oklch(0.93 0.035 199)` | `oklch(0.32 0.045 199)` |
-| `--muted-foreground` | `oklch(0.47 0.025 240)` | `oklch(0.72 0.018 235)` |
+| `--background` | `#F8F9FA` | `#021210` |
+| `--foreground` | `#212529` | `#EEF7E2` |
+| `--card` / `--popover` | `#FFFFFF` | `#042D29` |
+| `--primary` (acento de texto, chip `/10`, link) | `#097248` (derivado: 85% `#0A7E4D` + `#042D29`, passa AA no chip) | `#AFEB2B` |
+| `--brand-solid` / `-foreground` | `#042D29` / `#AFEB2B` | `#AFEB2B` / `#042D29` |
+| `--primary-hover` / `-foreground` | `#0A7E4D` / `#FFFFFF` | igual |
+| `--secondary` · `--accent` | `#EEF7E2` (texto `#042D29`) | `#15312D` (texto `#EEF7E2`) |
+| `--muted` / `--muted-foreground` | `#E9ECEF` / `#5C636A` | `#15312D` / `#AAAAAA` |
+| `--border` · `--input` | `#DEE2E6` | branco 12% / 16% |
+| `--ring` | `#0A7E4D` | `#AFEB2B` |
+| `--brand-deep` · `--brand-lime` | `#042D29` · `#AFEB2B` (constantes) | igual |
 | `--destructive` | `oklch(0.55 0.21 27)` | `oklch(0.62 0.22 27)` |
-| `--border` | `oklch(0.91 0.010 235)` | `oklch(1 0 0 / 12%)` |
-| `--ring` | = `--primary` | = `--primary` |
 
-Sidebar tem tokens próprios (`--sidebar*`), branco no claro e mais escuro que o fundo no escuro.
-As logomarcas vivem em `public/brand/` (`logo.png` colorida, `logo-branca.png` para fundo
-escuro, `logo-completa.png` com wordmark) e são consumidas pelo primitivo `LogoMark`.
+**Marca.** O primitivo `LogoMark` desenha a logo oficial da Ticbox em SVG inline,
+pintada por `currentColor`, com três recortes: `symbol` (o quadrado chanfrado,
+padrão), `wordmark` (símbolo + "ticbox", usado na barra) e `full` (com
+"sistemas", só em tamanho grande — some a 28px). Sem classe de cor ela fica
+`#042D29` no claro e clara no escuro; **sobre a faixa ou o painel verde, passe
+`text-white dark:text-white`**, como a Ticbox aplica. Os ícones do app
+(`src/app/icon.png`, `apple-icon.png`) são o favicon TC/BX da Ticbox.
+`public/brand/*.png` são da marca anterior e ficaram sem uso.
 
-### §3.3 Casca 3.0 — a linguagem vigente (2026-08-17)
+### §3.3 Casca — faixa da Ticbox (2026-09-28)
 
-> Esta é a fonte da verdade. O §3.3.1 abaixo guarda a etapa anterior (2.0) como
-> histórico; onde os dois discordarem, **vale o 3.0**.
+> Esta é a fonte da verdade da casca. Ela substitui a Casca 3.0 (pílula
+> flutuante em gradiente azul sobre fundo de água, 2026-08-17) e a §3.3.1
+> (histórico). Onde discordarem, **vale esta seção**.
 
-**A aplicação não tem sidebar.** A navegação inteira vive numa **barra superior
-flutuante** (`src/components/layout/app-header.tsx`): faixa em gradiente da
-marca (`bg-brand-bar`), cantos `rounded-2xl`, folga em volta, sobre um fundo de
-água. No celular, barra inferior de vidro + gaveta.
+**A aplicação não tem sidebar.** A navegação inteira vive na **faixa superior**
+(`src/components/layout/app-header.tsx`): a navbar do site da Ticbox, verde-escura
+e chapada (`bg-brand-bar` = `--sidebar` `#15312D`), **colada no topo e de ponta a
+ponta**, com a logo branca. No celular, barra inferior na mesma faixa + gaveta.
 
-- **Geometria é token, nunca número.** `--app-bar-height` (3.5rem) e
-  `--app-chrome-top` (altura + folgas = 4.5rem). Toda tela de altura cheia
-  (chat, funil, agenda e os skeletons) desconta `--app-chrome-top`;
+- **Geometria é token, nunca número.** `--app-bar-height` (3.5rem, a navbar do
+  painel da Ticbox) e `--app-chrome-top` (= a altura da faixa; não há mais
+  folgas). Toda tela de altura cheia desconta `--app-chrome-top`;
   `--mobile-nav-height` continua valendo para a barra inferior. **Nunca**
   escreva `3.5rem` num `calc()` de tela.
-- ⚠️ **A casca do header pinta fundo próprio** (`bg-background/80` +
-  `backdrop-blur`). Ela é `sticky`: sem fundo, o conteúdo rola à vista pelas
-  calhas em volta da barra — e, no PWA do iOS, por baixo do relógio.
+- ⚠️ **A casca do header pinta fundo próprio** — aqui a própria casca é a faixa,
+  inclusive na safe-area do iOS (`pt-[env(safe-area-inset-top)]`). Sem borda
+  inferior de propósito: 1px a mais faria o chat rolar.
+- **Estados de item da faixa** (contrastes sobre `#15312D`): inativo = rótulo
+  `#EEF7E2` (12,62:1) com **ícone lima** (9,77:1); hover = `#0A7E4D` com texto
+  branco (5,12:1); **ativo = ladrilho lima `rounded-md` com texto e ícone
+  `#042D29`** (10,44:1) + `aria-current`; foco = anel lima com folga na cor da
+  faixa (`ring-offset-sidebar`), senão ele some sobre o lima. Tudo por token
+  `sidebar*` — nada de literal.
 - **Navegação agrupada**: `buildTopNavigation` (`src/config/navigation.ts`)
-  monta seis entradas a partir da lista **já filtrada por papel** — grupo sem
-  item não aparece, grupo de um item vira link, href não previsto entra como
-  link no fim. Item ativo = pílula branca; dentro dos menus, `aria-current`.
-- ⚠️ **A busca só mostra rótulo a partir de `xl`.** Entre 1024 e 1210px a barra
-  do admin não cabe com a busca larga e todos os rótulos truncam.
-- **Tipografia**: display **Outfit** (`--font-outfit` → `font-display` e
-  `font-heading`) em títulos, navegação e **números de destaque**; corpo e dados
-  densos em **Geist**. Número de destaque em Outfit é regra, não gosto: KPI do
-  dashboard, KPI do rastreamento, totais de gráfico e resumo de período.
-- **Raio base `--radius: 1.1rem`.**
-- **Superfícies**: `panel-float` (painel de tela inteira que carrega um módulo —
-  hoje a agenda) · `shadow-soft` (cartões e painéis de conteúdo) · `glass`
-  (barras translúcidas). **Sombra dentro de sombra é proibida**: sub-superfície
-  aninhada em painel flutuante não leva `shadow-soft`.
+  monta as entradas a partir da lista **já filtrada por papel** — grupo sem item
+  não aparece, grupo de um item vira link, href não previsto entra como link no
+  fim. **Todo item tem ícone, inclusive o menu** (`icon` na entrada `menu`:
+  Ajustes = engrenagem). Chip de ícone dentro dos menus é **ladrilho**
+  (`rounded-lg bg-primary/10 text-primary`), eco do quadrado do símbolo.
+- ⚠️ **A busca só mostra rótulo a partir de `xl`, e o nome do produto
+  ("SUPORTE") ao lado da logo só a partir de `2xl`.** Com Poppins, a faixa do
+  admin pede ~1304px com os dois no `xl` e transbordaria em 1280px.
+- **Alvo de toque de 44px** nos controles da faixa no celular (`size-11`,
+  `lg:size-9`), inclusive o link da logo (`min-h-11 min-w-11`).
+- **Tipografia**: display **Poppins** (`font-display`/`font-heading`) em
+  títulos, navegação e **números de destaque**; corpo e dados densos em
+  **Geist**. Número de destaque em display é regra, não gosto.
+- **Raio base `--radius: 0.5rem`** (cantos médios da Ticbox: cards 8px).
+- **Botão primário = `.btn-primary` do site**: `bg-brand-solid` com texto
+  `brand-solid-foreground` (verde-petróleo + lima, 10,44:1); hover `#0A7E4D` com
+  texto branco. **Botão é `rounded-md`** (6px), não mais pílula.
+- **Superfícies**: fundo liso `#F8F9FA` (a "água" saiu) · `shadow-soft` neutra
+  (`0 1px 3px`, a dos cards da Ticbox) em cartões e painéis · `panel-float`
+  para painel de tela inteira. **Sombra dentro de sombra é proibida**.
+  `bg-brand-gradient` ficou com o nome, mas pinta a cor sólida `--brand-solid`
+  (aba ativa das Configurações). ⚠️ Quem põe texto sobre ela precisa vencer o
+  `dark:data-active:text-foreground` do primitivo `Tabs`: use
+  `data-active:text-primary-foreground!` — sem o `!`, no escuro o texto sai
+  claro sobre lima (1,29:1). A barra do celular usa o lima do `sidebar-primary`.
 - 🚫 **O chat não segue esta linguagem.** Ele replica o WhatsApp e tem geometria
   própria: `.wa-surface` redeclara `--radius: 0.5rem`, e os `DialogTitle` do
   módulo levam `font-sans` para não herdar a face de display. Não estenda
@@ -152,6 +188,10 @@ moldura leem como planilha. **Widget não tem elevação no hover** — ele não
 clicável, e mover o que não responde ao clique promete interação que não existe.
 
 ### §3.3.1 Forma e elevação — linguagem 2.0 (histórico)
+
+> ⚠️ **Histórico.** Botão em pílula, gradiente azul e o wash de fundo **não
+> valem mais** (§3.3, 2026-09-28). Os padrões por tela abaixo que não falam de
+> cor ou raio continuam valendo.
 
 Repaginada aprovada pelo dono do produto, inspirada em referência externa de estética
 "leve e flutuante", executada **nas cores da marca**. O que mudou em relação à
@@ -241,7 +281,7 @@ Regras:
 **`Collapsible`** — `Collapsible` + `CollapsibleTrigger` + `CollapsiblePanel`, sobre Base UI. A altura anima por `--collapsible-panel-height`, publicada pelo primitivo — não meça altura no React. O trigger recebe `data-panel-open`; use `group-data-panel-open:` para girar a seta. Para **linha de tabela que expande**, não use este primitivo: `<tr>` não aceita wrapper. O padrão é linha-gatilho + segunda `<tr>` com `colSpan`, controlada por estado (ver §5.5).
 
 **`Button`** — variantes `default` · `outline` · `secondary` · `ghost` · `destructive` · `link`. Tamanhos `xs` · `sm` · `default` · `lg` · `icon` · `icon-xs` · `icon-sm` · `icon-lg`.
-Convenções embutidas: `focus-visible:ring-3`, `aria-invalid` estilizado, `[&_svg]` dimensionado automaticamente, `data-icon="inline-start|inline-end"` ajusta o padding. **Não recrie botão local.**
+`default` é o primário da Ticbox (`bg-brand-solid`/`text-brand-solid-foreground`, hover `primary-hover`); raio `rounded-md` (`rounded-sm` nos tamanhos pequenos). Convenções embutidas: `focus-visible:ring-3`, `aria-invalid` estilizado, `[&_svg]` dimensionado automaticamente, `data-icon="inline-start|inline-end"` ajusta o padding. **Não recrie botão local.**
 
 ### §4.2 `src/components/data-display/`
 
@@ -255,7 +295,7 @@ Convenções embutidas: `focus-visible:ring-3`, `aria-invalid` estilizado, `[&_s
 
 | Componente | Uso |
 |---|---|
-| `DashboardShell` | Casca autenticada: sidebar + header + área de conteúdo. |
+| `DashboardShell` | Casca autenticada: faixa superior + área de conteúdo + barra inferior do celular. |
 | `AppHeader` | Cabeçalho global. |
 | `PageHeader` | Título e descrição da página. |
 | `ModalShell` + `ModalFooterActions` | **Casca canônica de modal.** Header fixo + corpo rolável + footer fixo. `size`: `compact` \| `medium` \| `wide` (padrão `wide`). Aceita `formRef`/`onSubmit` para virar `<form>`. |
@@ -1171,12 +1211,12 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 - **A barra é uma escolha explícita**, não um `slice`: `mobileTabHrefs` em `config/navigation.ts` lista hoje **Início · Tickets · WhatsApp · Clientes** (Fase 4); Agenda entra quando existir. Item novo na navegação **não** entra na barra por acidente.
 - **O menu completo é uma gaveta `vaul` pelo rodapé**, não um popover. Ocupa 88 dvh, agrupa por seção (`Operação` · `Análise` · `Administração`) e fecha arrastando — a superfície que o sistema já usa para "escolher um caminho".
 - **A gaveta lista tudo, inclusive o que já está na barra.** Um menu "completo" que esconde metade dos itens obriga a decorar em qual das duas superfícies cada coisa mora. O item atual aparece marcado.
-- **O gatilho fica no cabeçalho, no lugar da marca.** A marca não sumiu: foi para dentro da gaveta, onde tem função (dizer de que app é este menu) em vez de ocupar o canto mais valioso da tela sem levar a lugar nenhum.
+- **O gatilho fica no cabeçalho, antes do símbolo da marca** (o símbolo da Ticbox, que leva ao Início). A gaveta repete a marca no topo, onde diz de que app é o menu.
 - **Altura da barra: 56 px, não 64.** Somada à área segura do iPhone, a antiga comia quase 90 px de conteúdo.
 - ⚠️ **A altura mora num token, `--mobile-nav-height`.** Cinco telas de altura cheia (chat, funil, agenda + o skeleton dela, e o banner do PWA) descontam esse valor num `calc()`. Enquanto era `4rem` escrito à mão em cada uma, mudar a barra significava caçar cinco `calc()` e torcer para não faltar nenhum.
 - ⚠️ **`DrawerClose` do `vaul` não aceita `render`.** É Radix por baixo, não Base UI: recebe as classes direto, como no chat e no `dialog.tsx`.
 - ⚠️ **`LogoutButton variant="menu"` renderiza um `DropdownMenuItem`** e exige o contexto do menu do Base UI. Fora dele, use `variant="full"`.
-- Onde não existe segundo destino (`paid_traffic`), não há barra nem gaveta — e a marca volta ao cabeçalho. Ver §5.18.
+- Onde não existe segundo destino (`paid_traffic`), não há barra nem gaveta. Ver §5.18.
 
 ### §5.18 Navegação da role de tráfego pago
 
@@ -1323,11 +1363,11 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 - **`stopPropagation` no `onPointerDown`** do textarea (para selecionar texto) e do botão de excluir (senão o clique começa um arrasto).
 - Post-it novo entra **na frente**: `position = menor − 1`, sem reescrever a ordem que o usuário arrumou.
 
-> ⚠️ **`rounded-none` no textarea do post-it não é enfeite.** O primitivo traz `rounded-lg`, que nesta base vale `--radius` = 1.1rem ≈ **17,6px**, e o navegador recorta o conteúdo de um `<textarea>` pelo retângulo **arredondado**. Com `p-0`, a primeira letra da primeira e da última linha some dentro da curva.
+> ⚠️ **`rounded-none` no textarea do post-it não é enfeite.** O primitivo traz `rounded-lg`, que nesta base vale `--radius` = 0.5rem = **8px** (era 1.1rem ≈ 17,6px quando o bug apareceu), e o navegador recorta o conteúdo de um `<textarea>` pelo retângulo **arredondado**. Com `p-0`, a primeira letra da primeira e da última linha some dentro da curva.
 >
 > **Como saber se um campo está em risco** (varredura de 2026-08-18: o post-it era o único caso em toda a UI — não saia "consertando" os outros). O que importa não é `padding < raio`, é a curva na ALTURA em que o texto começa. Com raio `r` e o topo do texto a `y` px da borda, o recorte entra até `r − √(r² − (r−y)²)`:
-> - post-it com `p-0`: `y = 0` → recorte de **17,6px**. Come metade da letra. É o bug.
-> - `Textarea` padrão (`rounded-lg px-2.5 py-2`): `y = 8` → recorte de **2,85px**, contra 10px de padding. **Sobra folga: está correto.**
+> - post-it com `p-0`: `y = 0` → recorte de **8px** (17,6px com o raio antigo). Come parte da letra. É o bug.
+> - `Textarea` padrão (`rounded-lg px-2.5 py-2`): `y = 8` → recorte de **0px** com o raio de 8px (2,85px com o antigo). **Sobra folga: está correto.**
 >
 > Ou seja: padding vertical zero é o que mata. Só `px` pequeno, com `py` normal, costuma estar a salvo.
 

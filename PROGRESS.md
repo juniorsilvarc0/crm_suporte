@@ -27,6 +27,71 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-28] Identidade visual da Ticbox (faixa verde, logo, paleta, Poppins, ícones)
+
+**Agente/Modelo:** Claude Opus 5.5. Método:
+- workflow de 7 agentes: site da Ticbox medido por curl, mapa do sistema visual, auditoria de ícones, 3 direções e juiz;
+- revisão adversarial de 10 agentes sobre o diff;
+- recomendação seguida a pedido do dono ("faça o recomendado").
+
+**Objetivo:** Aproximar o app da identidade do cliente, a Ticbox, e refinar o cabeçalho e os ícones.
+
+**Arquivos alterados:** branch `feat/identidade-ticbox`, 28 arquivos, sem migration.
+- **Base:** `globals.css`, `layout.tsx`, `manifest.ts`, `icon.png`, `apple-icon.png`, `site.ts`.
+- **Casca:** `app-header.tsx`, `dashboard-shell.tsx`, `navigation-drawer.tsx`, `logout-button.tsx`.
+- **Primitivos:** `logo-mark.tsx` (e teste novo), `button.tsx`, `tabs.tsx`, `brand-signature.tsx`, `page-skeletons.tsx`.
+- **Navegação:** `navigation.ts` e o teste dela.
+- **Telas:** login, definir-senha, política, banner do PWA, abas de Configurações.
+- **Contraste pontual:** `new-ticket-form.tsx`, `connection-panel.tsx`, `quick-reply-picker.tsx`, `notes-panel.tsx` (só o comentário).
+- **Docs:** UI.md (§2, §3.1, §3.2, §3.3, §3.3.1, §4.1, §4.3, §5.22, nota do post-it).
+
+**O que foi feito:**
+- **Paleta:** a da Ticbox, **medida** no CSS do site dela: `#042D29`, `#0A7E4D`, lima `#AFEB2B`, `#EEF7E2`, faixa `#15312D`, e os cinzas do Bootstrap. `--primary` claro `#097248` é derivado, para o acento passar AA. O tema escuro é derivado, porque a Ticbox não tem um.
+- **Tokens novos:** `brand-solid`, `primary-hover`, `brand-deep` e `brand-lime`, com os pares claro e escuro.
+- **Superfícies:** raio `0.5rem`; a "água" azul do fundo saiu; sombras neutras.
+- **Casca:** a pílula flutuante em gradiente virou a **faixa verde-escura colada no topo**, igual à navbar do site da Ticbox.
+  - Logo branca; ícones em lima; item ativo em ladrilho lima; hover `#0A7E4D`.
+  - A barra do celular fala a mesma língua.
+  - `--app-chrome-top` passa a ser a altura da faixa.
+- **`LogoMark`:** SVG inline da logo oficial com três recortes (`symbol`, `wordmark` e `full`), pintado por `currentColor`. `public/brand/*.png` ficaram sem uso, e não foram apagados (§3.7).
+- **Ícones do app:** o favicon TC/BX da Ticbox, rasterizado com `sharp`.
+- **Ícones da navegação:**
+  - Casa no Início;
+  - `MessageCircle` para o WhatsApp na nav (o logo preenchido fica nas telas de conteúdo);
+  - `BookUser` em Contatos;
+  - engrenagem no menu Ajustes, que ganhou `icon` no contrato `TopNavEntry`;
+  - `PlugZap` em Conexão e `Settings2` em Configurações.
+- **Botão e fonte:**
+  - `Button` primário igual ao `.btn-primary` do site: verde-petróleo com texto lima, `rounded-md`;
+  - display em **Poppins**, a fonte do site, no lugar do Outfit.
+- **Login:** painel `bg-brand-deep` com a logo completa, símbolo em marca d'água e checks lima; sem proporção fixa, então não sobra faixa branca quando aparece o alerta.
+- **Nome:** "SUPORTE" ao lado da logo; "Ticbox Suporte" na aba e no PWA, com o novo `siteConfig.brand`. O `slug` não muda.
+
+**Decisões tomadas:**
+- **Direção "institucional"** (faixa de ponta a ponta), escolhida pelo juiz: é a mais fiel.
+- **Acento derivado `#097248`:** o `#0A7E4D` puro reprova dentro do chip `/10`.
+- **Nome visível "Suporte"**, a pedido do dono ("tire o CRM"). Aba e PWA com "Ticbox Suporte" para não perder a marca.
+- **O nome ao lado da logo só aparece no `2xl`:** com Poppins, a faixa do admin transbordaria em 1280px.
+
+**Verificação:**
+- typecheck ✓ · lint ✓ (0 erros; os 9 avisos antigos são de `verify-webhook.test.ts`) · test ✓ (2313, com 10 novos) · build ✓.
+- **Revisão adversarial:** 26 achados, 5 confirmados, todos corrigidos. Os principais:
+  - aba ativa das Configurações em 1,29:1 no escuro → `text-primary-foreground!`;
+  - `--destructive` do escuro em 3,67:1 no card novo → `oklch(0.75 0.14 25)`, com `dark:text-brand-deep` no único texto sobre `bg-destructive`;
+  - aba inativa `text-foreground/60` → `text-muted-foreground`;
+  - alvos de toque de 44px na faixa.
+- **Aceite visual:** é do dono, pela prévia local (Playwright é proibido).
+
+**Pendências / próximos passos:**
+- Aceite visual do dono nos temas claro e escuro, em 320px, 375px, tablet e desktop.
+- Deploy só com "pode subir".
+- Apagar `public/brand/*.png` e o utilitário `glass`, que ficaram sem uso, só se o dono pedir.
+
+**Armadilhas descobertas:**
+- **`Tabs` e a especificidade do escuro.** O primitivo traz `dark:data-active:text-foreground`. Qualquer cor de texto de aba ativa sobre fundo de marca precisa de `!`: `:is(.dark *)` tem especificidade maior e vence em silêncio.
+- **Prévia local fora do Docker.** O `.env.local` aponta `SUPABASE_URL=http://host.docker.internal:54321`, que só resolve dentro do container. Rodando `next dev` no Mac, o login cai com "Não foi possível validar o login". Passe `SUPABASE_URL=http://localhost:54321` no comando, sem editar o arquivo.
+- **O `next-env.d.ts` é regerado** pelo `next dev`/`build`. Não entra no commit.
+
 ## [2026-09-28] Fase 10 — infra de produção em `deploy/` (VPS compartilhada, nginx do host)
 
 **Agente/Modelo:** Claude Opus 5.5
