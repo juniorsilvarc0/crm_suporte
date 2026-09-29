@@ -1,3 +1,4 @@
+import { API_TOKEN_LIST_COLUMNS, toApiTokenListItem } from "@/features/settings/lib/api-token-access";
 import type { ApiTokenListItem } from "@/features/settings/types";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
@@ -10,13 +11,13 @@ export async function getApiTokens(): Promise<ApiTokenListItem[]> {
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from("api_tokens")
-      .select("id, name, token_prefix, created_at, last_used_at, revoked_at")
+      .select(API_TOKEN_LIST_COLUMNS)
       .order("created_at", { ascending: false });
     if (error) {
       console.error("getApiTokens failed", error.message);
       return [];
     }
-    return data ?? [];
+    return (data ?? []).map(toApiTokenListItem);
   } catch (error) {
     console.error("getApiTokens threw", error);
     return [];

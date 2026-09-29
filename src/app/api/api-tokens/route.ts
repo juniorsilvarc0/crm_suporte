@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
+import { API_TOKEN_LIST_COLUMNS, toApiTokenListItem } from "@/features/settings/lib/api-token-access";
 import { createApiTokenSchema } from "@/features/settings/schemas/api-token-actions";
 import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
 import { readJsonBody } from "@/lib/http/read-json-body";
@@ -8,9 +9,6 @@ import { generateApiToken } from "@/lib/security/api-token";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
-
-const TOKEN_COLUMNS =
-  "id, name, token_prefix, created_at, last_used_at, revoked_at";
 
 export async function GET() {
   const auth = await requireDashboardAdmin();
@@ -26,7 +24,7 @@ export async function GET() {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("api_tokens")
-    .select(TOKEN_COLUMNS)
+    .select(API_TOKEN_LIST_COLUMNS)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -36,7 +34,7 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json({ ok: true, tokens: data ?? [] });
+  return NextResponse.json({ ok: true, tokens: (data ?? []).map(toApiTokenListItem) });
 }
 
 export async function POST(request: Request) {
@@ -75,9 +73,13 @@ export async function POST(request: Request) {
       name: parsed.data.name,
       token_hash: generated.hash,
       token_prefix: generated.prefix,
+      scopes: parsed.data.scopes,
+      actor_type: parsed.data.actor_type,
+      rate_limit_per_min: parsed.data.rate_limit_per_min,
+      expires_at: parsed.data.expires_at,
       created_by: auth.viewer.id,
     })
-    .select(TOKEN_COLUMNS)
+    .select(API_TOKEN_LIST_COLUMNS)
     .single();
 
   if (error || !data) {
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     token: generated.token,
-    item: data,
+    item: toApiTokenListItem(data),
     message: "Token gerado.",
   });
 }
