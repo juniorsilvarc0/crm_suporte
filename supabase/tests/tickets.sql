@@ -188,6 +188,12 @@ with t as (
           now() - interval '1 hour')
   returning id
 ) insert into ids select 'token_expired', id from t;
+-- Token da IA (20260929170000): só ele abre ticket com origem ai (T14g).
+with t as (
+  insert into public.api_tokens (name, token_hash, token_prefix, created_by, actor_type)
+  values ('Tickets IA', md5(random()::text) || md5(random()::text), 'crmsuporte_tk4', pg_temp.id('admin'), 'ai')
+  returning id
+) insert into ids select 'token_ai', id from t;
 
 -- Filas (uma arquivada) e uma categoria da fila Alfa.
 with p as (insert into public.products (name) values ('Fila Tickets Alfa') returning id)
@@ -564,18 +570,21 @@ begin
   perform pg_temp.expect_fail('T14f token não assume',
     format('select public.create_ticket(p_conversation_id => %L, p_title => ''x'', p_actor_token_id => %L, '
            'p_take_over => true)', v_c14, v_token), 'P0001', 'FORBIDDEN');
-  j := public.create_ticket(p_conversation_id => v_c14, p_title => 'Aberto pela IA', p_actor_token_id => v_token,
+  -- Desde 20260929170000 a origem é o tipo do token: é o token da IA que abre como ai.
+  j := public.create_ticket(p_conversation_id => v_c14, p_title => 'Aberto pela IA',
+         p_actor_token_id => pg_temp.id('token_ai'),
          p_source => 'ai', p_external_id => 'ia-conversa-14', p_ai_triage => '{"resumo":"teste"}');
   v_id := (j #>> '{ticket,id}')::uuid;
   select * into v_row from public.tickets t where t.id = v_id;
-  select string_agg(format('%s:%s:%s', h.actor_type, h.actor_token_id = v_token, h.actor_user_id is null), ',')
+  select string_agg(format('%s:%s:%s', h.actor_type, h.actor_token_id = pg_temp.id('token_ai'),
+                           h.actor_user_id is null), ',')
     into v_t
     from public.ticket_status_history h
    where h.ticket_id = v_id;
   insert into r values (
-    v_row.source = 'ai' and v_row.created_by_token_id = v_token and v_row.created_by_user_id is null
+    v_row.source = 'ai' and v_row.created_by_token_id = pg_temp.id('token_ai') and v_row.created_by_user_id is null
     and v_t = 'ai:t:t',
-    'T14g token com p_source=ai: source=ai e history ai', v_row.source || ' | ' || coalesce(v_t, '<vazio>'));
+    'T14g token da IA com p_source=ai: source=ai e history ai', v_row.source || ' | ' || coalesce(v_t, '<vazio>'));
 
   -- T15
   for v_sql, v_tag in

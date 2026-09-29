@@ -27,6 +27,56 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Fase 5 · PR 3: fundação da API v1 no banco (+ deploy do #19)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Deixar no banco o que o `withApi` (PR 4) precisa: o token sabe se é IA ou integração, o ticket tira a origem dele, o Idempotency-Key tem onde morar e os logs têm retenção.
+**Arquivos alterados:**
+- `supabase/migrations/20260929170000_api_v1_fundacao.sql` (nova);
+- `supabase/tests/api.sql` (novo);
+- `supabase/tests/tickets.sql`, no caso T14g;
+- `src/lib/supabase/database.types.ts`, regenerado;
+- este PROGRESS.
+
+**O que foi feito** (decisões D6, D9 e D10 do `docs/PLANO-FASE-5.md`, aceitas pelo dono):
+- **`api_tokens.actor_type`** (`ai`|`api`, padrão `api`), editável pelo app.
+- **`require_ticket_actor`** devolve o tipo do token, e o `create_ticket` tira a origem dele. Um `p_source` que o contradiga é `INVALID_SOURCE`: um token de integração não abre ticket "como IA". O corpo do `create_ticket` foi copiado da migration de tickets com uma troca só, e o `diff` confirma.
+- **`api_idempotency_keys`** com as RPCs `api_idempotency_begin/finish/release/purge`:
+  - `started` + `attempt_id`, `replay` (status + corpo), `reused` (mesma chave com corpo, **caminho concreto** ou método diferentes), `in_progress`;
+  - lease vencida é retomada com `attempt_id` novo, e a validade nunca termina antes da lease; chave vencida vale de novo;
+  - **só a tentativa dona** conclui (`finish`, só 2xx e 422) ou libera (`release`);
+  - guarda por 24 h, com teto de 64 KB;
+  - **nem o `service_role` toca a tabela**: tudo passa pelas RPCs.
+- **`purge_integration_logs(interval)`**, com padrão **e piso** de 90 dias (D9). Quem executa é o worker da Fase 6.
+
+**Verificação:**
+- Migration aplicada no banco local: "baseline ok: 31 tabelas e 67 funções". Reaplicar não muda nada.
+- `api.sql`: **44 casos ok**, cobrindo:
+  - tipo e origem do ticket, com recusa nos dois sentidos;
+  - o ciclo inteiro da idempotência, conferindo o **efeito** e não só o retorno;
+  - dono da tentativa, caminho concreto, status nulo, retomada que estende a validade;
+  - expurgo seletivo e privilégios.
+- **Revisão adversarial:** 13 achados confirmados, que eram 7 defeitos, todos corrigidos; 0 refutados. O mais grave: o `begin` podia devolver `started` sem reserva, se a linha fosse apagada entre o `INSERT` e o `SELECT`. Agora há um laço que tenta de novo e, em último caso, responde `in_progress`. A corrida em si exige duas sessões e não tem teste automático.
+- `tickets.sql`: **160 ok**. `cadastros.sql`: 63 ok.
+- `baseline.sql` e `segredo_integracao.sql` falham **só no banco de desenvolvimento**, que já tem uma integração uazapi, e os dois inserem outra sem `on conflict`. Não dependem desta migration; o CI roda num banco zerado.
+- typecheck ✓ · lint ✓ (9 warnings anteriores) · test ✓ (2.452) · build ✓.
+
+**Produção (registro do deploy do PR #19):**
+- **Quando:** 2026-09-29, 16:40–16:44 UTC.
+- **O quê:** `29f57d8` pelo `publicar.sh`, com autorização literal do dono. As duas réplicas foram trocadas uma por vez, nada de apoio foi recriado, e o `verificar` passou.
+- **Sonda externa:** 475 ok, 0 falhas.
+- **Como reverter:** `image.env` = `crmsup-web:prd-rollback` (`c12380593f15`) + `subir`.
+- Nenhuma mensagem de cliente chegou nos minutos seguintes: o relay sem token ainda não foi visto rodando em produção.
+
+**Pendências / próximos passos:**
+1. **Deploy desta migration** só com "pode subir". O `publicar.sh` a aplica antes do build; ela é aditiva, e a versão no ar convive com ela.
+2. PR 4 (`withApi` e esqueleto da v1) e PR 5 (tokens com escopo e tipo pela tela).
+
+**Armadilhas descobertas:**
+- **`EXCEPTION` no nível de um bloco `DO` desfaz tudo o que o bloco gravou**, inclusive os resultados de teste já inseridos. Use sub-blocos `begin … exception … end` só em volta do que deve falhar.
+- **`GREATEST` não é função de `pg_catalog`**: é expressão da sintaxe, e `pg_catalog.greatest(...)` só falha **na execução**. O PL/pgSQL não confere o corpo ao criar a função, então a migration aplica sem erro. Só um teste que passa pelo caminho pega.
+- **O teste T14g codificava a regra antiga** (qualquer token abria ticket como IA). Mudou com a D10: agora o preparo tem um token `ai`.
+
 ## [2026-09-29] Fase 5 aberta: plano com as decisões do dono + relay sem o token da uazapi
 
 **Agente/Modelo:** Claude Opus 5.5.
