@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+import {
+  assignableUserSchema,
+  listOf,
+  productSchema,
+  slaPolicySchema,
+  ticketCategorySchema,
+  ticketStatusSchema,
+} from "@/lib/api/v1/catalog";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
 // Contrato público da API v1, servido em GET /api/v1/openapi.json (D14). Os
@@ -47,6 +55,29 @@ const errorResponse = (description: string) => ({
 /** Todo erro não listado (ex.: 500 `internal_error`) vem no mesmo envelope. */
 const defaultError = errorResponse("Erro no envelope padrão, ex.: 500 `internal_error` (informe o `request_id`).");
 
+/** Os erros de toda rota com token. */
+const authErrors = {
+  "401": errorResponse("Sem token, token inválido, revogado (`unauthorized`) ou vencido (`token_expired`)."),
+  "403": errorResponse("O token não tem o escopo (`insufficient_scope`, com `required`)."),
+  "429": errorResponse("Limite do token ou do IP (`rate_limited`, com `Retry-After`)."),
+  default: defaultError,
+};
+
+/** GET de catálogo: lista em `data`, ou 503 `unavailable` quando a leitura falha (nunca `[]`). */
+const catalogGet = (summary: string, schemaName: string) => ({
+  get: {
+    summary: `${summary} Escopo: \`catalog:read\`.`,
+    responses: {
+      "200": {
+        description: "Lista completa (sem paginação).",
+        content: { "application/json": { schema: { $ref: `#/components/schemas/${schemaName}` } } },
+      },
+      "503": errorResponse("Não foi possível ler agora (`unavailable`, com `Retry-After`)."),
+      ...authErrors,
+    },
+  },
+});
+
 export function buildOpenApiDocument() {
   return {
     openapi: "3.1.0",
@@ -70,6 +101,11 @@ export function buildOpenApiDocument() {
         Error: z.toJSONSchema(apiErrorSchema),
         Health: z.toJSONSchema(healthSchema),
         Me: z.toJSONSchema(meSchema),
+        Products: z.toJSONSchema(listOf(productSchema)),
+        TicketCategories: z.toJSONSchema(listOf(ticketCategorySchema)),
+        TicketStatuses: z.toJSONSchema(listOf(ticketStatusSchema)),
+        SlaPolicies: z.toJSONSchema(listOf(slaPolicySchema)),
+        Users: z.toJSONSchema(listOf(assignableUserSchema)),
       },
     },
     paths: {
@@ -101,6 +137,20 @@ export function buildOpenApiDocument() {
           },
         },
       },
+      "/products": catalogGet("Filas (produtos) ativas, por nome.", "Products"),
+      "/ticket-categories": catalogGet(
+        "Categorias que um ticket novo pode receber: gerais ou de fila ativa, com a mãe ativa.",
+        "TicketCategories"
+      ),
+      "/ticket-statuses": catalogGet(
+        "Status na ordem do quadro, com os destinos permitidos (`transitions`) de cada um.",
+        "TicketStatuses"
+      ),
+      "/sla-policies": catalogGet(
+        "Prioridades com os prazos de SLA, da menos urgente para a mais (`rank` crescente; maior = mais urgente).",
+        "SlaPolicies"
+      ),
+      "/users": catalogGet("Quem pode receber ticket (ativos), por nome. Sem e-mail nem papel.", "Users"),
       "/openapi.json": {
         get: {
           summary: "Este documento. Público, sem token.",

@@ -125,6 +125,43 @@ describe("rotas /api/v1", () => {
     }
   );
 
+  // /me é a única rota com token e sem escopo (é como o integrador descobre o
+  // que o token alcança). Toda outra exige escopo: o token "Sem acesso" da
+  // tela (scopes vazio) não pode ler nada.
+  const SCOPELESS_ROUTES = ["/api/v1/me"];
+  it.each(cases.filter(([route]) => !PUBLIC_ROUTES.includes(route) && !SCOPELESS_ROUTES.includes(route)))(
+    "%s: token sem escopo é 403 (toda rota exige escopo)",
+    async (route, file) => {
+      const row = {
+        id: "tok-sem-escopo",
+        name: "Sem acesso",
+        token_prefix: "crmsuporte_s",
+        scopes: [],
+        actor_type: "api",
+        rate_limit_per_min: 6000,
+        expires_at: null,
+        last_used_at: new Date().toISOString(),
+      };
+      adminClientMock.mockReturnValue({
+        from: (table: string) =>
+          table === "api_tokens"
+            ? { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }) }
+            : { insert: async () => ({ error: null }) },
+      });
+      for (const [method, handler] of await exportedHandlers(file)) {
+        const response = await handler(
+          new Request(concreteUrl(route), {
+            method,
+            headers: { authorization: "Bearer sem-escopo", "x-forwarded-for": `198.51.102.${files.indexOf(file) + 1}` },
+          }),
+          { params: Promise.resolve({}) }
+        );
+        expect(response.status, `${method} com token sem escopo`).toBe(403);
+        expect((await response.json()).error.code).toBe("insufficient_scope");
+      }
+    }
+  );
+
   it.each(cases)("%s: todo método está no OpenAPI", async (route, file) => {
     const paths = buildOpenApiDocument().paths as Record<string, Record<string, unknown>>;
     const documented = paths[route.replace(/^\/api\/v1/, "").replace(/\[([^\]]+)\]/g, "{$1}")];
