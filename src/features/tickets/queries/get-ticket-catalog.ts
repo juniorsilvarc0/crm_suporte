@@ -1,9 +1,9 @@
 import { getProducts } from "@/features/products/queries/get-products";
 import type { ProductOption } from "@/features/products/types";
+import { isSlaMode } from "@/features/tickets/lib/sla-mode";
 import { isTicketPriority } from "@/features/tickets/lib/ticket-priority";
 import { isTicketStatus, TICKET_STATUS_KEYS } from "@/features/tickets/lib/ticket-status";
 import type {
-  SlaMode,
   TicketCatalog,
   TicketCategoryOption,
   TicketSlaPolicy,
@@ -11,13 +11,6 @@ import type {
   TicketTransition,
 } from "@/features/tickets/types";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
-
-// 2º uso do guard (o 1º é get-tickets-page): duplicado de propósito (AGENTS §0.2.2).
-const SLA_MODES = ["running", "paused", "stopped"] as const satisfies readonly SlaMode[];
-
-function isSlaMode(value: unknown): value is SlaMode {
-  return SLA_MODES.some((mode) => mode === value);
-}
 
 type ReadResult<Row> = { data: Row[] | null; error: { message: string } | null };
 

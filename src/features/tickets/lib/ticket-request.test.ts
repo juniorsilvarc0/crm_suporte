@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ticketFieldError, ticketRequest } from "@/features/tickets/lib/ticket-request";
+import type { TicketTakeOverErrorBody } from "@/features/tickets/types";
 
 const TRANSITION_URL = "/api/tickets/t1/transition";
 
@@ -161,18 +162,20 @@ describe("ticketRequest — a resposta", () => {
 
 describe("ticketFieldError", () => {
   it("devolve a 1ª mensagem de campo", () => {
-    expect(
-      ticketFieldError({
-        ok: false,
-        code: "invalid_input",
-        message: "Revise os campos.",
-        errors: { title: [], reason: ["Informe o motivo do cancelamento."] },
-      })
-    ).toBe("Informe o motivo do cancelamento.");
+    // Corpo de erro de ticket de verdade (variável tipada, como nos chamadores):
+    // a função só lê `errors`, e o resto do corpo não pode atrapalhar.
+    const body: TicketTakeOverErrorBody = {
+      ok: false,
+      code: "invalid_input",
+      message: "Revise os campos.",
+      errors: { title: [], reason: ["Informe o motivo do cancelamento."] },
+    };
+    expect(ticketFieldError(body)).toBe("Informe o motivo do cancelamento.");
   });
 
   it("sem `errors` (ou sem corpo) não inventa texto", () => {
-    expect(ticketFieldError({ ok: false, code: "x", message: "Falhou." })).toBeUndefined();
+    const body: TicketTakeOverErrorBody = { ok: false, code: "x", message: "Falhou." };
+    expect(ticketFieldError(body)).toBeUndefined();
     expect(ticketFieldError(null)).toBeUndefined();
   });
 });
