@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildMediaKey, extFromMime, thumbKeyFor } from "@/lib/storage/media-key";
+
+/** A chave sem o UUID (aleatório): o resto do caminho não pode carregar dado do contato. */
+const semUuid = (key: string) =>
+  key.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/, "<uuid>");
 
 describe("extFromMime", () => {
   it("resolve os tipos que o chat recebe", () => {
@@ -25,8 +29,18 @@ describe("buildMediaKey", () => {
   // `5511990000024/inbound-<timestamp>.webp` num bucket público.
   it("não leva telefone nem nada do contato no caminho", () => {
     const key = buildMediaKey("chat", "webp");
-    expect(key).not.toMatch(/\d{10,}/);
     expect(key).toMatch(/^chat\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.webp$/);
+    expect(semUuid(key)).not.toMatch(/\d{10,}/);
+  });
+
+  // Regressão do teste instável: o UUID é aleatório e às vezes traz 10+
+  // dígitos seguidos por acaso — o que não pode é telefone FORA dele.
+  it("um UUID cheio de dígitos não é confundido com telefone", () => {
+    const spy = vi.spyOn(crypto, "randomUUID").mockReturnValue("12345678-1234-4123-8123-123456789012");
+    const key = buildMediaKey("chat", "webp");
+    spy.mockRestore();
+    expect(key).toMatch(/\d{10,}/);
+    expect(semUuid(key)).not.toMatch(/\d{10,}/);
   });
 
   it("duas chamadas nunca colidem", () => {
