@@ -152,22 +152,48 @@ services:
       crmsup.gateway-conf-sha: ${CRMSUP_GATEWAY_CONF_SHA:?use deploy/crmsup.sh compose}
     networks: [interna, borda]
 
-  web:
+  # ⚠️ DUAS RÉPLICAS do app, sem porta publicada. Quem recebe o app é o appgw
+  # (abaixo), que reparte entre elas container a container, pela rede do
+  # Docker, sem docker-proxy no caminho. O deploy troca uma de
+  # cada vez, drenando antes (`crmsup.sh subir`). Com uma réplica só, cada
+  # deploy deixava o webhook da uazapi sem resposta por ~20s.
+  # O app continua falando com o banco pelo `gateway` (SUPABASE_URL), que o
+  # deploy do app nunca recria.
+  web: &web
     image: ${APP_IMAGE:?rode `crmsup.sh build` antes — ele grava o image.env}
     container_name: crmsup-web
     restart: unless-stopped
+    # Parada graciosa: no SIGTERM o Next termina o que está em curso e sai. Os
+    # 10 s padrão cortariam um envio de vídeo (ffmpeg até 120 s + uazapi até
+    # 60 s). O `crmsup.sh trocar` passa o mesmo valor em `--timeout`.
+    stop_grace_period: 160s
     depends_on:
       gateway: { condition: service_started }
     env_file:
       - ${APP_ENV_FILE:?ausente no stack.env}
-    ports:
-      - "127.0.0.1:${CRMSUP_WEB_PORT:?ausente no stack.env}:3000"
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
+    networks: [interna, borda]
+
+  web2:
+    <<: *web
+    container_name: crmsup-web-2
+
+  # Gateway do APP: reparte entre web e web2 (deploy/app-gateway.conf). Não é o
+  # gateway da API. A config mora num caminho ESTÁVEL (APPGW_CONF_FILE, fora do
+  # código) e é aplicada com reload; recriar este container derrubaria o app.
+  appgw:
+    image: nginx:1.29-alpine
+    container_name: crmsup-appgw
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CRMSUP_APP_PORT:?ausente no stack.env — rode `crmsup.sh segredos`}:8080"
+    volumes:
+      - ${APPGW_CONF_FILE:?ausente no stack.env — rode `crmsup.sh segredos`}:/etc/nginx/conf.d/default.conf:ro
     networks: [interna, borda]
 
 volumes:
@@ -180,6 +206,6 @@ networks:
   # Storage não alcançam nem são alcançados de fora.
   interna:
     internal: true
-  # Só gateway e web: publicam porta no loopback, e o web sai para a uazapi,
-  # a OpenAI e o n8n.
+  # gateway e appgw publicam porta no loopback; web e web2 saem por ela para a
+  # uazapi, a OpenAI e o n8n.
   borda: {}
