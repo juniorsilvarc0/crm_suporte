@@ -27,6 +27,67 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Produção no ar + correções pós-deploy (mídia, segredo no log, rollback, backup)
+
+**Agente/Modelo:** Claude Opus 5.5. Toda ação em produção teve autorização literal do dono.
+**Objetivo:** Registrar o que foi feito na VPS e levar para o repositório o que foi corrigido à mão ou descoberto depois do 1º deploy.
+
+**Arquivos alterados:** branch `fix/fase10-pos-deploy`.
+- `deploy/crmsup.sh`, `deploy/publicar.sh`, `deploy/nginx-host.conf`, `deploy/backup.sh` e `deploy/README.md`.
+- `src/lib/storage/chat-media.ts` (e o teste dele).
+- `src/app/api/users/[id]/avatar/route.ts`.
+- Este PROGRESS.
+
+**Produção: o que, quando e como reverter**
+
+| Quando (UTC) | O quê | Como reverter |
+|---|---|---|
+| 2026-09-28 ~18:30 | **1ª instalação** (`e7058ad`), roteiro do `deploy/README.md`. Criou `/opt/crm-suporte`, o projeto `crmsup` (6 containers, 2 redes e 3 volumes), o vhost `ticbox.spincode.com.br` (app + api) e o certificado Let's Encrypt `webroot` (vence 2026-12-27). 1º admin criado pelo `crmsup.sh admin`, com troca de senha já feita | `crmsup.sh compose down`; remover o link em `sites-enabled` com `nginx -t` e reload; `certbot delete --cert-name ticbox.spincode.com.br` |
+| 2026-09-28 19:08 | **Mídia do chat não abria.** No `app.env`, `SUPABASE_URL: http://gateway:80 → http://gateway`, e só o web foi recriado | restaurar `env/app.env.bak-20260928-190812` e rodar `compose up -d web` |
+| 2026-09-29 ~00:10 | **Deploy da identidade Ticbox** (`dabcb7c`) pelo `publicar.sh`. Só o web foi recriado | `deploy/README.md` §Rollback (`prd-rollback` = `e7058addda74`; `app.anterior` = `e7058ad`) |
+| 2026-09-29 00:13 | **Backup ligado.** O 1º backup (641KB de banco, 29,7MB de mídia com 306 arquivos, chave do Vault conferida) foi restaurado num banco de conferência, que voltou com 1 usuário e 38 contatos. Criado `/etc/cron.d/crmsup-backup`, diário às 03:30 UTC | `rm /etc/cron.d/crmsup-backup` |
+
+A cada ação em produção foi tirado um retrato das outras stacks antes e depois: containers com os mesmos IDs, e vhosts, certificados, redes, volumes e cron idênticos.
+
+**O que foi feito (código):**
+- **`toPublicOrigin` compara por URL**, não por texto. `new URL` normaliza a porta padrão dos dois lados. Foi a causa do incidente da mídia. Ganhou teste de regressão.
+- **Foto de perfil:** `getPublicUrl` passa pelo `toPublicOrigin`. Antes ela gravaria `http://gateway/...`. Não havia dado a corrigir: nenhum avatar tinha sido gravado.
+- **`crmsup.sh`:**
+  - `segredos` grava `http://gateway`;
+  - `compose()` tira do ambiente os nomes do `stack.env` (`env -u`), porque no compose a variável do shell vence o `--env-file` e outras stacks da VPS usam os mesmos nomes de variável;
+  - `build` escolhe o rollback pela imagem **do container no ar** e limpa só as tags `crmsup-web` antigas;
+  - `verificar` confere o `require('sharp')`.
+- **`publicar.sh`:** as migrations rodam **antes** do build e da troca. Se falharem, nada mais muda.
+- **`nginx-host.conf`:**
+  - a rota exata do webhook da uazapi fica sem `access_log` e com `error_log` em `crit`, porque o segredo vai na query e o log do host é compartilhado;
+  - `map` com nome próprio, sem depender do `conf.d` de outra stack.
+- **`backup.sh`:**
+  - retenção **antes** do backup;
+  - recusa gravar se sobrar menos de 10% do disco;
+  - `trap` apaga os arquivos parciais;
+  - mídia com 7 dias de retenção (é cópia cheia), banco e chave com 30.
+- **README:** rollback volta `app.anterior` e a imagem juntos, seção "Atualizar o vhost", caminhos absolutos, checagem do cron, novas armadilhas.
+
+**Verificação:**
+- typecheck ✓ · lint ✓ (0 erros) · build ✓. `bash -n` em todos os scripts.
+- **`backup.sh`** em container Debian com `docker` falso, em quatro cenários, todos corretos: sucesso; falha no meio (sem sobras); sem folga (nada gravado); retenção (mídia de 8 dias sai, banco fica). O teste **pegou um bug meu**: variável `local` no `trap`.
+- **`nginx -t`** do vhost novo no nginx 1.28, nas duas etapas e **sem** o arquivo de `map` da outra stack.
+- **Testes:** 2314 de 2315. A falha é o teste instável descrito nas armadilhas: não é deste PR (falha igual na `main` local) e passa no CI.
+
+**Pendências / próximos passos:**
+1. **Deploy deste PR, com "pode subir".** Depois dele, **reinstalar o vhost** (README §Atualizar o vhost) e **desconectar e reconectar o WhatsApp**: o segredo atual ficou gravado 25 vezes no `access.log` compartilhado antes da correção.
+2. **Cópia do backup fora da VPS:** requisito de go-live, ainda sem destino.
+3. **Teste instável** `contact-info-sheet.test.tsx`: investigar em PR próprio.
+
+**Armadilhas descobertas:**
+- **Teste instável** `contact-info-sheet.test.tsx › "toque fora com o Novo ticket sujo pergunta Descartar?"`:
+  - desde ~21h de Brasília de 2026-09-28 falha **sempre** no macOS, com Node 25 e Node 22, com ou sem a prévia rodando, em qualquer TZ;
+  - passa no CI Linux, que rodou às 00:05 UTC;
+  - com `Date` falso, passa às 12:00 e 00:01 UTC e falha às 23:59 UTC. Não é um limiar de data: é corrida sensível a tempo;
+  - sintoma: o clique fora **fecha** o painel em vez de perguntar, porque o formulário não se considera sujo.
+- **`trap` de EXIT com variável `local`:** quando o `set -e` derruba o script, o bash já desfez as locais, e o trap morre com "unbound variable". Variável lida em trap é global.
+- **`certbot certonly --webroot` com `--deploy-hook`** grava o hook só na renovação desta lineage. Os hooks globais (`renewal-hooks/*`) estavam vazios na VPS.
+
 ## [2026-09-28] Identidade visual da Ticbox (faixa verde, logo, paleta, Poppins, ícones)
 
 **Agente/Modelo:** Claude Opus 5.5. Método:
