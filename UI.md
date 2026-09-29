@@ -1235,6 +1235,13 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 - O modelo de transcrição OpenAI usa `FormSelect` com opções compatíveis. `whisper-1` continua como padrão para evitar mudança silenciosa de custo ou comportamento.
 - Variáveis públicas embutidas no bundle continuam exigindo rebuild. O editor administra runtime do servidor; não promete alterar `NEXT_PUBLIC_*` já compilada.
 - Abas podem rolar dentro do próprio trilho em telas estreitas. A página não ganha overflow horizontal; ações mobile mantêm alvo de 44 px.
+- **Tokens de API (Fase 5, PR 5):**
+  - Gerar token pede **Acesso**, um `FormSelect` com dois valores:
+    - "Sem acesso" é o padrão, porque um token nasce sem alcançar nada;
+    - "IA de triagem" traz os escopos do agente, o tipo `ai` e 300/min.
+  - A lista ganha a coluna **Acesso** ("IA de triagem", "Sem escopo" ou "N escopos").
+  - O status ganha **Vencido** ao lado de Ativo e Revogado, sempre com texto (§1.4). O mesmo status decide o filtro (que ganhou "Vencidos") e o esmaecimento da linha.
+  - Editar escopos um a um fica para a aba API da Conexão (PR 13).
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 

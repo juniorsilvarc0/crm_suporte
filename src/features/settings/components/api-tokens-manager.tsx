@@ -37,6 +37,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  accessPresetFields,
+  describeTokenAccess,
+  TOKEN_ACCESS_OPTIONS,
+  tokenStatus,
+  type TokenAccessPreset,
+  type TokenStatus,
+} from "@/features/settings/lib/api-token-access";
 import type { ApiTokenListItem } from "@/features/settings/types";
 import { formatDate } from "@/lib/formatters/date";
 
@@ -51,12 +59,12 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
   const [revokeTarget, setRevokeTarget] = useState<ApiTokenListItem | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "revoked">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | TokenStatus>("all");
   const filteredTokens = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR");
     return tokens.filter((token) => {
       const matchesQuery = !normalized || `${token.name} ${token.token_prefix}`.toLocaleLowerCase("pt-BR").includes(normalized);
-      const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? !token.revoked_at : Boolean(token.revoked_at));
+      const matchesStatus = statusFilter === "all" || tokenStatus(token) === statusFilter;
       return matchesQuery && matchesStatus;
     });
   }, [query, statusFilter, tokens]);
@@ -82,7 +90,10 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
     setPending(true);
     setErrors({});
 
-    const payload = Object.fromEntries(new FormData(event.currentTarget));
+    // O acesso escolhido vira os campos do token (escopos, tipo e limite).
+    const form = new FormData(event.currentTarget);
+    const access = (String(form.get("access") ?? "") || "none") as TokenAccessPreset;
+    const payload = { name: form.get("name"), ...accessPresetFields(access) };
 
     try {
       const res = await fetch("/api/api-tokens", {
@@ -165,7 +176,7 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
       <DataToolbar>
         <ToolbarSearch aria-label="Buscar token" placeholder="Buscar token por nome..." value={query} onChange={(event) => setQuery(event.target.value)} />
         <div className="flex flex-wrap gap-2 sm:ml-auto">
-          <FilterButton activeCount={statusFilter === "all" ? 0 : 1}><FilterField label="Status"><FormSelect value={statusFilter} onValueChange={(value) => setStatusFilter((value || "all") as "all" | "active" | "revoked")} aria-label="Filtrar tokens por status" options={[{ value: "all", label: "Todos" }, { value: "active", label: "Ativos" }, { value: "revoked", label: "Revogados" }]} /></FilterField></FilterButton>
+          <FilterButton activeCount={statusFilter === "all" ? 0 : 1}><FilterField label="Status"><FormSelect value={statusFilter} onValueChange={(value) => setStatusFilter((value || "all") as "all" | TokenStatus)} aria-label="Filtrar tokens por status" options={[{ value: "all", label: "Todos" }, { value: "active", label: "Ativos" }, { value: "expired", label: "Vencidos" }, { value: "revoked", label: "Revogados" }]} /></FilterField></FilterButton>
           <ActiveFilters count={(statusFilter === "all" ? 0 : 1) + (query ? 1 : 0)} onClear={() => { setQuery(""); setStatusFilter("all"); }} />
         </div>
       </DataToolbar>
@@ -183,6 +194,9 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
                   Token
                 </TableHead>
                 <TableHead className="text-xs uppercase tracking-normal text-muted-foreground">
+                  Acesso
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-normal text-muted-foreground">
                   Status
                 </TableHead>
                 <TableHead className="text-xs uppercase tracking-normal text-muted-foreground">
@@ -197,8 +211,9 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
             <TableBody>
               {filteredTokens.map((token) => {
                 const revoked = token.revoked_at !== null;
+                const inactive = tokenStatus(token) !== "active";
                 return (
-                  <TableRow key={token.id} variant="card" className={revoked ? "opacity-60" : undefined}>
+                  <TableRow key={token.id} variant="card" className={inactive ? "opacity-60" : undefined}>
                     <TableCell>
                       <div className="flex items-center gap-2 font-medium">
                         <KeyRoundIcon className="size-4 text-muted-foreground" />
@@ -208,10 +223,9 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
                         {token.token_prefix}…
                       </div>
                     </TableCell>
+                    <TableCell className="text-sm">{describeTokenAccess(token)}</TableCell>
                     <TableCell>
-                      <Badge variant={revoked ? "outline" : "default"}>
-                        {revoked ? "Revogado" : "Ativo"}
-                      </Badge>
+                      <TokenStatusBadge token={token} />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {token.last_used_at ? formatDate(token.last_used_at) : "—"}
@@ -240,9 +254,9 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
           </Table>
         </div>
         <div className="divide-y divide-border/70 overflow-hidden rounded-xl border border-border/60 bg-card shadow-soft md:hidden">
-          {filteredTokens.map((token) => { const revoked = token.revoked_at !== null; return (
-            <article key={token.id} className={revoked ? "p-4 opacity-60" : "p-4"}>
-              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="flex items-center gap-2 truncate font-medium"><KeyRoundIcon className="size-4 text-muted-foreground" aria-hidden />{token.name}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{token.token_prefix}…</p></div><Badge variant={revoked ? "outline" : "default"}>{revoked ? "Revogado" : "Ativo"}</Badge></div>
+          {filteredTokens.map((token) => { const revoked = token.revoked_at !== null; const inactive = tokenStatus(token) !== "active"; return (
+            <article key={token.id} className={inactive ? "p-4 opacity-60" : "p-4"}>
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="flex items-center gap-2 truncate font-medium"><KeyRoundIcon className="size-4 text-muted-foreground" aria-hidden />{token.name}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{token.token_prefix}…</p><p className="mt-1 text-xs">{describeTokenAccess(token)}</p></div><TokenStatusBadge token={token} /></div>
               <div className="mt-3 flex items-end justify-between gap-3"><p className="text-xs text-muted-foreground">Criado em {formatDate(token.created_at)}<br />Último uso: {token.last_used_at ? formatDate(token.last_used_at) : "—"}</p>{revoked ? null : <Button type="button" variant="ghost" size="sm" className="h-11 text-destructive hover:text-destructive" onClick={() => setRevokeTarget(token)}><Trash2Icon data-icon="inline-start" />Revogar</Button>}</div>
             </article>
           ); })}
@@ -285,7 +299,7 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
           <ModalShell
             size="compact"
             title="Gerar token de API"
-            description="Dê um nome para identificar quem usará esta credencial."
+            description="Dê um nome para identificar quem usará esta credencial e escolha o que ela alcança."
             onSubmit={handleCreate}
             footer={<ModalFooterActions><Button type="button" variant="outline" onClick={() => handleCreateOpenChange(false)} className="h-11 sm:h-9">Cancelar</Button><Button type="submit" disabled={pending} className="h-11 sm:h-9">{pending ? <Loader2Icon className="animate-spin" data-icon="inline-start" /> : null}Gerar token</Button></ModalFooterActions>}
           >
@@ -305,6 +319,19 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
                       {errors.name[0]}
                     </p>
                   ) : null}
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="new-token-access">Acesso</Label>
+                  <FormSelect
+                    id="new-token-access"
+                    name="access"
+                    defaultValue="none"
+                    options={TOKEN_ACCESS_OPTIONS}
+                    aria-describedby="new-token-access-hint"
+                  />
+                  <p id="new-token-access-hint" className="text-xs text-muted-foreground">
+                    IA de triagem: os escopos do agente e 300 requisições por minuto. Sem acesso: o token não alcança nada até receber escopos.
+                  </p>
                 </div>
           </ModalShell>
         )}
@@ -350,4 +377,12 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
       </Dialog>
     </>
   );
+}
+
+const STATUS_LABEL: Record<TokenStatus, string> = { active: "Ativo", expired: "Vencido", revoked: "Revogado" };
+
+/** Revogado e vencido não autenticam mais; o texto diz qual dos dois. */
+function TokenStatusBadge({ token }: { token: ApiTokenListItem }) {
+  const status = tokenStatus(token);
+  return <Badge variant={status === "active" ? "default" : "outline"}>{STATUS_LABEL[status]}</Badge>;
 }

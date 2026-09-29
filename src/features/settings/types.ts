@@ -39,6 +39,12 @@ export type ApiTokenListItem = {
   id: string;
   name: string;
   token_prefix: string;
+  /** Escopos da API v1 (recurso:acao); vazio = token inerte. */
+  scopes: string[];
+  /** Quem o token representa: a IA ou uma integração. */
+  actor_type: "ai" | "api";
+  rate_limit_per_min: number;
+  expires_at: string | null;
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
