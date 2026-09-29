@@ -4,7 +4,7 @@ import { siteConfig } from "@/config/site";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: siteConfig.name,
+    name: `${siteConfig.brand} ${siteConfig.name}`,
     short_name: siteConfig.name,
     description: siteConfig.description,
     start_url: "/app",
@@ -12,8 +12,8 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/app",
     display: "standalone",
     orientation: "portrait-primary",
-    background_color: "#ffffff",
-    theme_color: "#1d658e",
+    background_color: "#f8f9fa",
+    theme_color: "#15312d",
     categories: ["business", "productivity"],
     lang: "pt-BR",
     dir: "ltr",

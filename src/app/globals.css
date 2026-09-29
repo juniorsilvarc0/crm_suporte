@@ -23,8 +23,14 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-outfit);
-  --font-heading: var(--font-outfit);
+  --font-display: var(--font-poppins);
+  --font-heading: var(--font-poppins);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-solid-foreground: var(--brand-solid-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-hover-foreground: var(--primary-hover-foreground);
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-lime: var(--brand-lime);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -71,83 +77,110 @@
      exatamente este valor. Enquanto era `4rem` escrito à mão em cada uma,
      mudar a barra significava caçar cinco `calc()` e torcer para não faltar um. */
   --mobile-nav-height: 3.5rem;
-  /* Casca 3.0 — a barra superior FLUTUA: além da própria altura ela reserva a
-     folga de cada lado. Telas de altura cheia (chat, funil, agenda e seus
-     skeletons) descontam `--app-chrome-top`; nunca escreva a altura à mão. */
+  /* A faixa superior é colada no topo, sem folgas: o cromo tem a altura dela.
+     Telas de altura cheia descontam `--app-chrome-top`; nunca escreva a altura
+     à mão. */
   --app-bar-height: 3.5rem;
-  --app-chrome-top: calc(var(--app-bar-height) + 1rem);
-  /* Tema da marca: branco principal + azul-petróleo da marca (hue ~235,
-     #1d658e) com apoio em teal (hue ~199, #27a9ae) */
-  --background: oklch(0.99 0.004 235);
-  --foreground: oklch(0.21 0.025 240);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.025 240);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.025 240);
-  --primary: oklch(0.50 0.10 236);
-  --primary-foreground: oklch(0.99 0.005 235);
-  --secondary: oklch(0.95 0.020 225);
-  --secondary-foreground: oklch(0.32 0.06 236);
-  --muted: oklch(0.96 0.010 235);
-  --muted-foreground: oklch(0.47 0.025 240);
-  --accent: oklch(0.93 0.035 199);
-  --accent-foreground: oklch(0.35 0.08 199);
+  --app-chrome-top: var(--app-bar-height);
+  /* Identidade da Ticbox, medida no CSS do site do cliente (style.css,
+     --cor-01..04 e --sidebar) e no Bootstrap 5.2 que ele usa:
+     #042D29 verde-petróleo · #0A7E4D verde · #AFEB2B lima · #EEF7E2 verde-claro
+     · #15312D faixa · #F8F9FA/#212529/#6C757D cinzas do Bootstrap.
+     ⚠️ Lima só sobre verde-escuro: sobre branco dá 1,42:1. */
+  --brand-deep: #042d29;
+  --brand-lime: #afeb2b;
+  --background: #f8f9fa;
+  --foreground: #212529;
+  --card: #ffffff;
+  --card-foreground: #212529;
+  --popover: #ffffff;
+  --popover-foreground: #212529;
+  /* Acento de texto e realce. Derivado (85% #0A7E4D + #042D29): o #0A7E4D
+     puro cai a 4,46:1 dentro de chip /10; este dá 5,98:1 sobre branco e
+     4,94:1 no chip bg-primary/10 sobre o fundo. */
+  --primary: #097248;
+  --primary-foreground: #ffffff;
+  /* Superfície sólida da marca (botão primário; aba ativa das Configurações via
+     bg-brand-gradient), como o .btn-primary do site: verde-petróleo com texto
+     lima (10,44:1). A barra do celular usa o lima do --sidebar-primary. */
+  --brand-solid: #042d29;
+  --brand-solid-foreground: #afeb2b;
+  --primary-hover: #0a7e4d;
+  --primary-hover-foreground: #ffffff;
+  --secondary: #eef7e2;
+  --secondary-foreground: #042d29;
+  --muted: #e9ecef;
+  /* #6C757D (o .text-muted do site) reprova AA sobre #E9ECEF; este passa. */
+  --muted-foreground: #5c636a;
+  --accent: #eef7e2;
+  --accent-foreground: #042d29;
   --destructive: oklch(0.55 0.21 27);
-  --border: oklch(0.91 0.010 235);
-  --input: oklch(0.91 0.010 235);
-  --ring: oklch(0.50 0.10 236);
-  --chart-1: oklch(0.50 0.10 236);
-  --chart-2: oklch(0.67 0.11 199);
-  --chart-3: oklch(0.58 0.10 225);
-  --chart-4: oklch(0.72 0.08 210);
-  --chart-5: oklch(0.42 0.08 245);
-  /* Casca 3.0: raio base generoso — painéis flutuantes e controles bem
-     arredondados (a escala --radius-sm..4xl deriva daqui). */
-  --radius: 1.1rem;
-  /* Sidebar branco com destaques em azul (consistente com o resto) */
-  --sidebar: oklch(0.99 0.005 235);
-  --sidebar-foreground: oklch(0.40 0.025 240);
-  --sidebar-primary: oklch(0.50 0.10 236);
-  --sidebar-primary-foreground: oklch(0.99 0.005 235);
-  --sidebar-accent: oklch(0.93 0.035 199);
-  --sidebar-accent-foreground: oklch(0.35 0.08 199);
-  --sidebar-border: oklch(0.91 0.010 235);
-  --sidebar-ring: oklch(0.50 0.10 236);
+  --border: #dee2e6;
+  --input: #dee2e6;
+  --ring: #0a7e4d;
+  --chart-1: #042d29;
+  --chart-2: #0a7e4d;
+  --chart-3: #64c888;
+  --chart-4: #afeb2b;
+  --chart-5: #a7e8a3;
+  /* Cantos médios, como os cards do painel da Ticbox (8px); a escala
+     --radius-sm..4xl deriva daqui. */
+  --radius: 0.5rem;
+  /* Faixa superior e barra inferior do celular: a navbar do site da Ticbox,
+     igual nos dois temas. Rótulo verde-claro (12,62:1), ícone lima (9,77:1),
+     hover verde com texto branco (5,12:1), ativo em ladrilho lima (10,44:1). */
+  --sidebar: #15312d;
+  --sidebar-foreground: #eef7e2;
+  --sidebar-primary: #afeb2b;
+  --sidebar-primary-foreground: #042d29;
+  --sidebar-accent: #0a7e4d;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 12%);
+  --sidebar-ring: #afeb2b;
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.16 0.012 240);
-  --foreground: oklch(0.96 0.005 235);
-  --card: oklch(0.20 0.015 240);
-  --card-foreground: oklch(0.96 0.005 235);
-  --popover: oklch(0.20 0.015 240);
-  --popover-foreground: oklch(0.96 0.005 235);
-  --primary: oklch(0.62 0.10 225);
-  --primary-foreground: oklch(0.99 0.005 235);
-  --secondary: oklch(0.27 0.020 240);
-  --secondary-foreground: oklch(0.95 0.005 235);
-  --muted: oklch(0.27 0.020 240);
-  --muted-foreground: oklch(0.72 0.018 235);
-  --accent: oklch(0.32 0.045 199);
-  --accent-foreground: oklch(0.98 0.005 235);
-  --destructive: oklch(0.62 0.22 27);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.62 0.10 225);
-  --chart-1: oklch(0.62 0.10 225);
-  --chart-2: oklch(0.70 0.11 199);
-  --chart-3: oklch(0.55 0.10 240);
-  --chart-4: oklch(0.78 0.08 210);
-  --chart-5: oklch(0.48 0.08 250);
-  --sidebar: oklch(0.13 0.012 240);
-  --sidebar-foreground: oklch(0.85 0.008 235);
-  --sidebar-primary: oklch(0.62 0.10 225);
-  --sidebar-primary-foreground: oklch(0.99 0.005 235);
-  --sidebar-accent: oklch(0.26 0.025 240);
-  --sidebar-accent-foreground: oklch(0.98 0.005 235);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.62 0.10 225);
+  /* Derivado: a Ticbox não tem tema escuro. Fundo = #042D29 escurecido, card no
+     verde-petróleo da marca, acento em lima (o painel EAD usa lima como botão). */
+  --background: #021210;
+  --foreground: #eef7e2;
+  --card: #042d29;
+  --card-foreground: #eef7e2;
+  --popover: #042d29;
+  --popover-foreground: #eef7e2;
+  --primary: #afeb2b;
+  --primary-foreground: #042d29;
+  --brand-solid: #afeb2b;
+  --brand-solid-foreground: #042d29;
+  --primary-hover: #0a7e4d;
+  --primary-hover-foreground: #ffffff;
+  --secondary: #15312d;
+  --secondary-foreground: #eef7e2;
+  --muted: #15312d;
+  --muted-foreground: #aaaaaa;
+  --accent: #15312d;
+  --accent-foreground: #eef7e2;
+  /* Mais claro que no tema anterior: o card verde-petróleo é mais luminoso que
+     o grafite antigo, e oklch(0.62 0.22 27) caía a 3,67:1 nele. Este dá 6,30:1
+     no card, 5,47 sobre /10 e 4,61 sobre /20. */
+  --destructive: oklch(0.75 0.14 25);
+  --border: rgb(255 255 255 / 12%);
+  --input: rgb(255 255 255 / 16%);
+  --ring: #afeb2b;
+  --chart-1: #afeb2b;
+  --chart-2: #64c888;
+  --chart-3: #0a7e4d;
+  --chart-4: #a7e8a3;
+  --chart-5: #eef7e2;
+  --sidebar: #15312d;
+  --sidebar-foreground: #eef7e2;
+  --sidebar-primary: #afeb2b;
+  --sidebar-primary-foreground: #042d29;
+  --sidebar-accent: #0a7e4d;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 12%);
+  --sidebar-ring: #afeb2b;
 }
 
 @layer base {
@@ -156,78 +189,48 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    /* ÁGUA — o fundo da aplicação.
-       Quatro manchas de luz (petróleo, ciano, turquesa e um sopro de verde-água)
-       sobre branco. É o que os painéis brancos flutuam por cima: sem isto, a
-       casca vira um app cinza qualquer. Fixo para não "rolar" com o conteúdo. */
-    background-image:
-      radial-gradient(60rem 44rem at -6% -10%, oklch(0.62 0.13 236 / 26%), transparent 60%),
-      radial-gradient(52rem 40rem at 104% 4%, oklch(0.74 0.12 196 / 24%), transparent 58%),
-      radial-gradient(56rem 46rem at 88% 96%, oklch(0.7 0.13 214 / 20%), transparent 60%),
-      radial-gradient(44rem 38rem at 18% 104%, oklch(0.8 0.1 174 / 18%), transparent 58%);
-    background-attachment: fixed;
-  }
-  .dark body {
-    background-image:
-      radial-gradient(60rem 44rem at -6% -10%, oklch(0.55 0.12 236 / 30%), transparent 60%),
-      radial-gradient(52rem 40rem at 104% 4%, oklch(0.6 0.11 196 / 22%), transparent 58%),
-      radial-gradient(56rem 46rem at 88% 96%, oklch(0.5 0.12 214 / 26%), transparent 60%),
-      radial-gradient(44rem 38rem at 18% 104%, oklch(0.55 0.09 174 / 18%), transparent 58%);
   }
   html {
     @apply font-sans;
   }
 }
 
-/* Gradiente da marca (azul-petróleo → azul → teal). Fundo de ações primárias,
-   item ativo da navegação e destaques. Texto por cima: --primary-foreground.
-   ⚠️ Contraste: todos os stops têm L ≤ 0.54 de propósito — com --primary-foreground
-   (L 0.99), o pior ponto do gradiente fica ≥ 4,5:1 (WCAG AA para texto pequeno).
-   Clarear o stop final quebra a aba ativa da agenda e o botão primário. */
+/* Superfície sólida da marca (aba ativa das Configurações). O nome ficou de
+   quando era gradiente: a Ticbox usa cor chapada.
+   Texto por cima: --primary-foreground (branco sobre #042D29 = 14,87:1; no
+   escuro, #042D29 sobre lima = 10,44:1). */
 @utility bg-brand-gradient {
-  background-image: linear-gradient(135deg, oklch(0.46 0.1 240), oklch(0.52 0.105 228) 55%, oklch(0.54 0.105 204));
+  background-image: linear-gradient(var(--brand-solid), var(--brand-solid));
 }
 
-/* Sombra de flutuação tingida pela marca — superfícies principais "soltas" do
-   fundo. Sombras fortes continuam exclusivas de overlay (popover/dialog). */
+/* Sombra leve e neutra das superfícies principais (a dos cards do painel da
+   Ticbox). Sombras fortes continuam exclusivas de overlay (popover/dialog). */
 @utility shadow-soft {
-  box-shadow:
-    0 16px 40px -20px oklch(0.5 0.1 236 / 35%),
-    0 4px 12px -6px oklch(0.5 0.1 236 / 12%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
 }
 
 /* Versão maior do shadow-soft, para os cartões de autenticação (login /
    definir senha). No tema escuro combine com um dark:shadow-* neutro. */
 @utility shadow-soft-lg {
-  box-shadow:
-    0 24px 80px -24px oklch(0.5 0.1 236 / 40%),
-    0 6px 20px -8px oklch(0.5 0.1 236 / 14%);
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 17.5%);
 }
 
-/* ── Casca 3.0 ────────────────────────────────────────────────────────────
-   A barra de navegação é o elemento de assinatura do app: uma faixa flutuante
-   em gradiente da marca, sobre o wash. Vai do petróleo profundo ao turquesa —
-   os mesmos três tons do símbolo da logomarca, na mesma ordem. */
+/* ── Casca ──────────────────────────────────────────────────────────────
+   A faixa superior e a barra inferior do celular: a navbar do site da Ticbox,
+   verde-escura e chapada, igual nos dois temas. */
 @utility bg-brand-bar {
-  background-image: linear-gradient(
-    100deg,
-    oklch(0.36 0.085 245),
-    oklch(0.45 0.1 236) 34%,
-    oklch(0.47 0.1 214) 66%,
-    oklch(0.50 0.1 196)
-  );
+  background-color: var(--sidebar);
 }
 
-/* Painel de conteúdo flutuante: a superfície branca que carrega cada tela.
-   Sombra difusa e ampla, tingida de azul — o painel paira sobre a água. */
+/* Painel de conteúdo: a superfície branca que carrega uma tela, com a sombra
+   neutra e a borda dos cards do painel da Ticbox. */
 @utility panel-float {
   background-color: var(--card);
   border-radius: var(--radius-xl);
   box-shadow:
     0 1px 0 0 oklch(1 0 0 / 60%) inset,
-    0 20px 60px -28px oklch(0.45 0.1 236 / 42%),
-    0 4px 16px -8px oklch(0.45 0.1 236 / 14%);
-  border: 1px solid oklch(0.5 0.06 225 / 10%);
+    0 1px 3px rgb(0 0 0 / 10%);
+  border: 1px solid var(--border);
 }
 .dark .panel-float,
 .dark [class~="panel-float"] {
@@ -237,13 +240,14 @@
   border-color: oklch(1 0 0 / 10%);
 }
 
-/* Superfície de vidro — barras internas e chips sobre o painel ou sobre a água. */
+/* Superfície de vidro — barras internas e chips sobre o painel. Ficou sem uso
+   quando a barra do celular virou a faixa verde; não apagada (AGENTS §3.7). */
 @utility glass {
   background-color: oklch(1 0 0 / 72%);
   backdrop-filter: blur(16px) saturate(140%);
 }
 .dark .glass {
-  background-color: oklch(0.22 0.02 240 / 72%);
+  background-color: color-mix(in oklab, var(--card) 72%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -366,11 +370,11 @@
 /* ─── WhatsApp-style live chat surface ─────────────────────────────── */
 .wa-surface {
   /* ⚠️ O chat NÃO acompanha o raio do app.
-     A casca 3.0 subiu `--radius` para 1.1rem; num mensageiro isso vira menu de
-     canto redondo demais ao lado de bolhas de 7,5px. As utilities do Tailwind
-     leem `var(--radius)` no momento do uso, então redeclarar aqui devolve a
-     geometria do WhatsApp para tudo que vive dentro desta superfície — sem
-     tocar em componente nenhum. Popup portalizado fica FORA daqui: esse leva
+     O raio do chat fica fixo em 0.5rem (bolhas de 7,5px, como no WhatsApp)
+     mesmo que o `--radius` do app mude — hoje os dois coincidem, mas a casca já
+     teve 1.1rem e pode voltar a mudar. As utilities do Tailwind leem
+     `var(--radius)` no momento do uso, então redeclarar aqui prende a geometria
+     de tudo que vive dentro desta superfície, sem tocar em componente. Popup portalizado fica FORA daqui: esse leva
      raio literal (ver §5.7 do UI.md). */
   --radius: 0.5rem;
   --wa-bg: #efeae2;

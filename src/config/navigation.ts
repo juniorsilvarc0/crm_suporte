@@ -1,15 +1,16 @@
 import type { ComponentType } from "react";
 import {
-  ActivityIcon,
+  BookUserIcon,
   Building2Icon,
-  ContactRoundIcon,
-  SlidersHorizontalIcon,
-  SmartphoneIcon,
+  HouseIcon,
+  MessageCircleIcon,
+  PlugZapIcon,
+  Settings2Icon,
+  SettingsIcon,
   TicketIcon,
   UsersRoundIcon,
 } from "lucide-react";
 
-import { WhatsAppIcon } from "@/features/chat/components/whatsapp-icon";
 import type { AppUserRole } from "@/features/settings/types";
 
 const OPERATION_ROLES: ReadonlyArray<AppUserRole> = ["admin", "member"];
@@ -42,17 +43,21 @@ export type NavItem = {
  * O núcleo que sobrou da poda do CRM de origem, mais os cadastros da Fase 3
  * (Clientes e Contatos) e os Tickets da Fase 4. Quadro, agenda, financeiro e
  * métricas de suporte entram com as páginas deles, nas fases seguintes de
- * `docs/PLANO-IMPLANTACAO.md`. O WhatsApp mantém o ícone da própria marca.
+ * `docs/PLANO-IMPLANTACAO.md`.
+ *
+ * Ícones só de traço, no mesmo peso: o WhatsApp entra na navegação como um
+ * balão de contorno (o logo preenchido dele virava uma mancha no meio da
+ * barra). O ícone da marca WhatsApp continua nas telas de conteúdo.
  */
 export const dashboardNavigation: NavItem[] = [
-  { title: "Início", href: "/app", icon: ActivityIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Início", href: "/app", icon: HouseIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Tickets", href: "/app/tickets", icon: TicketIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "WhatsApp", href: "/app/chat", icon: WhatsAppIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "WhatsApp", href: "/app/chat", icon: MessageCircleIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Clientes", href: "/app/clientes", icon: Building2Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Contatos", href: "/app/contatos", icon: ContactRoundIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Conexão", href: "/app/conexao", icon: SmartphoneIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
+  { title: "Contatos", href: "/app/contatos", icon: BookUserIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Conexão", href: "/app/conexao", icon: PlugZapIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
-  { title: "Configurações", href: "/app/configuracoes", icon: SlidersHorizontalIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
+  { title: "Configurações", href: "/app/configuracoes", icon: Settings2Icon, group: "Administração", allowedRoles: ADMIN_ROLES },
 ];
 
 /**
@@ -94,7 +99,7 @@ export function getMobileTabs(role: AppUserRole): NavItem[] {
  */
 export type TopNavEntry<T = NavItem> =
   | { kind: "link"; item: T }
-  | { kind: "menu"; title: string; hrefs: ReadonlyArray<string>; items: T[] };
+  | { kind: "menu"; title: string; icon: NavItem["icon"]; hrefs: ReadonlyArray<string>; items: T[] };
 
 /** Itens que moram no menu da conta (avatar), não na navegação. */
 const ACCOUNT_HREFS: ReadonlyArray<string> = ["/app/perfil"];
@@ -104,14 +109,14 @@ const ACCOUNT_HREFS: ReadonlyArray<string> = ["/app/perfil"];
  * solto no fim — item novo aparece por padrão em vez de sumir em silêncio.
  */
 const TOP_NAV_SPEC: ReadonlyArray<
-  { kind: "link"; href: string } | { kind: "menu"; title: string; hrefs: ReadonlyArray<string> }
+  { kind: "link"; href: string } | { kind: "menu"; title: string; icon: NavItem["icon"]; hrefs: ReadonlyArray<string> }
 > = [
   { kind: "link", href: "/app" },
   { kind: "link", href: "/app/tickets" },
   { kind: "link", href: "/app/chat" },
   { kind: "link", href: "/app/clientes" },
   { kind: "link", href: "/app/contatos" },
-  { kind: "menu", title: "Ajustes", hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes"] },
+  { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes"] },
 ];
 
 /**
@@ -132,7 +137,7 @@ export function buildTopNavigation<T extends { href: string }>(visible: Readonly
     spec.hrefs.forEach((href) => claimed.add(href));
     const items = spec.hrefs.flatMap((href) => visible.filter((candidate) => candidate.href === href));
     if (items.length === 1) entries.push({ kind: "link", item: items[0] });
-    else if (items.length > 1) entries.push({ kind: "menu", title: spec.title, hrefs: spec.hrefs, items });
+    else if (items.length > 1) entries.push({ kind: "menu", title: spec.title, icon: spec.icon, hrefs: spec.hrefs, items });
   }
 
   for (const item of visible) {

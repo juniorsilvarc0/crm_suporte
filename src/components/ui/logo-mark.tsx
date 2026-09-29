@@ -1,52 +1,72 @@
 import * as React from "react"
-import Image from "next/image"
 
 import { siteConfig } from "@/config/site"
 import { cn } from "@/lib/utils"
 
-// Proporção natural da marca (public/brand/logo*.png: 550×586).
-const LOGO_RATIO = 550 / 586
+// Paths da logo da Ticbox (arquivo oficial do cliente, CorelDRAW), sem as
+// sobras de exportação: um retângulo recortado e o contorno duplicado sem
+// preenchimento. Um só desenho, pintado por `currentColor`: branco na faixa
+// verde-escura, verde-escuro sobre fundo claro.
+const SYMBOL = "M36.49 2.64l-25.05 0c-1.99,0 -3.81,0.77 -5.18,2.03l0 0 -3.74 3.42 0.01 0c-1.55,1.4 -2.53,3.42 -2.53,5.66l0 17.43c0.13,3.85 -0.08,2.97 2.6,5.76l6.35 6.43c2.76,2.8 1.98,3.03 5.82,3.01l17.92 -0.1c1.84,-0.01 4.33,-1.38 5.75,-2.65l2.53 -2.28c2.02,-1.79 3.16,-3.06 3.16,-5.91l0 -25.17c0,-4.2 -3.44,-7.63 -7.64,-7.63zm-5.31 5.9l-20.86 0 0 -0.01 -2.36 0c-0.95,0 -1.73,0.78 -1.73,1.74l0 1.73 0 0 0 15.11c0.11,3.38 -0.07,2.61 2.29,5.07l5.58 5.65c2.43,2.47 1.75,2.67 5.12,2.65l14.68 -0.09 2.27 0c0.95,0 1.73,-0.78 1.73,-1.73l0 -1.51 0 -0.23 0 -21.67c0,-3.69 -3.02,-6.71 -6.72,-6.71z";
+const LETTERS = "M72.76 34.77c-0.57,0.57 -1.65,0.97 -2.73,0.97 -1.53,0 -2.67,-1.31 -2.67,-3.18l0 -11.2 6.08 0 0 -7.67 -6.08 0 0 -8.07 -9.2 0 0 8.07 -3.87 0 0 7.67 3.87 0 0 12.96c0,5.51 3.86,9.43 9.37,9.43 2.5,0 5.4,-1.14 7.16,-2.79l-1.93 -6.19zm4.49 8.3l9.6 0 0 -29.38 -9.6 0 0 29.38zm28.75 0.68c5.17,0 9.27,-2.1 12.16,-5.4l-6.36 -5.23c-1.36,1.54 -3.64,2.62 -5.74,2.62 -3.81,0 -7.04,-3.41 -7.04,-7.45 0,-3.92 3.23,-7.27 7.04,-7.27 2.05,0 4.26,1.08 5.57,2.5l6.36 -5.28c-2.84,-3.18 -6.87,-5.23 -11.87,-5.23 -8.87,0 -16.37,6.99 -16.37,15.34 0,8.35 7.45,15.4 16.25,15.4zm33.47 -30.74c-3.92,0 -7.27,1.65 -9.6,4.43l0 -14.09 -9.66 0 0 39.72 9.66 0 0 -3.75c2.33,2.78 5.68,4.43 9.6,4.43 7.9,0 13.47,-6.37 13.47,-15.4 0,-8.98 -5.57,-15.34 -13.47,-15.34zm-2.89 22.73c-3.98,0 -6.71,-3.07 -6.71,-7.39 0,-4.26 2.73,-7.33 6.71,-7.33 4.14,0 7.1,3.07 7.1,7.33 0,4.32 -2.96,7.39 -7.1,7.39zm34.09 8.01c8.86,0 16.31,-7.05 16.31,-15.4 0,-8.35 -7.45,-15.34 -16.31,-15.34 -8.86,0 -16.31,6.99 -16.31,15.34 0,8.35 7.45,15.4 16.31,15.4zm0 -8.01c-3.92,0 -7.22,-3.41 -7.22,-7.39 0,-3.98 3.3,-7.33 7.22,-7.33 3.92,0 7.21,3.35 7.21,7.33 0,3.98 -3.29,7.39 -7.21,7.39z";
+const DOT = "M82.14 10.11c2.78,0 5,-2.33 5,-5.11 0,-2.67 -2.22,-5 -5,-5 -2.84,0 -5.12,2.33 -5.12,5 0,2.78 2.28,5.11 5.12,5.11z";
+const X_POINTS = "214.95,43.07 204.32,27.95 214.44,13.69 204.38,13.69 199.32,20.85 194.27,13.69 184.04,13.69 194.15,28.12 183.53,43.07 193.58,43.07 199.15,35.23 204.66,43.07";
+const SISTEMAS = "M143.71 59.21c1.99,0 3.52,-1.13 3.52,-2.9 0,-1.82 -1.6,-2.35 -3.15,-2.83 -1.78,-0.58 -2.49,-0.84 -2.49,-1.67 0,-0.93 0.89,-1.42 1.97,-1.42 0.86,0 1.81,0.3 2.77,0.91l0.67 -1.07c-1.02,-0.67 -2.25,-1.08 -3.44,-1.08 -1.91,0 -3.36,1.08 -3.36,2.82 0,1.38 0.89,2.07 3.21,2.74 1.31,0.37 2.42,0.71 2.42,1.75 0,0.91 -0.85,1.5 -2.12,1.5 -1.06,0 -2.16,-0.41 -3.25,-1.21l-0.73 1.03c1.15,0.93 2.64,1.43 3.98,1.43zm6.51 -11.59c0.51,0 0.91,-0.43 0.91,-0.93 0,-0.48 -0.4,-0.91 -0.91,-0.91 -0.52,0 -0.93,0.43 -0.93,0.91 0,0.5 0.41,0.93 0.93,0.93zm-0.7 11.37l1.39 0 0 -9.62 -1.39 0 0 9.62zm7.6 0.22c2,0 3.52,-1.13 3.52,-2.9 0,-1.82 -1.6,-2.35 -3.14,-2.83 -1.79,-0.58 -2.5,-0.84 -2.5,-1.67 0,-0.93 0.9,-1.42 1.98,-1.42 0.85,0 1.8,0.3 2.77,0.91l0.67 -1.07c-1.03,-0.67 -2.25,-1.08 -3.44,-1.08 -1.92,0 -3.37,1.08 -3.37,2.82 0,1.38 0.89,2.07 3.22,2.74 1.3,0.37 2.42,0.71 2.42,1.75 0,0.91 -0.86,1.5 -2.13,1.5 -1.06,0 -2.15,-0.41 -3.25,-1.21l-0.73 1.03c1.16,0.93 2.65,1.43 3.98,1.43zm10.05 -1.64c-0.2,0.23 -0.58,0.39 -1,0.39 -0.56,0 -1.05,-0.5 -1.05,-1.21l0 -6.13 2.37 0 0 -1.25 -2.37 0 0 -2.64 -1.39 0 0 2.64 -1.51 0 0 1.25 1.51 0 0 6.13c0,1.44 0.97,2.46 2.34,2.46 0.65,0 1.29,-0.22 1.79,-0.61l-0.69 -1.03zm7 0.39c-1.9,0 -3.22,-1.37 -3.43,-3.25l7.87 0c0,-3.37 -1.65,-5.56 -4.56,-5.56 -2.58,0 -4.74,2.14 -4.74,5 0,2.96 2.31,5.06 4.87,5.06 1.34,0 3.04,-0.58 3.87,-1.49l-0.85 -0.91c-0.6,0.65 -1.9,1.15 -3.03,1.15zm-0.06 -7.57c1.92,0 2.94,1.34 3.13,3.07l-6.48 0c0.26,-1.86 1.64,-3.07 3.35,-3.07zm17.19 -1.24c-1.45,0 -2.72,0.8 -3.11,2.04 -0.52,-1.24 -1.65,-2.04 -3.1,-2.04 -1.27,0 -2.31,0.63 -2.79,1.63l0 -1.41 -1.4 0 0 9.62 1.4 0 0 -6.12c0,-1.45 1.07,-2.48 2.6,-2.48 1.3,0 2.21,1.1 2.21,2.66l0 5.94 1.4 0 0 -6.12c0,-1.45 1.08,-2.48 2.6,-2.48 1.31,0 2.22,1.1 2.22,2.66l0 5.94 1.39 0 0 -6.12c0,-2.18 -1.41,-3.72 -3.42,-3.72zm10.16 0c-0.93,0 -2.09,0.24 -3.46,0.93l0.56 1.13c0.87,-0.45 1.84,-0.87 2.8,-0.87 2.09,0 2.61,1.48 2.61,2.79l0 0.35c-0.99,-0.32 -2.08,-0.54 -3.13,-0.54 -2.06,0 -3.77,1.28 -3.77,3.2 0,1.9 1.49,3.07 3.51,3.07 1.27,0 2.7,-0.59 3.39,-1.73l0 1.51 1.39 0 0 -5.86c0,-2.33 -1.28,-3.98 -3.9,-3.98zm-0.64 8.83c-1.35,0 -2.4,-0.7 -2.4,-1.89 0,-1.16 1.21,-1.98 2.65,-1.98 1.04,0 2.02,0.15 2.9,0.39l0 1.47c-0.37,1.36 -1.88,2.01 -3.15,2.01zm10.8 1.23c1.99,0 3.51,-1.13 3.51,-2.9 0,-1.82 -1.6,-2.35 -3.14,-2.83 -1.79,-0.58 -2.5,-0.84 -2.5,-1.67 0,-0.93 0.9,-1.42 1.98,-1.42 0.85,0 1.8,0.3 2.77,0.91l0.67 -1.07c-1.03,-0.67 -2.25,-1.08 -3.44,-1.08 -1.92,0 -3.37,1.08 -3.37,2.82 0,1.38 0.89,2.07 3.22,2.74 1.3,0.37 2.42,0.71 2.42,1.75 0,0.91 -0.86,1.5 -2.12,1.5 -1.07,0 -2.16,-0.41 -3.26,-1.21l-0.73 1.03c1.16,0.93 2.65,1.43 3.99,1.43z";
+
+/**
+ * Recortes da marca. `size` é a ALTURA; a largura segue o viewBox.
+ * - `symbol`: só o quadrado chanfrado (ícone, gaveta, loader).
+ * - `wordmark`: símbolo + "ticbox" — a barra superior. "sistemas" some a
+ *   28px, então fica de fora aqui.
+ * - `full`: a assinatura completa, com "sistemas", para tamanhos grandes.
+ */
+const VARIANTS = {
+  symbol: { viewBox: [-0.1, 2.6, 44.3, 43.9], letters: false, sistemas: false },
+  wordmark: { viewBox: [-0.1, 0, 215.2, 46.5], letters: true, sistemas: false },
+  full: { viewBox: [-0.1, 0, 215.2, 59.3], letters: true, sistemas: true },
+} as const
 
 type LogoMarkProps = {
   size?: number
+  variant?: keyof typeof VARIANTS
   className?: string
   "aria-label"?: string
 }
 
-// Marca do produto (`src/config/site.ts`). `size` é a ALTURA em px; a largura segue a proporção
-// natural do arquivo. No tema escuro troca para a versão branca da marca.
+// Marca do produto. Sem `className` de cor, fica verde-escuro da Ticbox no
+// tema claro e clara no escuro — quem a põe sobre a faixa passa `text-white`.
 export function LogoMark({
   size = 104,
+  variant = "symbol",
   className,
-  "aria-label": ariaLabel = siteConfig.name,
+  "aria-label": ariaLabel = siteConfig.brand,
 }: LogoMarkProps) {
-  const width = Math.round(size * LOGO_RATIO)
+  const { viewBox, letters, sistemas } = VARIANTS[variant]
+  const [, , vbWidth, vbHeight] = viewBox
+  const width = Math.round((size * vbWidth) / vbHeight)
 
   return (
-    <span
-      className={cn("relative inline-flex shrink-0 items-center justify-center", className)}
-      role="img"
-      aria-label={ariaLabel}
+    <svg
+      viewBox={viewBox.join(" ")}
+      width={width}
+      height={size}
+      role={ariaLabel ? "img" : undefined}
+      aria-label={ariaLabel || undefined}
+      aria-hidden={ariaLabel ? undefined : true}
+      focusable="false"
+      className={cn("shrink-0 fill-current text-brand-deep dark:text-foreground", className)}
+      fillRule="evenodd"
     >
-      <Image
-        src="/brand/logo.png"
-        alt=""
-        aria-hidden
-        width={width}
-        height={size}
-        className="dark:hidden"
-        style={{ width, height: size }}
-      />
-      <Image
-        src="/brand/logo-branca.png"
-        alt=""
-        aria-hidden
-        width={width}
-        height={size}
-        className="hidden dark:block"
-        style={{ width, height: size }}
-      />
-    </span>
+      <path d={SYMBOL} />
+      {letters ? (
+        <>
+          <path d={LETTERS} />
+          <path d={DOT} />
+          <polygon points={X_POINTS} />
+        </>
+      ) : null}
+      {sistemas ? <path d={SISTEMAS} /> : null}
+    </svg>
   )
 }
 

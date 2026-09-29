@@ -23,9 +23,9 @@ export default async function DefinirSenhaPage() {
     <main className="grid min-h-dvh place-items-center bg-transparent px-5 py-10 text-foreground">
       <section className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-6 shadow-soft-lg sm:p-8 dark:shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         <div className="flex items-center gap-3">
-          <LogoMark size={40} aria-label={siteConfig.name} className="shrink-0" />
+          <LogoMark size={40} aria-label="" className="shrink-0" />
           <div>
-            <div className="font-display text-base font-semibold">{siteConfig.name}</div>
+            <div className="font-display text-base font-semibold">{siteConfig.brand} {siteConfig.name}</div>
             <div className="text-xs text-muted-foreground">CRM inteligente</div>
           </div>
         </div>

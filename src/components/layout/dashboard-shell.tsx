@@ -14,9 +14,9 @@ import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
 
 /**
- * Casca 3.0 — **não há sidebar**. A navegação inteira vive na barra superior
- * flutuante (desktop), na barra inferior (celular) e na gaveta (o menu
- * completo). Isso devolve a largura inteira da tela ao conteúdo, que é o que
+ * Casca — **não há sidebar**. A navegação inteira vive na faixa superior da
+ * Ticbox, colada no topo (desktop), na barra inferior (celular) e na gaveta
+ * (o menu completo). Isso devolve a largura inteira da tela ao conteúdo, que é o que
  * uma tela de operação — tabela, kanban, agenda — precisa.
  */
 export function DashboardShell({ children, viewer }: { children: React.ReactNode; viewer: AppHeaderUser }) {
@@ -72,13 +72,13 @@ export function DashboardShell({ children, viewer }: { children: React.ReactNode
       </div>
 
       {/*
-        Cinco destinos, nenhum "Mais". A barra é uma lâmina de vidro colada na
-        base: cantos superiores arredondados e desfoque deixam o fundo de água
-        atravessar, em vez de fechar a tela com uma faixa opaca.
+        Cinco destinos, nenhum "Mais". A barra de baixo fala a mesma língua da
+        faixa de cima: verde-escuro chapado, ícone lima, aba ativa em ladrilho
+        lima (os contrastes estão em app-header.tsx).
       */}
-      {showMobileNavigation ? <nav data-mobile-nav aria-label="Navegação principal móvel" className="glass fixed inset-x-0 bottom-0 z-30 rounded-t-3xl pb-[env(safe-area-inset-bottom)] shadow-[0_-14px_40px_-24px_oklch(0.45_0.1_236/60%)] ring-1 ring-white/40 dark:ring-white/10 lg:hidden">
+      {showMobileNavigation ? <nav data-mobile-nav aria-label="Navegação principal móvel" className="fixed inset-x-0 bottom-0 z-30 bg-brand-bar pb-[env(safe-area-inset-bottom)] text-sidebar-foreground lg:hidden">
         <ul className="grid" style={{ gridTemplateColumns: `repeat(${mobileTabs.length}, minmax(0, 1fr))` }}>
-          {mobileTabs.map((item) => { const Icon = item.icon; const active = isActive(item.href); return <li key={item.href} className="flex min-w-0"><Link href={item.href} aria-current={active ? "page" : undefined} className={cn("flex h-[var(--mobile-nav-height)] w-full min-w-0 flex-col items-center justify-center gap-1 px-1 font-display text-[10px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset", active ? "text-primary" : "text-muted-foreground")}><span className={cn("flex h-7 w-11 items-center justify-center rounded-full transition-colors [&_svg]:stroke-[1.75]", active && "bg-brand-gradient text-primary-foreground shadow-sm")}><Icon className="size-[18px]" /></span><span className="max-w-full truncate">{item.title}</span></Link></li>; })}
+          {mobileTabs.map((item) => { const Icon = item.icon; const active = isActive(item.href); return <li key={item.href} className="flex min-w-0"><Link href={item.href} aria-current={active ? "page" : undefined} className={cn("flex h-[var(--mobile-nav-height)] w-full min-w-0 flex-col items-center justify-center gap-1 px-1 font-display text-[10px] font-medium text-sidebar-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-ring")}><span className={cn("flex h-7 w-11 items-center justify-center rounded-md transition-colors [&_svg]:stroke-[1.75]", active ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-primary")}><Icon className="size-[18px]" /></span><span className="max-w-full truncate">{item.title}</span></Link></li>; })}
         </ul>
       </nav> : null}
 

@@ -277,7 +277,7 @@ function QuickReplyList({
               {query ? "Nenhuma resposta encontrada." : "Nenhuma resposta rápida."}
             </p>
             {query ? null : (
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 Crie mensagens prontas para agilizar o atendimento.
               </p>
             )}

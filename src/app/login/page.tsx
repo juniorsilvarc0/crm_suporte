@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CheckIcon, ShieldCheckIcon } from "lucide-react";
@@ -29,46 +28,30 @@ export default function LoginPage() {
       <div className="mx-auto flex min-h-dvh w-full max-w-[76rem] items-center justify-center p-4 sm:p-6 lg:p-10">
         <section className="grid w-full overflow-hidden rounded-3xl border border-border/50 bg-card shadow-soft-lg lg:grid-cols-[1.32fr_1fr] dark:shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
           {/*
-            A imagem preenche o painel e aparece NÍTIDA. A coluna carrega a
-            proporção original da imagem (1224×998), então o `object-cover` não
-            tem o que cortar — e o escurecimento é um degradê horizontal forte
-            só na faixa onde o texto pousa, transparente no resto, para a
-            imagem continuar legível à direita.
-
-            ⚠️ O véu vai até 85% porque é ATÉ LÁ que o texto pousa: o bloco tem
-            largura fixa (22rem + padding), então quanto mais estreito o painel,
-            maior a FRAÇÃO dele que o texto ocupa. A 1024px o texto alcança ~73%
-            da largura — com o degrade antigo (fim em 72%) as últimas palavras
-            caíam sobre a foto crua, medido em 1,00:1. Encurtar estes stops
-            devolve o problema.
+            Painel da marca: o verde-petróleo da Ticbox, chapado, com a logo
+            completa em branco e o símbolo como marca d'água. Sem proporção
+            fixa: a coluna estica até a altura do cartão (com proporção, o
+            alerta de erro no formulário deixava uma faixa branca embaixo).
+            Contrastes sobre #042D29: branco/85% ≥ 11:1, lima 10,44:1.
           */}
-          <div className="relative hidden overflow-hidden bg-[oklch(0.19_0.05_243)] lg:block lg:aspect-[1224/998]">
-            <Image
-              src="/brand/login-bg.png"
-              alt=""
-              fill
-              sizes="(min-width: 1024px) 55vw, 0px"
-              className="object-cover object-center"
-              priority
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-gradient-to-r from-[oklch(0.16_0.045_243)]/88 from-10% via-[oklch(0.16_0.045_243)]/62 via-75% to-transparent to-85%"
+          <div className="relative hidden min-h-[34rem] overflow-hidden bg-brand-deep lg:block">
+            <LogoMark
+              aria-label=""
+              size={420}
+              className="pointer-events-none absolute -right-24 -bottom-28 text-white/[0.05] dark:text-white/[0.05]"
             />
 
             <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-12">
-              <div className="flex items-center gap-3">
-                <span className="flex size-11 items-center justify-center rounded-2xl bg-white/95 shadow-lg">
-                  <LogoMark size={28} aria-label="" />
-                </span>
-                <span className="font-display text-xl font-semibold uppercase tracking-[0.22em] text-white">
+              <div className="flex items-center gap-4">
+                <LogoMark variant="full" size={46} aria-label="" className="text-white dark:text-white" />
+                <span className="border-l border-white/20 pl-4 font-display text-sm font-medium uppercase tracking-[0.18em] text-white/85">
                   {siteConfig.name}
                 </span>
               </div>
 
               <div className="max-w-[22rem] space-y-4">
                 <BrandSignature
-                  tone="on-photo"
+                  tone="on-brand"
                   className="text-[1.65rem] leading-tight text-balance"
                 />
                 <p className="text-sm leading-6 text-white/85">
@@ -81,7 +64,7 @@ export default function LoginPage() {
                     <li key={item} className="flex items-center gap-2.5">
                       <span
                         aria-hidden
-                        className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[oklch(0.72_0.11_190)]/20 text-[oklch(0.85_0.1_190)] ring-1 ring-[oklch(0.8_0.1_190)]/40"
+                        className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-lime/15 text-brand-lime ring-1 ring-brand-lime/40"
                       >
                         <CheckIcon className="size-3" strokeWidth={2.5} />
                       </span>
@@ -96,9 +79,9 @@ export default function LoginPage() {
           {/* Formulário — centrado no eixo vertical, com respiro generoso. */}
           <div className="flex items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-12">
             <div className="w-full max-w-sm">
-              {/* No celular o painel da imagem não aparece; a marca vem aqui. */}
-              <div className="mb-10 flex items-center gap-3 lg:hidden">
-                <LogoMark size={38} aria-label="" className="shrink-0" />
+              {/* No celular o painel da marca não aparece; a logo vem aqui. */}
+              <div className="mb-10 flex flex-col items-start gap-3 lg:hidden">
+                <LogoMark variant="full" size={40} aria-label="" />
                 <div className="min-w-0">
                   <div className="font-display text-base font-semibold uppercase tracking-[0.14em]">
                     {siteConfig.name}
@@ -109,7 +92,7 @@ export default function LoginPage() {
 
               {/* O título saiu da tela a pedido, mas a página continua precisando
                   de um: leitor de tela e busca leem a estrutura, não o visual. */}
-              <h1 className="sr-only">Entrar na {siteConfig.name}</h1>
+              <h1 className="sr-only">Entrar no {siteConfig.brand} {siteConfig.name}</h1>
 
               {/* Sem título e sem sobrelinha, esta frase é o único texto antes
                   dos campos: ela ganha o corpo que sustenta o topo da coluna. */}
