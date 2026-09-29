@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { toPublicOrigin } from "@/lib/storage/chat-media";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -78,8 +79,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .upload(path, bytes, { contentType: detectedType, upsert: true });
   if (uploadError) return NextResponse.json({ ok: false, message: "Não foi possível enviar a foto." }, { status: 500 });
 
+  // `getPublicUrl` monta a URL com o SUPABASE_URL interno (`http://gateway` em
+  // produção): sem trocar pela origem pública, a foto quebraria no navegador.
   const { data } = authorized.supabase.storage.from(BUCKET).getPublicUrl(path);
-  const avatarUrl = `${data.publicUrl}?v=${Date.now()}`;
+  const avatarUrl = `${toPublicOrigin(data.publicUrl)}?v=${Date.now()}`;
   const { error } = await authorized.supabase.rpc("update_app_user", {
     p_actor_id: authorized.viewer.id,
     p_id: id,

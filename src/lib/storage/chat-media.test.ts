@@ -76,4 +76,25 @@ describe("toPublicOrigin", () => {
     expect(toPublicOrigin(signed, "http://gateway", "http://localhost:54321")).toBe(signed);
     expect(toPublicOrigin(signed, undefined, "http://localhost:54321")).toBe(signed);
   });
+
+  // Regressão de produção (2026-09-28): o supabase-js tira a porta padrão ao
+  // montar a URL, então `http://gateway:80` virava `http://gateway/...` e a
+  // comparação por texto deixava o navegador com o host interno.
+  it("casa a origem mesmo quando a porta padrão some da URL assinada", () => {
+    expect(
+      toPublicOrigin("http://gateway/storage/v1/object/sign/chat-media/a.mp3?token=t", "http://gateway:80", "https://api.exemplo.test")
+    ).toBe("https://api.exemplo.test/storage/v1/object/sign/chat-media/a.mp3?token=t");
+    expect(
+      toPublicOrigin("http://gateway:80/storage/v1/object/sign/chat-media/a.mp3?token=t", "http://gateway", "https://api.exemplo.test/")
+    ).toBe("https://api.exemplo.test/storage/v1/object/sign/chat-media/a.mp3?token=t");
+  });
+
+  it("respeita o caminho da base e não troca origem com prefixo só parecido", () => {
+    expect(toPublicOrigin("http://gateway/sb/storage/v1/x?token=t", "http://gateway/sb/", "https://api.exemplo.test/sb")).toBe(
+      "https://api.exemplo.test/sb/storage/v1/x?token=t"
+    );
+    const outro = "http://gateway2/storage/v1/x?token=t";
+    expect(toPublicOrigin(outro, "http://gateway", "https://api.exemplo.test")).toBe(outro);
+    expect(toPublicOrigin("não é url", "http://gateway", "https://api.exemplo.test")).toBe("não é url");
+  });
 });
