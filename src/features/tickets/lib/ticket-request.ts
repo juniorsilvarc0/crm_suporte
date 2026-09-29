@@ -11,6 +11,10 @@ import type { TicketTakeOverErrorBody } from "@/features/tickets/types";
  * recusa, com o corpo de erro das rotas (`code`, `message`, `errors`, `allowed`,
  * `current`, `current_version`, `assigned_to_user_id`, `assigned_to_name`)
  * quando ele veio. Corpo que não é JSON dá `body: null`.
+ *
+ * `ErrorBody` é o formato desse corpo: o padrão é o das rotas de ticket, e as
+ * rotas de catálogo (filas, categorias, SLA, status) passam
+ * `TicketCatalogErrorBody<Item>`. É só o tipo: nada aqui confere o formato.
  */
 
 export type TicketRequestMethod = "GET" | "POST" | "PATCH" | "PUT";
@@ -27,23 +31,29 @@ export type TicketRequestInit = {
  * Resposta recusada. `status` 0 = a requisição nem chegou (rede) ou foi
  * cancelada pelo `signal`: quem cancelou confere o próprio `signal`.
  */
-export type TicketRequestFailure = {
+export type TicketRequestFailure<ErrorBody extends { ok: false } = TicketTakeOverErrorBody> = {
   ok: false;
   status: number;
-  body: TicketTakeOverErrorBody | null;
+  body: ErrorBody | null;
 };
 
 /** `data` é o corpo inteiro de sucesso (com o `ok: true`). */
-export type TicketRequestResult<Data> = { ok: true; data: Data } | TicketRequestFailure;
+export type TicketRequestResult<
+  Data,
+  ErrorBody extends { ok: false } = TicketTakeOverErrorBody,
+> = { ok: true; data: Data } | TicketRequestFailure<ErrorBody>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function ticketRequest<Data>(
+export async function ticketRequest<
+  Data,
+  ErrorBody extends { ok: false } = TicketTakeOverErrorBody,
+>(
   url: string,
   { method = "GET", body, signal }: TicketRequestInit = {}
-): Promise<TicketRequestResult<Data>> {
+): Promise<TicketRequestResult<Data, ErrorBody>> {
   const init: RequestInit =
     body === undefined
       ? { method }
@@ -60,7 +70,7 @@ export async function ticketRequest<Data>(
     return {
       ok: false,
       status: response.status,
-      body: isRecord(payload) ? ({ ...payload, ok: false } as TicketTakeOverErrorBody) : null,
+      body: isRecord(payload) ? ({ ...payload, ok: false } as ErrorBody) : null,
     };
   } catch {
     return { ok: false, status: 0, body: null };
@@ -69,8 +79,11 @@ export async function ticketRequest<Data>(
 
 /**
  * A 1ª mensagem de campo do corpo de erro (`errors`, o do zod e o do serviço),
- * ou `undefined`. É o texto do toast quando o erro é de um input.
+ * ou `undefined`. É o texto do toast quando o erro é de um input. Serve ao
+ * corpo das rotas de ticket e ao das de catálogo: só lê `errors`.
  */
-export function ticketFieldError(body: TicketTakeOverErrorBody | null): string | undefined {
+export function ticketFieldError(
+  body: { errors?: Partial<Record<string, string[]>> } | null
+): string | undefined {
   return Object.values(body?.errors ?? {}).find((messages) => messages?.[0])?.[0];
 }

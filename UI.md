@@ -1236,6 +1236,32 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 - Variáveis públicas embutidas no bundle continuam exigindo rebuild. O editor administra runtime do servidor; não promete alterar `NEXT_PUBLIC_*` já compilada.
 - Abas podem rolar dentro do próprio trilho em telas estreitas. A página não ganha overflow horizontal; ações mobile mantêm alvo de 44 px.
 
+### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
+
+- **Quatro abas, com a aba na URL** (`?aba=filas|categorias|sla|status`): Filas, Categorias, SLA e Status. A aba padrão (Filas) fica fora da URL, recarregar mantém a aba, e valor desconhecido cai em Filas. O trilho de pílulas é o mesmo das Configurações: **44 px de toque no celular** (`h-11`) e 36 px a partir de `sm`, nas duas telas.
+- **Grades com trilha declarada** (`grid-cols-[minmax(0,1fr)]`): um nome longo trunca em vez de alargar a página no celular (§9).
+- **Leitura de admin** (`getServiceSettings`): traz **as arquivadas também**, ao contrário do catálogo de quem abre ticket. Cada parte que falha vem `null`, e a aba mostra "Não foi possível carregar…" com "Tentar de novo", nunca uma lista vazia falsa.
+- **Filas** (`products-manager`):
+  - "Nova fila" e edição no mesmo `ModalShell` (nome, nicho, cor pelo `ColorSwatchPicker`);
+  - o PATCH manda só o que mudou;
+  - arquivar pede **confirmação na linha**: "Arquivar a fila? Ela some do Novo ticket e continua nos tickets antigos." O foco vai para Cancelar, e o Esc cancela;
+  - reativar também pede confirmação na linha: "Reativar a fila? Ela volta a aparecer no Novo ticket." O botão de confirmar não é destrutivo;
+  - um 409 de nome repetido marca o campo e cita a fila existente.
+- **Categorias** (`ticket-categories-manager`):
+  - agrupadas por fila (mais "Sem fila" e "Fila não encontrada"), em 2 níveis;
+  - a filha herda a fila da mãe no formulário;
+  - categoria de fila arquivada ou filha de mãe arquivada **não oferece Reativar** e explica por quê, a mesma regra do banco;
+  - arquivar mãe com filha ativa: o banco recusa e o 422 aparece na linha.
+- **SLA** (`sla-policies-manager`):
+  - 4 linhas por prioridade, com 1ª resposta e solução em **horas e minutos** (gravadas em minutos) e aviso em %;
+  - o aviso fixo diz: "Vale para tickets abertos daqui em diante e para os que mudarem de prioridade. Os demais mantêm o prazo que já têm." Trocar a prioridade de um ticket aberto tira um snapshot novo da política atual (`ticket_update`);
+  - a solução menor que a 1ª resposta é barrada antes de enviar, com o erro na 1ª resposta, como a CHECK do banco.
+- **Status** (`ticket-statuses-manager`): 8 linhas com rótulo e cor editáveis e **prévia do selo ao vivo**. "Modo do SLA" e "encerra o ticket" são só leitura (fixos pela decisão 11). Uma cor gravada fora da paleta abre como a cor de recurso, então salvar só o rótulo funciona.
+- **Linhas de SLA e de Status guardam a identidade e o foco:** a `key` é só a prioridade ou a chave, e os valores do servidor entram por `values` com `keepDirtyValues`. Salvar não remonta a linha nem joga o foco no `body`, e a linha trava até o refresh chegar.
+- **O rótulo e a cor novos aparecem em todos os selos de status** (lista, detalhe, chip do chat), porque todos leem do catálogo. O Início não tem selo de status.
+- ⚠️ **O menu "Ajustes" é suspenso e só monta ao abrir:** nenhum link dele vem no HTML do servidor. Teste a presença do item pelo `navigation.test.ts`, não pelo HTML.
+- **Backlog (primitivo compartilhado):** o `ColorSwatchPicker` tem quadradinhos de 28 px (abaixo dos 44 px de toque) e `aria-label` com o nome da cor em inglês ("violet").
+
 ### §5.23 Formulário: react-hook-form + zod compartilhado com a rota (Fase 3)
 
 A partir da Fase 3, formulário novo usa **react-hook-form + `zodResolver` com o MESMO schema que a rota valida** (`features/*/schemas/*.ts`, arquivo neutro). Uma regra, dois lugares que a aplicam. Os formulários anteriores seguem em `FormData` até serem tocados.

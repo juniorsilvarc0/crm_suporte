@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   BookUserIcon,
   Building2Icon,
+  HeadsetIcon,
   HouseIcon,
   MessageCircleIcon,
   PlugZapIcon,
@@ -41,8 +42,9 @@ export type NavItem = {
 
 /**
  * O núcleo que sobrou da poda do CRM de origem, mais os cadastros da Fase 3
- * (Clientes e Contatos) e os Tickets da Fase 4. Quadro, agenda, financeiro e
- * métricas de suporte entram com as páginas deles, nas fases seguintes de
+ * (Clientes e Contatos) e, da Fase 4, os Tickets e o Atendimento (filas,
+ * categorias, SLA e status, só admin). Quadro, agenda, financeiro e métricas de
+ * suporte entram com as páginas deles, nas fases seguintes de
  * `docs/PLANO-IMPLANTACAO.md`.
  *
  * Ícones só de traço, no mesmo peso: o WhatsApp entra na navegação como um
@@ -58,6 +60,7 @@ export const dashboardNavigation: NavItem[] = [
   { title: "Conexão", href: "/app/conexao", icon: PlugZapIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Configurações", href: "/app/configuracoes", icon: Settings2Icon, group: "Administração", allowedRoles: ADMIN_ROLES },
+  { title: "Atendimento", href: "/app/configuracoes/atendimento", icon: HeadsetIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
 ];
 
 /**
@@ -116,7 +119,7 @@ const TOP_NAV_SPEC: ReadonlyArray<
   { kind: "link", href: "/app/chat" },
   { kind: "link", href: "/app/clientes" },
   { kind: "link", href: "/app/contatos" },
-  { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes"] },
+  { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes", "/app/configuracoes/atendimento"] },
 ];
 
 /**

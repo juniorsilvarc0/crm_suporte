@@ -1,6 +1,7 @@
 import { MessageCircleIcon, SettingsIcon } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
+import { getActiveNavHref } from "@/config/nav-active";
 import {
   buildTopNavigation,
   dashboardNavigation,
@@ -32,6 +33,7 @@ describe("getDashboardNavigation", () => {
       "/app/conexao",
       "/app/equipe",
       "/app/configuracoes",
+      "/app/configuracoes/atendimento",
     ]);
   });
 
@@ -95,6 +97,7 @@ describe("buildTopNavigation", () => {
         "/app/conexao",
         "/app/equipe",
         "/app/configuracoes",
+        "/app/configuracoes/atendimento",
       ]);
     }
   });
@@ -116,6 +119,7 @@ describe("buildTopNavigation", () => {
 
     expect(entries.some((entry) => entry.kind === "menu" && entry.title === "Ajustes")).toBe(false);
     expect(entryHrefs(entries)).not.toContain("/app/configuracoes");
+    expect(entryHrefs(entries)).not.toContain("/app/configuracoes/atendimento");
   });
 
   it("mantém todo módulo visível alcançável — nada some da barra", () => {
@@ -146,5 +150,30 @@ describe("buildTopNavigation", () => {
     const entries = buildTopNavigation([...getDashboardNavigation("member"), novo]);
 
     expect(entries.at(-1)).toEqual({ kind: "link", item: novo });
+  });
+});
+
+describe("Atendimento sob Configurações", () => {
+  // O href de Atendimento começa com o de Configurações: com prefixo simples,
+  // os dois acenderiam juntos na página de Atendimento.
+  const hrefs = getDashboardNavigation("admin").map((item) => item.href);
+
+  it("acende só Atendimento na página dele, com ou sem sub-rota", () => {
+    expect(getActiveNavHref("/app/configuracoes/atendimento", hrefs)).toBe("/app/configuracoes/atendimento");
+    expect(getActiveNavHref("/app/configuracoes/atendimento/filas", hrefs)).toBe(
+      "/app/configuracoes/atendimento"
+    );
+  });
+
+  it("acende só Configurações na página delas", () => {
+    expect(getActiveNavHref("/app/configuracoes", hrefs)).toBe("/app/configuracoes");
+    expect(getActiveNavHref("/app/configuracoes/atendimentox", hrefs)).toBe("/app/configuracoes");
+  });
+
+  it("o guard devolve o membro para /app, já pelo prefixo de /app/configuracoes", () => {
+    expect(decideRouteAccess("/app/configuracoes/atendimento", true, "member")).toEqual({
+      type: "redirect-app",
+    });
+    expect(decideRouteAccess("/app/configuracoes/atendimento", true, "admin")).toEqual({ type: "allow" });
   });
 });

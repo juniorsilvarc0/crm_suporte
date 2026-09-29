@@ -2,13 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isContractStatus } from "@/features/contracts/lib/contract-status";
 import { parseProtocolQuery } from "@/features/tickets/lib/protocol";
+import { isSlaMode } from "@/features/tickets/lib/sla-mode";
 import { isTicketPriority } from "@/features/tickets/lib/ticket-priority";
 import { isTicketStatus } from "@/features/tickets/lib/ticket-status";
 import {
   TICKET_LIST_ORDERS,
   TICKET_LIST_SLA_FILTERS,
   TICKET_LIST_STATUS_GROUPS,
-  type SlaMode,
   type TicketListItem,
   type TicketListOrder,
   type TicketListParams,
@@ -41,7 +41,6 @@ export const TICKET_LIST_SELECT =
 const MAX_QUERY_LENGTH = 100;
 
 const TICKET_SOURCES = ["ai", "agent", "api"] as const satisfies readonly TicketSource[];
-const SLA_MODES = ["running", "paused", "stopped"] as const satisfies readonly SlaMode[];
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -105,10 +104,6 @@ function isListOrder(value: unknown): value is TicketListOrder {
 
 function isTicketSource(value: unknown): value is TicketSource {
   return TICKET_SOURCES.some((source) => source === value);
-}
-
-function isSlaMode(value: unknown): value is SlaMode {
-  return SLA_MODES.some((mode) => mode === value);
 }
 
 /**

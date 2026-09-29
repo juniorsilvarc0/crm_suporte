@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] PR 6 (Atendimento) trazido para a main atual e adaptado à identidade Ticbox
+
+**Agente/Modelo:** Claude Opus 5.5
+**Objetivo:** Publicar o PR 6, que estava pronto mas sem commit desde 2026-09-26 (entrada abaixo), sobre a `main` de hoje: identidade Ticbox, produção e correções.
+
+**Arquivos alterados:** branch `feat/fase4-atendimento`, a partir da `main` (`a19db5e`).
+- Os 26 arquivos do PR 6 (9 modificados, 17 novos).
+- Ajustes: `service-settings-tabs.tsx`, `configuracoes/atendimento/loading.tsx`, `ticket-request.test.ts` e este PROGRESS.
+
+**O que foi feito:**
+- **Cópia do trabalho sem commit:** o diff e os arquivos novos da árvore do dono foram aplicados com `git apply --3way`. **A árvore original não foi tocada**; ela continua na branch `feat/fase4-front-atendimento`, sem commit.
+- **Três conflitos resolvidos juntando os dois lados:**
+  - `navigation.ts`: ícones da identidade + item Atendimento com `HeadsetIcon`, e Ajustes com engrenagem e as 4 rotas;
+  - abas das Configurações: `h-11` do PR 6 + `text-primary-foreground!` da identidade;
+  - PROGRESS: as quatro entradas mantidas, em ordem cronológica.
+- **Adaptação à identidade:**
+  - a aba ativa do Atendimento ganhou `data-active:text-primary-foreground!`; sem ele, o texto ficaria claro sobre lima no tema escuro, a 1,29:1 (UI §3.3);
+  - os skeletons de botão ficaram `rounded-md`.
+- **Typecheck:** o PR 6 estreitou o parâmetro de `ticketFieldError` para `{ errors }`, e o teste antigo passava um objeto literal com propriedades a mais. O teste passou a tipar o corpo como `TicketTakeOverErrorBody`, que é o que os chamadores fazem.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros) · test ✓ (2445, com os do PR 6) · build ✓ (`/app/configuracoes/atendimento` gerada).
+
+**Armadilhas descobertas:**
+- O registro do PR 6 dizia "typecheck ✓", mas o `tsc` reprovava. O cache incremental (`tsconfig.tsbuildinfo`) pode esconder erro: numa cópia limpa, o `tsc --noEmit` pegou.
+- **Varredura com `grep` sobre uma lista em `$F`:** ela voltou vazia sem erro visível, e deixou passar a aba sem o `!`. Varra arquivo por arquivo, sem `2>/dev/null`.
+
 ## [2026-09-29] Produção no ar + correções pós-deploy (mídia, segredo no log, rollback, backup)
 
 **Agente/Modelo:** Claude Opus 5.5. Toda ação em produção teve autorização literal do dono.
@@ -230,6 +256,74 @@ A cada ação em produção foi tirado um retrato das outras stacks antes e depo
 - **Arquivo montado e editado no lugar:** o container **vê** o conteúdo novo, mas o nginx segue com a config lida ao iniciar. Comparar o conteúdo dá "igual" e não recria. Por isso a troca pelo label.
 - **`command -v a b c`** no `sh` dessas imagens só imprime o primeiro nome. Não conclua que falta ferramenta por isso.
 - **Na VPS, nunca `docker … prune`:** apaga imagem e cache das outras stacks. No Mac é seguro para o cache.
+
+## [2026-09-26] Fase 4 · PR 6 — Configurações › Atendimento (filas, categorias, SLA e status)
+
+**Agente/Modelo:** Claude Opus 5.5 (workflow em 3 ondas: leitura de admin e menu → 4 gerenciadores em paralelo → página; revisão adversarial em 4 frentes; correções em 4 frentes por arquivo mais as extrações da regra dos 3 usos; roteiro dos "pronto quando")
+**Objetivo:** O admin cuida do catálogo do atendimento numa tela só:
+- filas (criar, renomear, nicho, cor, arquivar/reativar);
+- categorias em 2 níveis por fila;
+- prazos de SLA por prioridade;
+- rótulo e cor dos 8 status.
+
+**Arquivos alterados:** branch `feat/fase4-front-atendimento`.
+- **Página:** `app/(dashboard)/app/configuracoes/atendimento/{page,loading}.tsx`, mais o teste da página.
+- **Gerenciadores:**
+  - `features/products/components/products-manager.tsx`;
+  - `features/tickets/components/{ticket-categories-manager,sla-policies-manager,ticket-statuses-manager,service-settings-tabs}.tsx`, com testes.
+- **Leitura de admin:** `features/tickets/queries/get-service-settings.ts`, que traz também as arquivadas, e o tipo `ServiceSettings`.
+- **Menu:** item "Atendimento" em `config/navigation.ts`, só para admin, em Ajustes.
+- **Configurações:** as abas ficaram com 44 px de toque no celular.
+- **Extrações:**
+  - `SLA_MODES`/`isSlaMode` num arquivo neutro (3º uso);
+  - o corpo de erro de catálogo tipado no `ticketRequest` (os 4 gerenciadores faziam o mesmo cast).
+- **Docs:** UI.md §5.19.1 e este PROGRESS.
+
+**O que foi feito:**
+- **Aba na URL** (`?aba=`): a padrão fica fora da URL, e valor inválido cai em Filas.
+- **Falhas:** cada parte que falha mostra "Não foi possível carregar…" com "Tentar de novo".
+- **Arquivar e reativar** pedem confirmação na linha (§5.6).
+- **Categorias:** a filha herda a fila da mãe. Categoria de fila arquivada, ou filha de mãe arquivada, não oferece Reativar e explica o motivo.
+- **SLA:** edição em h:min, gravada em minutos, com o aviso sobre tickets abertos. Solução menor que a 1ª resposta é barrada antes de enviar.
+- **Status:** prévia do selo ao vivo. Modo e "encerra" são só leitura.
+- **Erros:** 409 com o item existente e 422 no campo do formulário.
+
+**Decisões tomadas:**
+- **Tipos da leitura de admin:** reaproveitam `ProductOption` e `TicketCategoryOption`, os mesmos que as rotas devolvem em `item`. A linha pode ser trocada pela resposta sem conversão.
+- **Filas:** lista única em vez de tabela mais cartões.
+- **Aviso do SLA:** "Vale para tickets abertos daqui em diante e para os que mudarem de prioridade". Trocar a prioridade tira um snapshot novo da política atual.
+- **Menu "Ajustes":** é suspenso e não vem no HTML do servidor. A presença do item por papel é testada em `navigation.test.ts`.
+
+**Revisão adversarial:** 14 confirmados e 2 refutados, todos de severidade baixa, todos corrigidos.
+- **Textos e comportamento:**
+  - o aviso do SLA afirmava que os abertos mantêm o prazo;
+  - reativar fila não pedia confirmação;
+  - status com cor fora da paleta impedia salvar só o rótulo.
+- **Layout e foco:**
+  - grades sem trilha declarada alargavam a página no celular;
+  - salvar uma linha de SLA ou de Status remontava a linha e jogava o foco no `body`;
+  - o renomear de categoria não levava o foco ao campo com erro;
+  - as abas tinham 40 px.
+- **Testes que faltavam:** a página, as travas de duplo envio, a linha que muda com o servidor e a cor fora da paleta em Filas.
+
+**Verificação:**
+- **Roteiro** (`~/.claude/projects/…/e2e/e2e8.mjs`, build de produção na 3201, dados de demonstração): 15 conferências passaram, e tudo o que o roteiro muda é desfeito.
+  - O member é redirecionado (307 → `/app`) e recebe 403 na rota de escrita.
+  - O admin vê as 4 abas, e `?aba=status` abre a aba certa.
+  - **O rótulo e a cor novos aparecem na lista e no detalhe.**
+  - **Mudar o SLA de alta não mexe no ticket de prioridade alta aberto.**
+  - **Uma fila arquivada some do catálogo do Novo ticket e continua no ticket antigo**, e o admin ainda a vê, marcada.
+- typecheck, lint, test e build: ver o fim desta entrada.
+
+**Pendências / próximos passos:**
+- **Conferir no navegador:** as 4 abas no desktop e no celular, o Esc nas confirmações e o seletor de cor.
+- **`ColorSwatchPicker`** (primitivo compartilhado): quadradinhos de 28 px, abaixo dos 44 px de toque, e `aria-label` com o nome da cor em inglês. Fica no backlog de UI.
+- **Próximos:** a tela de métricas (BI), já em desenho com as decisões do dono, e depois o Quadro (PR 7).
+
+**Armadilhas descobertas:**
+- **O cache persistente do Turbopack corrompeu no `next dev`** (pânico em `turbo-persistence`), e o servidor ficou de pé mas travado. Apague `.next` e prefira `next build && next start` para os roteiros.
+- **O limite de uso da sessão derruba os workflows no meio.** Retome com `resumeFromRunId`: o que terminou volta do cache.
+- **Com a demonstração semeada, o banco local tem uma integração uazapi**, e `provider` é UNIQUE. Um roteiro que cria a própria integração falha, e as suítes SQL que inserem integração também. Use os dados da demonstração, ou rode `demo-cleanup.mjs` antes e semeie de novo depois.
 
 ## [2026-09-26] Fase 4 · PR 5 — ticket no chat (chip, painel, Novo ticket, Assumir) e fila no Início
 
