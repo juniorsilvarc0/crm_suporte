@@ -191,8 +191,9 @@ src/app/
   api/                   # route handlers, agrupados por finalidade:
     auth/                #   login/logout/definir-senha (cookie de sessão)
     chat/webhook/uazapi/ #   entrada de mensagem, auth PRÓPRIA
+    v1/                  #   API para integradores e IA: token com escopo,
+                         #   só por withApi (api-v1-guards.test.ts garante)
     <resto>              #   CRUD do app, protegido pela sessão
-                         #   (a API v1 para integradores entra na Fase 5)
   login, definir-senha, politica-de-privacidade, offline
 src/features/<dominio>/  # auth, chat, connection, contacts (identidade, lista,
                          #   vínculo com empresa), contracts, customers, home,
@@ -208,6 +209,7 @@ src/components/
 src/lib/
   auth/                  # session, route-guard, require-dashboard-session
   supabase/              # server (service role), admin, client (anon/Realtime), types
+  api/v1/                # withApi, escopos, envelope de erro, idempotência, OpenAPI
   security/              # api-token, rate-limit, verify-webhook
   formatters/            # phone, date, money, numbers, percentage, clean-name
 src/config/              # navigation.ts (menu + allowedRoles), site.ts (marca)

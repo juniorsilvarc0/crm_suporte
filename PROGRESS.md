@@ -27,6 +27,60 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-29] Fase 5 · PR 4: withApi e o esqueleto da API v1
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Uma porta única e testada para toda rota `/api/v1`: token com escopo, limites, idempotência e log sem corpo. Mais as primeiras rotas: `health`, `me` e `openapi.json`.
+**Arquivos alterados:**
+- `src/lib/api/v1/` (novos): `with-api.ts`, `scopes.ts`, `errors.ts`, `idempotency.ts`, `openapi.ts`, com testes;
+- `src/app/api/v1/{health,me,openapi.json}/route.ts`, `api-v1-guards.test.ts`, `routes.test.ts`;
+- `src/lib/auth/route-guard.ts` e o teste dele;
+- `src/features/integrations/queries/record-integration-log.ts`;
+- `SKILLS.md`, `AGENTS.md` (mapa), `docs/PLANO-FASE-5.md`.
+
+**O que foi feito:**
+- **`withApi`**, na ordem do plano:
+  1. `request_id`;
+  2. limite por IP **antes** do banco;
+  3. `Bearer` e um SELECT pelo **hash**, só de token não revogado;
+  4. vencido é `401 token_expired`;
+  5. escopos, com o curinga `recurso:*`;
+  6. limite do token, 429 com `Retry-After`;
+  7. `last_used_at` no máximo 1×/min;
+  8. `Idempotency-Key` quando a rota exige;
+  9. exceção vira 500 com `request_id`;
+  10. log em `integration_logs` com o template da rota e **sem o corpo**.
+- **`withPublicApi`** para `health` e `openapi.json` (D14): sem token e sem banco.
+- **Idempotência no `withApi`:** hash do **corpo canônico** (JSON com chaves ordenadas), caminho concreto e o contrato `attempt_id` do PR 3. Guarda só 2xx e 422; o resto, e exceção, libera a chave.
+- **`/api/v1/`** virou prefixo público do guard. O `api-guards.test.ts` de sessão deixa de ver essas rotas, e o **`api-v1-guards.test.ts`** assume. Ele confere:
+  - **pelo registro `API_V1_HANDLERS`**, por identidade, que todo método exportado, dos 7 (HEAD e OPTIONS incluídos), saiu de `withApi` (ou de `withPublicApi`, só na lista pública);
+  - que a rota é um `route.ts`, porque o Next também serve `.tsx` e `.js`;
+  - que, sem token **e** com token inválido, a resposta é 401, e que sem Bearer o banco nem é tocado;
+  - que cada método está no OpenAPI.
+- O **OpenAPI 3.1** sai dos schemas zod (`z.toJSONSchema`), e o teste valida a resposta real de cada rota contra ele.
+- **Adiados, com o PR de destino no plano:** `cursor.ts`, `if-match.ts`, o `access_log off` do vhost e o hash de multipart.
+
+**Verificação:**
+- 53 testes novos. **Mutação:** 12 garantias quebradas de propósito, todas pegas:
+  - Bearer ausente, escopo, validade e token cru no lugar do hash;
+  - limite do token, `release` no erro, status guardável e `/me` virando pública;
+  - `OPTIONS` declarado à mão, um `route.tsx`, um wrapper em volta do `withApi` e o log sem amostra.
+- **Revisão adversarial:** 6 achados confirmados, que eram 4 defeitos; 18 refutados. Os 4, corrigidos:
+  - o varredor ignorava HEAD/OPTIONS, `.tsx`/`.js` e formas de export (agora é por registro);
+  - uma rajada de token inválido enchia `integration_logs` (agora o log é amostrado em 10/min por IP);
+  - o OpenAPI não cobria 429/500 nem o método de cada rota;
+  - `1e400` colidia com `null` no hash.
+- typecheck ✓ · lint ✓ (9 warnings anteriores) · test ✓ (2.507) · build ✓: o Next aceita `export const GET = withApi(...)` e lista as 3 rotas.
+
+**Pendências / próximos passos:**
+1. PR 5, tokens com escopo e tipo pela tela; depois o PR 6, catálogos, clientes e contatos.
+2. Deploy junto com o PR 3 (a migration), com "pode subir".
+
+**Armadilhas descobertas:**
+- **O `api-guards.test.ts` de sessão não enxerga `export const GET = withApi(`** (o regex dele é de `function`), e o prefixo público tira as rotas v1 dele. Por isso o varredor próprio entra no mesmo PR do prefixo.
+- **O limitador por IP é global no processo:** em teste, cada requisição precisa de um `x-forwarded-for` próprio, senão os casos se contaminam.
+- **`RouteContext` é um tipo global do Next 16.** Um tipo local com o mesmo nome o esconde sem aviso.
+
 ## [2026-09-29] Fase 5 · PR 3: fundação da API v1 no banco (+ deploy do #19)
 
 **Agente/Modelo:** Claude Opus 5.5.

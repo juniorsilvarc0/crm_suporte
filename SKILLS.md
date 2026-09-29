@@ -49,7 +49,7 @@ Confundir os modelos é o erro mais caro deste repositório. A API v1 para integ
 |---|---|---|
 | `/app/*` e a maioria de `/api/*` | Cookie `crm-suporte-session` (JWT HS256) **e**, em todo handler `/api`, confirmação no banco (`requireDashboardUser`/`requireDashboardAdmin`) | `src/proxy.ts` + `src/lib/auth/route-guard.ts` + `src/lib/auth/require-dashboard-session.ts`; `src/app/api/api-guards.test.ts` garante |
 | `/api/chat/webhook/uazapi` | Segredo em query string (`?s=`), próprio da uazapi | `src/app/api/chat/webhook/uazapi/route.ts` |
-| *(Fase 5)* `/api/v1/*` | Token de API com escopo (hash em `api_tokens`), base em `verifyWebhookAuth` | `src/lib/security/api-token.ts`, `src/lib/security/verify-webhook.ts` |
+| `/api/v1/*` (Fase 5) | Token de API com escopo (hash em `api_tokens`), só por `withApi` (`withPublicApi` apenas em `health` e `openapi.json`) | `src/lib/api/v1/with-api.ts`; `src/app/api/v1/api-v1-guards.test.ts` garante |
 
 Rota nova em `/api` = **decida e declare** qual modelo ela usa. Se nenhum servir, pare e pergunte (AGENTS §7).
 

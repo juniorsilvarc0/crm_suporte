@@ -82,6 +82,12 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 - **Arquivo de deploy:** `deploy/nginx-host.conf` ganha `location /api/v1/` sem log de query (D8), para aplicar só com autorização.
 - **Pronto quando:** os testes unitários do `withApi` passam: desconhecido, revogado e expirado dão 401; sem escopo dá 403; `tickets:*` cobre `tickets:read`; o estouro dá 429 com Retry-After; `last_used_at` recente não gera UPDATE; o log sai sem corpo.
 
+> **Feito no PR 4 e adiado dele:** `withApi`/`withPublicApi`, escopos, erros, idempotência (só corpo JSON), OpenAPI, `health`/`me`/`openapi.json` e o varredor das rotas. Ficaram para quando houver quem use:
+> - `cursor.ts` → PR 6;
+> - `if-match.ts` → PR 8;
+> - `access_log off` do `/api/v1` no vhost → PR 6, que traz `?cnpj=`;
+> - o hash de corpo multipart (o boundary muda a cada envio) → PR 8.
+
 **PR 5: `feat(api)`, tokens com escopo pela sessão** · back · P · depende do PR 3; pode correr em paralelo com o PR 4
 - **Arquivos:**
   - `api-token-actions.ts`: schema com `scopes`, `expires_at`, `rate_limit_per_min` e `actor_type`;
