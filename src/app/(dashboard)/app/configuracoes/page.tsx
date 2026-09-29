@@ -42,13 +42,13 @@ export default async function ConfiguracoesPage() {
         <Tabs defaultValue="variables" className="min-w-0 gap-5">
           <div className="overflow-x-auto overscroll-x-contain">
             <TabsList className="h-auto min-w-max gap-1 rounded-full bg-muted/60 p-1">
-              <TabsTrigger value="variables" className="h-10 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
+              <TabsTrigger value="variables" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
                 Variáveis
               </TabsTrigger>
-              <TabsTrigger value="api" className="h-10 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
+              <TabsTrigger value="api" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
                 API do CRM
               </TabsTrigger>
-              <TabsTrigger value="agent" className="h-10 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
+              <TabsTrigger value="agent" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
                 Agente de IA
               </TabsTrigger>
             </TabsList>

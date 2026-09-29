@@ -286,6 +286,17 @@ export type TicketCatalog = {
   categories: TicketCategoryOption[] | null;
 };
 
+// /app/configuracoes/atendimento (getServiceSettings, admin): o que a tela
+// edita, com os mesmos tipos que as rotas de admin devolvem em `item`. Filas e
+// categorias vêm TODAS, arquivadas inclusive (é ali que se reativa); as filas
+// ativas primeiro. Cada parte é `null` quando a leitura dela falhou, nunca `[]`.
+export type ServiceSettings = {
+  products: ProductOption[] | null;
+  categories: TicketCategoryOption[] | null;
+  policies: TicketSlaPolicy[] | null;
+  statuses: TicketStatusOption[] | null;
+};
+
 // Campo marcado em `errors` quando o erro é de um input das rotas de ticket
 // (corpo de POST /api/tickets, PATCH, transition, assign e active-ticket).
 export type TicketErrorField =
