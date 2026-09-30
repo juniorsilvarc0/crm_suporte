@@ -100,7 +100,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 
 > **PR 6 dividido em dois** (2026-09-29), para caber numa revisão:
 > - **6a, feito:** catálogos (`products`, `ticket-categories`, `ticket-statuses` com as transições, `sla-policies`, `users`), escopo `catalog:read`, 503 `unavailable` quando a leitura falha (nunca `[]`).
-> - **6b:** empresas e contatos, com cursor, `updated_since`, `?cnpj=`, o contrato sem valor, o POST idempotente e o PATCH do contato, e o `access_log off` do vhost.
+> - **6b, feito (2026-09-30):** empresas e contatos, com cursor, `updated_since`, `?cnpj=`, o contrato sem valor, o POST idempotente e o PATCH do contato. O D8 também fechou o log de erro do appgw, que grava a URL quando uma réplica cai, e o redirect da porta 80 da v1 é 308. No POST, o contato arquivado volta sem desarquivar, e o nome só preenche nome vazio (decisões do dono, 2026-09-29).
 
 **PR 6: `feat(api)`, leitura de catálogos, clientes e contatos** · back · M · depende do PR 4
 - **Rotas:** `/api/v1/products`, `ticket-categories`, `ticket-statuses`, `sla-policies`, `users`, `customers` (com `?cnpj=`) e `customers/{id}/contract`, `contacts` (GET/POST/PATCH).

@@ -27,6 +27,77 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-30] Fase 5 · PR 6b: empresas e contatos na API v1
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e os integradores leem empresas e contatos pela v1, com paginação estável, e acham ou criam um contato pelo telefone sem duplicar.
+**Arquivos alterados:**
+- `src/app/api/v1/contacts/route.ts` e `[id]/route.ts`, `src/app/api/v1/customers/route.ts`, `[id]/route.ts` e `[id]/contract/route.ts` (novos), com `cadastros.test.ts`;
+- `src/lib/api/v1/cursor.ts` e `cadastros.ts` (novos, com `cursor.test.ts`), `responses.ts` e `openapi.ts`;
+- `src/features/contracts/lib/contract-view.ts` (novo), extraído de `src/features/customers/queries/get-customer-detail.ts`;
+- `deploy/nginx-host.conf`, `deploy/app-gateway.conf`, `deploy/README.md`;
+- `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **Contatos** (`contacts:read` / `contacts:write`):
+  - `GET /contacts` com `q` (nome), `phone` (igualdade exata, alias incluso, como a RPC), `customer_id`, `updated_since`, `include_archived` e cursor;
+  - `GET /contacts/{id}`;
+  - `POST /contacts` com `Idempotency-Key`: acha pelo telefone ou cria com `source: api`. Dá 201 se criou e 200 se já existia;
+  - `PATCH /contacts/{id}`: nome, e-mail, observações e empresa. `phone` no corpo é 422 `phone_immutable`, e empresa arquivada ou inexistente é 422 `invalid_customer`.
+  - Contato anonimizado nunca sai.
+- **Empresas** (`customers:read`, só leitura):
+  - `GET /customers` com `q`, `cnpj` (com ou sem máscara, dígito verificador conferido), `updated_since`, `include_archived` e cursor;
+  - `GET /customers/{id}`;
+  - `GET /customers/{id}/contract`: o contrato atual, sem valor nem dia de vencimento. `data: null` quando a empresa nunca teve contrato.
+- **Cursor** (`cursor.ts`): opaco, sobre `(updated_at, id)` em ordem crescente, com `limit` de 1 a 200 (padrão 50) e `meta.next_cursor`.
+- **Entrada validada por inteiro:** parâmetro desconhecido, malformado ou sem efeito é 400 `validation_error` com `fields`, nunca ignorado.
+- **`access_log off` da v1 (D8):**
+  - o vhost do host não grava access nem error log de `/api/v1/`, e o redirect da porta 80 é 308;
+  - o appgw não grava o error log de `/api/v1/`.
+
+**Decisões tomadas:**
+- **Do dono (2026-09-29):**
+  - o POST com o telefone de um contato arquivado devolve o contato como está, **sem desarquivar**;
+  - o `name` do POST só preenche nome vazio; renomear é pelo PATCH.
+- **`phone` do POST é gravado só com os dígitos**, DDI incluso, como o WhatsApp manda (`5511…`). A primeira versão gravava o número já normalizado (sem o 55), diferente dos contatos do WhatsApp; o teste contra o banco local pegou.
+- **404 também para id malformado:** para o integrador, o recurso não existe.
+- **`/contract` lê todos os contratos numa consulta só** e escolhe o vigente, senão o primeiro encerrado na ordem do selo. Com duas leituras separadas, uma troca de status entre elas responderia "nunca teve contrato".
+
+**Verificação:**
+- Testes das rotas: cada resposta no schema publicado no OpenAPI. Os **filtros que chegam ao PostgREST** são conferidos por um builder falso que grava a cadeia de cada `from()`.
+- O varredor da v1 cobre as 5 rotas novas sozinho (identidade do `withApi`, 401, 403 sem escopo, método no OpenAPI).
+- **Mutação:** 26 garantias na 1ª rodada e 20 na 2ª (as correções da revisão). Todas pegas, menos uma checagem redundante (dia do mês), que saiu do código.
+- **Contra o banco local** (`next dev` da worktree, token de teste depois revogado, dados de teste removidos):
+  - a paginação de 1 em 1 atravessou 6 páginas sem repetir nem pular, com dois contatos no mesmo `updated_at` (desempate por `id`) e o microssegundo preservado no cursor;
+  - o POST ficou idempotente (replay com `Idempotent-Replayed`, 422 com outro corpo);
+  - `phone` com máscara achou o contato, e o `/contract` das duas empresas bateu com o selo;
+  - o `integration_logs` ficou sem query, sem id na rota e sem corpo.
+- **nginx:**
+  - `nginx -t` passou na 1.28 (host) e na 1.29 (appgw);
+  - em containers descartáveis, `/api/v1/?phone=` não deixou linha em log nenhum, e a rota comum continuou registrada;
+  - o POST em http recebeu 308.
+- **Revisão adversarial** (6 dimensões, cada achado com 2 ou 3 céticos): 13 confirmados, todos corrigidos; 11 refutados. Os principais:
+  - `q` sem token válido (`q=a`) devolvia a base inteira como se fosse o resultado; agora é 400;
+  - o appgw ainda gravaria `?phone=` no log de erro durante o deploy;
+  - o redirect 301 transformava POST em GET com 200;
+  - cursor ou `updated_since` com data impossível (30/02, fuso +99:99, ano acima de 9999) virava 503 "tente de novo" em vez de 400;
+  - NUL ou surrogate solto no nome virava 500;
+  - `?constructor=1` sumia do `fields`.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos de `verify-webhook.test.ts`) · test ✓ (2717) · build ✓.
+
+**Pendências / próximos passos:**
+- **Deploy dos PRs 3 a 6b só com "pode subir".** Este PR muda o vhost do host: depois do `publicar.sh`, reinstale-o como em `deploy/README.md` §Atualizar o vhost (backup, `crmsup.sh nginx https`, `nginx -t`, reload). O appgw é aplicado pelo próprio `subir`.
+- PR 7 (`/context`).
+
+**Armadilhas descobertas:**
+- **Guarde o `updated_at` do cursor como o PostgREST devolve** (`…39.371221+00:00`). `Date` tem só milissegundo: reescrito, o `eq` do desempate nunca casa.
+- **Regex de timestamp não basta.** O Postgres recusa 30/02 e fuso acima de ±15:59, e a leitura vira 503 (erro "do servidor") para uma entrada que nunca vai passar. Valide a data e dê 400.
+- **`toISOString` depois do ano 9999 escreve `+010000-…`**, que o Postgres recusa. Limite o instante dos dois lados.
+- **`searchTokens` descarta termo de 1 caractere.** Na tela isso é inofensivo; num contrato de API, "nenhum token" vira "sem filtro". Valide antes.
+- **`{}` como acumulador de chaves vindas do cliente** herda `constructor` e `toString`, e o `??=` pula essas chaves. Use `Object.create(null)`.
+- **`resolve_contact_identity` sobe o `updated_at` do contato existente em toda chamada**, mesmo sem mudar nada. Um integrador que "garante" o contato a cada evento faz a linha reaparecer na sincronização.
+- **Dois níveis de nginx:** um log fechado no vhost do host não fecha o do appgw, que também grava a linha da requisição quando a réplica cai.
+
 ## [2026-09-29] Fase 5 · PR 6a: catálogos na API v1
 
 **Agente/Modelo:** Claude Opus 5.5.
