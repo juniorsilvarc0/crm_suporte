@@ -1,6 +1,15 @@
 import { z } from "zod";
 
 import {
+  contactSchema,
+  contractSchema,
+  createContactSchema,
+  customerSchema,
+  itemOf,
+  pageOf,
+  updateContactSchema,
+} from "@/lib/api/v1/cadastros";
+import {
   assignableUserSchema,
   listOf,
   productSchema,
@@ -8,6 +17,7 @@ import {
   ticketCategorySchema,
   ticketStatusSchema,
 } from "@/lib/api/v1/catalog";
+import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
 // Contrato público da API v1, servido em GET /api/v1/openapi.json (D14). Os
@@ -78,6 +88,60 @@ const catalogGet = (summary: string, schemaName: string) => ({
   },
 });
 
+const json = (schemaName: string) => ({
+  "application/json": { schema: { $ref: `#/components/schemas/${schemaName}` } },
+});
+
+const unavailableError = errorResponse("Não foi possível ler agora (`unavailable`, com `Retry-After`).");
+const validationError = errorResponse("Parâmetro ou campo inválido (`validation_error`, com `fields`).");
+const notFoundError = errorResponse("Não existe, ou o id não é um UUID (`not_found`).");
+
+const idParam = (what: string) => ({
+  name: "id",
+  in: "path",
+  required: true,
+  description: `UUID ${what}.`,
+  schema: { type: "string", format: "uuid" },
+});
+
+const queryParam = (name: string, description: string, schema: Record<string, unknown> = { type: "string" }) => ({
+  name,
+  in: "query",
+  required: false,
+  description,
+  schema,
+});
+
+/** Os parâmetros de toda lista com cursor (cursor.ts). */
+const listParams = [
+  queryParam(
+    "q",
+    "Busca por texto, sem acento nem caixa (até 100 caracteres). Cada termo de 2+ letras ou dígitos precisa " +
+      "casar; só os 5 primeiros termos contam. Sem nenhum termo válido (ex.: uma letra só) é 400."
+  ),
+  queryParam(
+    "updated_since",
+    "Só o que mudou a partir deste instante (ISO 8601 com fuso). Para sincronizar, repita com o maior " +
+      "`updated_at` visto menos uma folga (ex.: 5 min) e deduplique por `id`.",
+    { type: "string", format: "date-time" }
+  ),
+  queryParam("include_archived", "Inclui os arquivados (`archived_at` preenchido).", {
+    type: "boolean",
+    default: false,
+  }),
+  queryParam("cursor", "O `meta.next_cursor` da página anterior. Opaco: não monte à mão."),
+  queryParam("limit", "Itens por página.", {
+    type: "integer",
+    minimum: 1,
+    maximum: MAX_PAGE_LIMIT,
+    default: DEFAULT_PAGE_LIMIT,
+  }),
+];
+
+const PAGE_DESCRIPTION =
+  "Página em ordem de `updated_at` crescente (desempate por `id`). `meta.next_cursor: null` = acabou. " +
+  "`updated_at` não é estritamente monotônico: a mesma linha pode reaparecer numa página seguinte.";
+
 export function buildOpenApiDocument() {
   return {
     openapi: "3.1.0",
@@ -87,7 +151,8 @@ export function buildOpenApiDocument() {
       description:
         "API para integradores e para o agente de IA. Autentique com `Authorization: Bearer <token>` " +
         "(gerado no CRM, com escopos). Toda resposta das operações documentadas traz `X-Request-Id`; " +
-        "informe-o ao suporte (404 e 405 vêm do servidor, sem esse envelope). " +
+        "informe-o ao suporte. 404 de recurso inexistente vem no envelope (`not_found`); 404 de caminho " +
+        "inexistente e 405 vêm do servidor, sem ele. " +
         "POST de criação exige `Idempotency-Key`: repetir a mesma requisição devolve a mesma resposta " +
         "(`Idempotent-Replayed: true`); a mesma chave com outra requisição é 422 `idempotency_key_reused`.",
     },
@@ -106,6 +171,13 @@ export function buildOpenApiDocument() {
         TicketStatuses: z.toJSONSchema(listOf(ticketStatusSchema)),
         SlaPolicies: z.toJSONSchema(listOf(slaPolicySchema)),
         Users: z.toJSONSchema(listOf(assignableUserSchema)),
+        Contact: z.toJSONSchema(itemOf(contactSchema)),
+        ContactPage: z.toJSONSchema(pageOf(contactSchema)),
+        ContactCreate: z.toJSONSchema(createContactSchema, { io: "input" }),
+        ContactUpdate: z.toJSONSchema(updateContactSchema, { io: "input" }),
+        Customer: z.toJSONSchema(itemOf(customerSchema)),
+        CustomerPage: z.toJSONSchema(pageOf(customerSchema)),
+        Contract: z.toJSONSchema(itemOf(contractSchema.nullable())),
       },
     },
     paths: {
@@ -151,6 +223,127 @@ export function buildOpenApiDocument() {
         "SlaPolicies"
       ),
       "/users": catalogGet("Quem pode receber ticket (ativos), por nome. Sem e-mail nem papel.", "Users"),
+      "/contacts": {
+        get: {
+          summary: "Contatos, com cursor. Anonimizado nunca sai. Escopo: `contacts:read`.",
+          parameters: [
+            ...listParams,
+            queryParam(
+              "phone",
+              "Igualdade exata com o telefone da pessoa (números antigos inclusos), com ou sem DDI 55 e máscara. " +
+                "Sem tolerância ao nono dígito."
+            ),
+            queryParam("customer_id", "Só os contatos desta empresa.", { type: "string", format: "uuid" }),
+          ],
+          responses: {
+            "200": { description: PAGE_DESCRIPTION, content: json("ContactPage") },
+            "400": validationError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+        post: {
+          summary:
+            "Acha a pessoa pelo telefone ou a cria (`source: api`). Contato arquivado volta como está, sem " +
+            "desarquivar; o `name` só preenche um nome vazio (renomear é pelo PATCH). Escopo: `contacts:write`.",
+          parameters: [
+            {
+              name: "Idempotency-Key",
+              in: "header",
+              required: true,
+              description: "8 a 200 caracteres entre letras, dígitos e `. _ : -`.",
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: { required: true, content: json("ContactCreate") },
+          responses: {
+            "200": { description: "Já existia (o contato como está).", content: json("Contact") },
+            "201": { description: "Criado.", content: json("Contact") },
+            "400": errorResponse(
+              "Campo inválido (`validation_error`), JSON inválido (`invalid_json`) ou Idempotency-Key ausente/malformada."
+            ),
+            "409": errorResponse(
+              "Telefone de outra pessoa (`phone_conflict`), contato anonimizado (`contact_anonymized`) ou a mesma " +
+                "Idempotency-Key ainda em andamento (`idempotency_in_progress`)."
+            ),
+            "415": errorResponse("Corpo fora de JSON (`unsupported_media_type`)."),
+            "422": errorResponse("Idempotency-Key já usada com outra requisição (`idempotency_key_reused`)."),
+            ...authErrors,
+          },
+        },
+      },
+      "/contacts/{id}": {
+        get: {
+          summary: "Um contato, arquivado inclusive. Escopo: `contacts:read`.",
+          parameters: [idParam("do contato")],
+          responses: {
+            "200": { description: "O contato.", content: json("Contact") },
+            "404": notFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+        patch: {
+          summary:
+            "Altera nome, e-mail, observações e empresa. Ausente não mexe; `null` limpa. O telefone é imutável. " +
+            "Escopo: `contacts:write`.",
+          parameters: [idParam("do contato")],
+          requestBody: { required: true, content: json("ContactUpdate") },
+          responses: {
+            "200": { description: "O contato alterado.", content: json("Contact") },
+            "400": errorResponse("Campo inválido, nada para alterar (`validation_error`) ou JSON inválido (`invalid_json`)."),
+            "404": notFoundError,
+            "422": errorResponse(
+              "`phone` no corpo (`phone_immutable`), ou empresa arquivada ou inexistente (`invalid_customer`)."
+            ),
+            ...authErrors,
+          },
+        },
+      },
+      "/customers": {
+        get: {
+          summary: "Empresas, com cursor. Escopo: `customers:read`.",
+          parameters: [
+            ...listParams,
+            queryParam(
+              "cnpj",
+              "Igualdade exata, com ou sem máscara (aceita o CNPJ alfanumérico). Dígito verificador errado é 400."
+            ),
+          ],
+          responses: {
+            "200": { description: PAGE_DESCRIPTION, content: json("CustomerPage") },
+            "400": validationError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/customers/{id}": {
+        get: {
+          summary: "Uma empresa, arquivada inclusive. Escopo: `customers:read`.",
+          parameters: [idParam("da empresa")],
+          responses: {
+            "200": { description: "A empresa.", content: json("Customer") },
+            "404": notFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/customers/{id}/contract": {
+        get: {
+          summary:
+            "O contrato atual, sem valor nem dia de vencimento: o vigente (ativo ou suspenso), senão o último " +
+            "encerrado (a mesma regra do `contract_status` da empresa). Escopo: `customers:read`.",
+          parameters: [idParam("da empresa")],
+          responses: {
+            "200": { description: "O contrato, ou `data: null` se a empresa nunca teve contrato.", content: json("Contract") },
+            "404": notFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
       "/openapi.json": {
         get: {
           summary: "Este documento. Público, sem token.",
