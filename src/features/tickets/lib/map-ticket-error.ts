@@ -279,8 +279,20 @@ const CONSTRAINT_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
   ],
   // Integração (Fase 5), comentários, anexos e catálogos do admin: sem campo de
   // ticket, a rota que precisar marca o próprio.
-  ["tickets_external_id_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
-  ["tickets_ai_triage_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
+  // Só a integração manda estes dois (a abertura pela tela os recusa).
+  [
+    "tickets_external_id_check",
+    { status: 400, code: "validation", message: "Id externo de 1 a 200 caracteres.", field: "external_id" },
+  ],
+  [
+    "tickets_ai_triage_check",
+    {
+      status: 400,
+      code: "validation",
+      message: "Triagem grande demais: no máximo 16 KB como o banco guarda o JSON.",
+      field: "ai_triage",
+    },
+  ],
   ["ticket_comments_body_check", { status: 400, code: "validation", message: VALIDATION_MESSAGE }],
   [
     "ticket_attachments_file_name_check",

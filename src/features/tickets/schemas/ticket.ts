@@ -113,19 +113,22 @@ export const ticketPatchSchema = z
     "Nada para atualizar."
   );
 
+// O teto é o de ticket_status_history.
+const reason = z
+  .string("Motivo inválido.")
+  .trim()
+  .max(500, "Máximo de 500 caracteres.")
+  .refine(isPgSafeText, PG_UNSAFE_TEXT_MESSAGE)
+  .nullish()
+  .transform((value) => value || null);
+
 // POST /api/tickets/[id]/transition. Motivo só é exigido ao cancelar (a RPC
-// confere de novo: REASON_REQUIRED); o teto é o de ticket_status_history.
+// confere de novo: REASON_REQUIRED).
 export const ticketTransitionSchema = z
   .object({
     to: z.enum(TICKET_STATUS_KEYS, "Status inválido."),
     version,
-    reason: z
-      .string("Motivo inválido.")
-      .trim()
-      .max(500, "Máximo de 500 caracteres.")
-      .refine(isPgSafeText, PG_UNSAFE_TEXT_MESSAGE)
-      .nullish()
-      .transform((value) => value || null),
+    reason,
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -200,6 +203,21 @@ export const ticketSummarySchema = z
     updated_at: pgInstant,
   })
   .strict() satisfies z.ZodType<TicketSummary>;
+
+// Os campos um a um, com as mesmas regras e mensagens, para a API v1 montar os
+// schemas dela: lá a versão vem no If-Match, não no corpo, e o ator é o token.
+export const ticketFieldSchemas = {
+  conversation_id: uuid("Conversa inválida."),
+  title,
+  description,
+  priority,
+  product_id: nullableRef("Fila inválida."),
+  category_id: nullableRef("Categoria inválida."),
+  customer_id: nullableRef("Empresa inválida."),
+  assignee_id: nullableRef("Responsável inválido."),
+  status: z.enum(TICKET_STATUS_KEYS, "Status inválido."),
+  reason,
+};
 
 // Values = o que o formulário edita (z.input); Input = o que a rota/serviço
 // recebe depois do parse (z.output).

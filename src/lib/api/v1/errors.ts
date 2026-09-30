@@ -11,6 +11,10 @@ export type ApiErrorExtras = {
   allowed?: readonly string[];
   /** Escopos que faltaram. */
   required?: readonly string[];
+  /** Estado atual quando ele decide o erro (ex.: o status de onde a transição partiu). */
+  current?: string;
+  /** Versão atual do recurso (412 do If-Match). */
+  current_version?: number;
 };
 
 export type ApiErrorBody = {

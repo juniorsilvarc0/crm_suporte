@@ -312,7 +312,9 @@ export type TicketErrorField =
   | "to"
   | "reason"
   | "version"
-  | "idempotency_key";
+  | "idempotency_key"
+  | "external_id"
+  | "ai_triage";
 
 // Erro de negócio do serviço de tickets (map-ticket-error). `message` é
 // amigável e nunca repassa error.message do banco. Extras por código:
