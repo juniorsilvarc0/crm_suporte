@@ -1,3 +1,4 @@
+import { findContactIdByPhone } from "@/features/contacts/queries/find-contact-by-phone";
 import { resolveContactIdentity, type ContactIdentityResolution } from "@/features/contacts/queries/resolve-contact-identity";
 import {
   CONTACT_API_SELECT,
@@ -26,23 +27,21 @@ export const GET = withApi(
     if (!parsed.success) return invalidInput(requestId, parsed.error);
     const params = parsed.data;
 
-    let query = supabase.from("contacts").select(CONTACT_API_SELECT).is("anonymized_at", null);
-    if (!params.include_archived) query = query.is("archived_at", null);
-
+    let phoneContactId: string | null = null;
     if (params.phone) {
-      // Como a RPC resolve: primeiro o alias (número antigo continua levando à
-      // pessoa), depois a coluna do próprio contato.
-      const alias = await supabase
-        .from("contact_phone_identities")
-        .select("contact_id")
-        .eq("normalized_phone", params.phone)
-        .maybeSingle();
-      if (alias.error) {
-        console.error(`[api/v1] ${requestId} contacts phone`, alias.error.message);
+      try {
+        phoneContactId = await findContactIdByPhone(supabase, params.phone);
+      } catch (error) {
+        console.error(`[api/v1] ${requestId} contacts phone`, error);
         return unavailable(requestId, "os contatos");
       }
-      query = alias.data ? query.eq("id", alias.data.contact_id) : query.eq("normalized_phone", params.phone);
+      // Número sem dono: a página vazia é a resposta, sem outra consulta.
+      if (!phoneContactId) return apiPage([], null);
     }
+
+    let query = supabase.from("contacts").select(CONTACT_API_SELECT).is("anonymized_at", null);
+    if (!params.include_archived) query = query.is("archived_at", null);
+    if (phoneContactId) query = query.eq("id", phoneContactId);
     // Tokens só com [a-z0-9]: entram no ilike sem escape (search-text.ts).
     for (const token of searchTokens(params.q)) {
       query = query.ilike("search_name", `%${token}%`);
