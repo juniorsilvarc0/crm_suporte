@@ -19,6 +19,16 @@ import {
 } from "@/lib/api/v1/catalog";
 import { triageContextSchema } from "@/lib/api/v1/context";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
+import {
+  ticketAssignBodySchema,
+  ticketChangeSchema,
+  ticketCreateBodySchema,
+  ticketDetailSchema,
+  ticketPatchBodySchema,
+  ticketSchema,
+  ticketTransitionBodySchema,
+  ticketTransitionResultSchema,
+} from "@/lib/api/v1/tickets";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
 // Contrato público da API v1, servido em GET /api/v1/openapi.json (D14). Os
@@ -34,6 +44,8 @@ export const apiErrorSchema = z.object({
     fields: z.record(z.string(), z.string()).optional(),
     allowed: z.array(z.string()).optional(),
     required: z.array(z.string()).optional(),
+    current: z.string().optional(),
+    current_version: z.number().int().optional(),
   }),
   request_id: z.string(),
 });
@@ -139,6 +151,46 @@ const listParams = [
   }),
 ];
 
+const ticketRefParam = {
+  name: "ref",
+  in: "path",
+  required: true,
+  description: "O id (uuid) ou o protocolo, só o número (1024, sem o prefixo que a tela mostra).",
+  schema: { type: "string" },
+};
+
+const ticketNotFoundError = errorResponse(
+  "Não existe, ou o `ref` não é um uuid nem um protocolo numérico (`not_found`)."
+);
+
+const ifMatchParam = {
+  name: "If-Match",
+  in: "header",
+  required: true,
+  description: 'O ETag do ticket, W/"<version>" (do GET ou da última escrita).',
+  schema: { type: "string" },
+};
+
+const withEtag = (description: string, schemaName: string) => ({
+  description,
+  headers: { ETag: { description: 'W/"<version>" do ticket.', schema: { type: "string" } } },
+  content: json(schemaName),
+});
+
+/** Os erros de toda escrita num ticket existente. */
+const ticketWriteErrors = {
+  "400": errorResponse(
+    "Campo inválido (`validation_error`), JSON inválido (`invalid_json`) ou If-Match malformado (`invalid_if_match`)."
+  ),
+  "404": ticketNotFoundError,
+  "412": errorResponse(
+    "O ticket mudou desde a versão do If-Match (`version_conflict`, com `current_version` e o ETag atual). Leia de novo."
+  ),
+  "422": errorResponse("Referência que o banco não aceita agora (ex.: `product_archived`, `assignee_inactive`), com `fields`."),
+  "428": errorResponse("Sem If-Match (`precondition_required`)."),
+  "503": errorResponse("A escrita pode ter valido, mas o ticket não pôde ser relido (`unavailable`). Repetir é seguro."),
+};
+
 const PAGE_DESCRIPTION =
   "Página em ordem de `updated_at` crescente (desempate por `id`). `meta.next_cursor: null` = acabou. " +
   "`updated_at` não é estritamente monotônico: a mesma linha pode reaparecer numa página seguinte.";
@@ -180,6 +232,14 @@ export function buildOpenApiDocument() {
         CustomerPage: z.toJSONSchema(pageOf(customerSchema)),
         Contract: z.toJSONSchema(itemOf(contractSchema.nullable())),
         TriageContext: z.toJSONSchema(itemOf(triageContextSchema)),
+        Ticket: z.toJSONSchema(itemOf(ticketDetailSchema)),
+        TicketPage: z.toJSONSchema(pageOf(ticketSchema)),
+        TicketChange: z.toJSONSchema(itemOf(ticketChangeSchema)),
+        TicketTransitionResult: z.toJSONSchema(itemOf(ticketTransitionResultSchema)),
+        TicketCreate: z.toJSONSchema(ticketCreateBodySchema, { io: "input" }),
+        TicketPatch: z.toJSONSchema(ticketPatchBodySchema, { io: "input" }),
+        TicketTransition: z.toJSONSchema(ticketTransitionBodySchema, { io: "input" }),
+        TicketAssign: z.toJSONSchema(ticketAssignBodySchema, { io: "input" }),
       },
     },
     paths: {
@@ -373,6 +433,128 @@ export function buildOpenApiDocument() {
             "200": { description: "O contrato, ou `data: null` se a empresa nunca teve contrato.", content: json("Contract") },
             "404": notFoundError,
             "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets": {
+        get: {
+          summary: "Tickets, com cursor e filtros. Escopo: `tickets:read`.",
+          parameters: [
+            ...listParams.filter((param) => param.name !== "include_archived" && param.name !== "q"),
+            queryParam(
+              "q",
+              "Busca no título, no nome do contato e na razão social, fantasia e CNPJ da empresa: tokens de 2+ " +
+                "letras ou dígitos, sem acento nem caixa (só os 5 primeiros contam). Exige também `contacts:read` e " +
+                "`customers:read` (senão, 403 `insufficient_scope`)."
+            ),
+            queryParam("status", "Um ou mais status, separados por vírgula (ex.: novo,em_triagem)."),
+            queryParam("priority", "Uma ou mais prioridades, separadas por vírgula."),
+            queryParam("is_terminal", "Só os encerrados (true) ou só os abertos (false).", { type: "boolean" }),
+            queryParam("sla_breached", "Só os com prazo vencido agora (true) ou só os sem (false).", { type: "boolean" }),
+            queryParam("product_id", "Só os desta fila.", { type: "string", format: "uuid" }),
+            queryParam("assignee_id", "Só os deste responsável, ou `none` (sem responsável)."),
+            queryParam("customer_id", "Só os desta empresa.", { type: "string", format: "uuid" }),
+            queryParam("contact_id", "Só os deste contato.", { type: "string", format: "uuid" }),
+            queryParam("conversation_id", "Só os desta conversa.", { type: "string", format: "uuid" }),
+          ],
+          responses: {
+            "200": { description: PAGE_DESCRIPTION, content: json("TicketPage") },
+            "400": validationError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+        post: {
+          summary:
+            "Abre um ticket na conversa, como o token (origem `ai` ou `api`, pelo tipo do token). O ticket novo " +
+            "vira o foco da conversa. Idempotente: a mesma `Idempotency-Key` (ou o mesmo `external_id`) deste token " +
+            "devolve o ticket já aberto. Numa repetição (`Idempotent-Replayed: true`) o ETag não vem: a versão está " +
+            "em `data.version`. Escopo: `tickets:write`.",
+          parameters: [
+            {
+              name: "Idempotency-Key",
+              in: "header",
+              required: true,
+              description: "8 a 200 caracteres entre letras, dígitos e `. _ : -`.",
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: { required: true, content: json("TicketCreate") },
+          responses: {
+            "200": withEtag("Já existia (o ticket como está).", "Ticket"),
+            "201": withEtag("Aberto.", "Ticket"),
+            "400": errorResponse(
+              "Campo inválido (`validation_error`), JSON inválido (`invalid_json`) ou Idempotency-Key ausente/malformada."
+            ),
+            "404": errorResponse("Conversa não encontrada (`not_found`)."),
+            "409": errorResponse("A mesma Idempotency-Key ainda em andamento (`idempotency_in_progress`)."),
+            "415": errorResponse("Corpo fora de JSON (`unsupported_media_type`)."),
+            "422": errorResponse(
+              "Chave já usada com outra requisição, ou a chave ou o `external_id` já abriu um ticket em outra " +
+                "conversa (`idempotency_key_reused`; com `external_id` no corpo, `fields.external_id`), ou referência " +
+                "que o banco não aceita (ex.: `product_archived`, `category_product_mismatch`), com `fields`."
+            ),
+            "503": errorResponse("O ticket pode ter sido aberto, mas não pôde ser relido (`unavailable`). Repetir é seguro."),
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}": {
+        get: {
+          summary: "Um ticket, pelo id ou pelo protocolo. O ETag da resposta é o que as escritas pedem. Escopo: `tickets:read`.",
+          parameters: [ticketRefParam],
+          responses: {
+            "200": withEtag("O ticket.", "Ticket"),
+            "404": ticketNotFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+        patch: {
+          summary:
+            "Altera título, descrição, prioridade, fila, categoria e empresa. Ausente não mexe; null tira. Status e " +
+            "responsável têm rota própria. O mesmo valor de novo é no-op (`changed: false`) antes de conferir a " +
+            "versão. Escopo: `tickets:write`.",
+          parameters: [ticketRefParam, ifMatchParam],
+          requestBody: { required: true, content: json("TicketPatch") },
+          responses: {
+            "200": withEtag("O ticket alterado (ou igual, com `changed: false`).", "TicketChange"),
+            "409": errorResponse("Ticket encerrado não muda (`ticket_terminal`)."),
+            ...ticketWriteErrors,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/transitions": {
+        post: {
+          summary:
+            "Muda o status pela matriz (`GET /ticket-statuses` mostra os destinos). Cancelar exige `reason`. O mesmo " +
+            "status de novo é no-op. Escopo: `tickets:write`.",
+          parameters: [ticketRefParam, ifMatchParam],
+          requestBody: { required: true, content: json("TicketTransition") },
+          responses: {
+            "200": withEtag("O ticket no status novo.", "TicketTransitionResult"),
+            "409": errorResponse(
+              "Destino fora da matriz (`invalid_transition`, com `allowed` e `current`). Ticket encerrado não tem " +
+                "destino: `allowed` vem vazio."
+            ),
+            ...ticketWriteErrors,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/assign": {
+        post: {
+          summary:
+            "Troca o responsável (`GET /users` lista quem pode receber) ou tira (`assignee_id: null`). O mesmo de novo " +
+            "é no-op. Escopo: `tickets:write`.",
+          parameters: [ticketRefParam, ifMatchParam],
+          requestBody: { required: true, content: json("TicketAssign") },
+          responses: {
+            "200": withEtag("O ticket com o responsável novo.", "TicketChange"),
+            "409": errorResponse("Ticket encerrado não muda (`ticket_terminal`)."),
+            ...ticketWriteErrors,
             ...authErrors,
           },
         },
