@@ -49,6 +49,15 @@ type TicketFailure = { ok: false; error: TicketError };
 // a assinatura recebe só o userId.
 export type TicketActor = { kind: "user"; userId: string } | { kind: "token"; tokenId: string };
 
+// O que só a integração (API v1) manda na abertura. A tela não usa: ausente
+// vale o default da RPC (novo, sem external_id, sem triagem, sem responsável).
+export type TicketIntegrationFields = {
+  status?: "novo" | "em_triagem";
+  external_id?: string;
+  ai_triage?: { [key: string]: Json };
+  assigned_to_user_id?: string | null;
+};
+
 // Os campos do PATCH, sem a versão (que vai à parte, como p_expected_version).
 // Ausente = não mexa; null = tire o valor.
 export type TicketPatch = Omit<TicketPatchInput, "version">;
@@ -151,7 +160,7 @@ function toPatchJson(patch: TicketPatch): { [key: string]: Json } {
 export async function createTicket(
   db: TicketDb,
   actor: TicketActor,
-  input: TicketCreateInput
+  input: TicketCreateInput & TicketIntegrationFields
 ): Promise<TicketResult<CreateTicketData>> {
   const context = "[ticket-service] createTicket";
   const { data, error } = await db.rpc("create_ticket", {
@@ -164,6 +173,10 @@ export async function createTicket(
     p_category_id: input.category_id ?? undefined,
     p_take_over: input.take_over,
     p_idempotency_key: input.idempotency_key,
+    p_status: input.status,
+    p_external_id: input.external_id,
+    p_ai_triage: input.ai_triage,
+    p_assigned_to_user_id: input.assigned_to_user_id ?? undefined,
   });
   if (error) return rpcFailure(context, error);
 
