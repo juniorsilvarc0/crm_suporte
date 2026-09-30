@@ -279,6 +279,7 @@ $C rodizio web           # tira uma réplica do rodízio à mão; recusa tirar a
 - **`SUPABASE_JWT_SECRET` ≠ `AUTH_JWT_SECRET`.** Com os dois iguais, o cookie de sessão valeria como credencial de banco.
 - **`SUPABASE_URL=http://gateway`, sem `:80`.** O supabase-js tira a porta padrão ao montar as URLs. Em 2026-09-28, com `:80`, nenhuma mídia do chat abria: o navegador recebia o host interno. Hoje o `toPublicOrigin` normaliza os dois lados, mas o valor certo é sem a porta.
 - **O segredo do webhook da uazapi vai na query (`?s=`).** A rota do webhook não tem log de acesso no vhost, porque o `access.log` do host é compartilhado.
+- **A API v1 (`/api/v1/`) também não vai para log de nginx** (D8 do `docs/PLANO-FASE-5.md`): `?phone=` e `?cnpj=` são dado pessoal. O vhost do host não grava access nem error log dela (nem no redirect da porta 80, que é 308 para o POST não virar GET), e o appgw não grava o error log. A auditoria da API é o `integration_logs`: rota (o template), token, status e latência, sem query nem corpo.
 - ⚠️ **Desconectar e reconectar o WhatsApp NÃO troca o segredo.** O `/api/connection/persist` reaproveita o que já existe (`ensure_chat_integration_secret`). Para **rotacionar** (ex.: o segredo vazou em log), faça os dois passos em seguida, num horário calmo: entre eles o webhook responde 401, e mensagens que chegarem nesse intervalo não entram no CRM (continuam no celular).
   1. No servidor, com o valor gerado **dentro** do banco (nunca na linha de comando):
      ```bash

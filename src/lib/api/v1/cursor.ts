@@ -1,0 +1,137 @@
+import { z } from "zod";
+
+import { isUuid } from "@/lib/validation/uuid";
+
+// Paginação das listas da API v1 (docs/PLANO-FASE-5.md, PR 6b): cursor opaco
+// sobre `(updated_at, id)`, em ordem CRESCENTE, com os índices
+// `<tabela>_updated_at_id_idx` das migrations. Keyset, não offset: linha
+// alterada durante a varredura não empurra as páginas seguintes.
+//
+// ⚠️ `updated_at` não é monotônico: `now()` é o início da transação, e o de
+// `contacts` sobe a cada mensagem. A mesma linha pode voltar numa página
+// posterior (cliente deduplica por `id`), e uma transação longa pode gravar um
+// `updated_at` já ultrapassado. Sincronização incremental: repetir com
+// `updated_since` = maior `updated_at` visto menos uma folga.
+
+export const DEFAULT_PAGE_LIMIT = 50;
+export const MAX_PAGE_LIMIT = 200;
+
+/** O cursor é nosso: acima disso, nem se tenta decodificar. */
+const MAX_CURSOR_LENGTH = 200;
+const CURSOR_VERSION = "v1";
+
+/**
+ * Timestamp como o PostgREST devolve (`2026-09-29T12:34:56.123456+00:00`).
+ * O cursor guarda a string CRUA: `Date` do JS só tem milissegundo, e reescrever
+ * o valor faria o `eq` do desempate nunca casar com o microssegundo do banco.
+ * A regex também é a barreira do `.or()`: sem vírgula, parêntese nem espaço.
+ */
+const DB_TIMESTAMP_RE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2})(?::?(\d{2}))?)$/;
+
+/** Último instante que o Postgres e o `toISOString` escrevem com ano de 4 dígitos. */
+const MAX_TIMESTAMP_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+/**
+ * A forma não basta: "2026-02-30" ou o fuso "+99:99" passam na regex, o
+ * Postgres recusa, e a lista responderia 503 "tente de novo" para uma entrada
+ * que nunca vai passar. Aqui é a data que existe, com fuso até ±15:59.
+ */
+function isDbTimestamp(value: string): boolean {
+  const match = DB_TIMESTAMP_RE.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, offsetHour = "0", offsetMinute = "0"] = match;
+  // Dia fora do mês (30/02, 00, 32) transborda para outro mês no Date.UTC.
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return (
+    Number(year) >= 1 &&
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    Number(hour) <= 23 &&
+    Number(minute) <= 59 &&
+    Number(second) <= 59 &&
+    Number(offsetHour) <= 15 &&
+    Number(offsetMinute) <= 59
+  );
+}
+
+export type Cursor = { updatedAt: string; id: string };
+export type Keyed = { updated_at: string; id: string };
+
+export function encodeCursor(row: Keyed): string {
+  return Buffer.from(`${CURSOR_VERSION}|${row.updated_at}|${row.id}`, "utf8").toString("base64url");
+}
+
+/** `null` quando o cursor não saiu de `encodeCursor` (ou foi adulterado). */
+export function decodeCursor(value: string): Cursor | null {
+  if (value.length === 0 || value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  const parts = Buffer.from(value, "base64url").toString("utf8").split("|");
+  if (parts.length !== 3) return null;
+  const [version, updatedAt, id] = parts;
+  if (version !== CURSOR_VERSION || !isDbTimestamp(updatedAt) || !isUuid(id)) return null;
+  return { updatedAt, id };
+}
+
+/**
+ * Filtro PostgREST "depois do cursor", na mesma ordem da consulta:
+ * `updated_at > ts OR (updated_at = ts AND id > id)`. Só recebe um Cursor que
+ * passou por `decodeCursor`, então os valores não têm nada a escapar.
+ */
+export function afterCursorFilter(cursor: Cursor): string {
+  return `updated_at.gt.${cursor.updatedAt},and(updated_at.eq.${cursor.updatedAt},id.gt.${cursor.id})`;
+}
+
+/**
+ * A consulta pede `limit + 1`: a linha excedente diz "tem mais" sem um
+ * `count`. O próximo cursor é a última linha DEVOLVIDA.
+ */
+export function cursorPage<T extends Keyed>(rows: T[], limit: number): { items: T[]; nextCursor: string | null } {
+  if (rows.length <= limit) return { items: rows, nextCursor: null };
+  const items = rows.slice(0, limit);
+  return { items, nextCursor: encodeCursor(items[items.length - 1]) };
+}
+
+/** A query string como objeto (a última ocorrência de um nome vence). */
+export function searchParamsOf(request: Request): Record<string, string> {
+  return Object.fromEntries(new URL(request.url).searchParams);
+}
+
+/**
+ * Parâmetros comuns das listas. Validados por inteiro: valor malformado é 400
+ * com o campo, nunca "ignorado" (um `limit=abc` que virasse 50 esconderia o
+ * erro do integrador).
+ */
+export const listQueryShape = {
+  cursor: z
+    .string()
+    .transform((value, ctx) => {
+      const cursor = decodeCursor(value);
+      if (!cursor) {
+        ctx.addIssue({ code: "custom", message: "Cursor inválido. Use o next_cursor da página anterior." });
+        return z.NEVER;
+      }
+      return cursor;
+    })
+    .optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/, { error: `Use um número de 1 a ${MAX_PAGE_LIMIT}.` })
+    .transform(Number)
+    .pipe(z.number().int().min(1, { error: `Use um número de 1 a ${MAX_PAGE_LIMIT}.` }).max(MAX_PAGE_LIMIT, {
+      error: `Use um número de 1 a ${MAX_PAGE_LIMIT}.`,
+    }))
+    .default(DEFAULT_PAGE_LIMIT),
+  updated_since: z
+    .iso.datetime({ offset: true, error: "Use data e hora ISO 8601 com fuso (ex.: 2026-09-29T12:00:00Z)." })
+    // Em UTC: o Postgres recusa fuso acima de ±15:59, que a ISO aceita. Antes de
+    // 1970 não há linha (e o ano 0000 o Postgres nem aceita); depois de 9999 o
+    // toISOString escreve "+010000-…", que ele também recusa.
+    .transform((value) =>
+      new Date(Math.min(MAX_TIMESTAMP_MS, Math.max(0, Date.parse(value)))).toISOString()
+    )
+    .optional(),
+  include_archived: z
+    .enum(["true", "false"], { error: "Use true ou false." })
+    .transform((value) => value === "true")
+    .default(false),
+};
