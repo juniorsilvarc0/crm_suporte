@@ -8,13 +8,10 @@ import { GET as getContext } from "@/app/api/v1/context/route";
 import { itemOf } from "@/lib/api/v1/cadastros";
 import { triageContextSchema } from "@/lib/api/v1/context";
 
-// GET /api/v1/context (PR 7, D11). Mesmo molde de cadastros.test.ts: um
-// builder falso grava a cadeia de cada `from()` (2º uso; no 3º vira helper).
-// O responder de cada tabela olha a cadeia para saber QUAL consulta é.
+import { createHarness, has, where } from "./test-harness";
 
-type Call = [string, ...unknown[]];
-type Result = { data: unknown; error: { message: string; code?: string } | null };
-type Responder = (calls: Call[]) => Result;
+// GET /api/v1/context (PR 7, D11), com o Supabase falso de test-harness.ts.
+// O responder de cada tabela olha a cadeia para saber QUAL consulta é.
 
 const CONTACT_ID = "0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b";
 const CUSTOMER_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
@@ -117,61 +114,12 @@ const messageRow = (id: string, created_at: string, overrides: Record<string, un
   ...overrides,
 });
 
-let tables: Record<string, Responder>;
-let chains: Record<string, Call[][]>;
-let tokenScopes: string[];
-
-function builder(table: string): unknown {
-  const calls: Call[] = [];
-  (chains[table] ??= []).push(calls);
-  const respond = () => (tables[table] ?? (() => ({ data: null, error: null })))(calls);
-  const chain: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (prop === "then") {
-          return (resolve: (v: Result) => unknown, reject: (e: unknown) => unknown) =>
-            Promise.resolve(respond()).then(resolve, reject);
-        }
-        if (prop === "maybeSingle" || prop === "single") {
-          return async () => {
-            calls.push([String(prop)]);
-            return respond();
-          };
-        }
-        return (...args: unknown[]) => {
-          calls.push([String(prop), ...args]);
-          return chain;
-        };
-      },
-    }
-  );
-  return chain;
-}
-
-const has = (calls: Call[], ...call: unknown[]) =>
-  calls.some((c) => c.length === call.length && c.every((v, i) => JSON.stringify(v) === JSON.stringify(call[i])));
-const where = (calls: Call[], column: string, value: unknown) => has(calls, "eq", column, value);
+const h = createHarness(adminClientMock);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  chains = {};
-  tokenScopes = ["context:read"];
-  tables = {
-    api_tokens: () => ({
-      data: {
-        id: "tok-1",
-        name: "IA",
-        token_prefix: "crmsuporte_a",
-        scopes: tokenScopes,
-        actor_type: "ai",
-        rate_limit_per_min: 100_000,
-        expires_at: null,
-        last_used_at: new Date().toISOString(),
-      },
-      error: null,
-    }),
-    integration_logs: () => ({ data: null, error: null }),
+  h.reset(["context:read"]);
+  Object.assign(h.tables, {
     contact_phone_identities: () => ({ data: { contact_id: CONTACT_ID }, error: null }),
     contacts: () => ({ data: contactRow(), error: null }),
     customers: () => ({ data: customerRow, error: null }),
@@ -200,22 +148,11 @@ beforeEach(() => {
       data: [messageRow("m2", "2026-01-01T00:02:00+00:00"), messageRow("m1", "2026-01-01T00:01:00+00:00")],
       error: null,
     }),
-  };
-  adminClientMock.mockImplementation(() => ({
-    from: (table: string) => builder(table),
-    rpc: async () => ({ data: null, error: { message: "rpc inesperada" } }),
-  }));
+  } satisfies typeof h.tables);
 });
 
-let ip = 0;
 function call(path = "/context?phone=5527999990000") {
-  ip += 1;
-  return getContext(
-    new Request(`http://crm.test/api/v1${path}`, {
-      headers: { authorization: "Bearer crmsuporte_x", "x-forwarded-for": `198.18.0.${ip % 250}` },
-    }),
-    { params: Promise.resolve({}) }
-  );
+  return getContext(h.request(path), { params: Promise.resolve({}) });
 }
 
 const body = async (path?: string) => (await call(path)).json();
@@ -239,16 +176,16 @@ describe("GET /api/v1/context", () => {
     });
     // Cada parte lida pela entidade CERTA: a empresa e o contrato do contato,
     // os tickets da conversa escolhida.
-    expect(where(chains.customers[0], "id", CUSTOMER_ID)).toBe(true);
-    expect(where(chains.support_contracts[0], "customer_id", CUSTOMER_ID)).toBe(true);
-    const open = chains.ticket_queue.find((calls) => where(calls, "is_terminal", false)) ?? [];
+    expect(where(h.chains.customers[0], "id", CUSTOMER_ID)).toBe(true);
+    expect(where(h.chains.support_contracts[0], "customer_id", CUSTOMER_ID)).toBe(true);
+    const open = h.chains.ticket_queue.find((calls) => where(calls, "is_terminal", false)) ?? [];
     expect(where(open, "conversation_id", CONVERSATION_ID)).toBe(true);
   });
 
   it("a conversa é a mais recente do contato (sem mensagem ainda fica por último)", async () => {
     await call();
 
-    const conversation = chains.chat_conversations.find((calls) => where(calls, "contact_id", CONTACT_ID)) ?? [];
+    const conversation = h.chains.chat_conversations.find((calls) => where(calls, "contact_id", CONTACT_ID)) ?? [];
     expect(has(conversation, "order", "last_message_at", { ascending: false, nullsFirst: false })).toBe(true);
     expect(has(conversation, "order", "created_at", { ascending: false })).toBe(true);
     expect(has(conversation, "limit", 1)).toBe(true);
@@ -257,12 +194,12 @@ describe("GET /api/v1/context", () => {
   it("acha pelo alias exato, com o telefone normalizado (sem o 55 e sem máscara)", async () => {
     await call(`/context?phone=${encodeURIComponent("+55 (27) 99999-0000")}`);
 
-    expect(where(chains.contact_phone_identities[0], "normalized_phone", "27999990000")).toBe(true);
+    expect(where(h.chains.contact_phone_identities[0], "normalized_phone", "27999990000")).toBe(true);
   });
 
   it("telefone desconhecido: 200 com contact null e o resto vazio (D11), sem criar nada", async () => {
-    tables.contact_phone_identities = () => ({ data: null, error: null });
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contact_phone_identities = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     const response = await call();
     const payload = await response.json();
@@ -281,22 +218,22 @@ describe("GET /api/v1/context", () => {
       ai_may_reply: false,
     });
     expect(itemOf(triageContextSchema).safeParse(payload).success).toBe(true);
-    expect(chains.chat_conversations).toBeUndefined();
+    expect(h.chains.chat_conversations).toBeUndefined();
   });
 
   it("contato anonimizado é tratado como desconhecido", async () => {
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     const payload = await body();
 
     expect(payload.data.contact).toBeNull();
-    expect(has(chains.contacts[0], "is", "anonymized_at", null)).toBe(true);
+    expect(has(h.chains.contacts[0], "is", "anonymized_at", null)).toBe(true);
   });
 
   it("só lê: nenhuma escrita em tabela nenhuma (não zera as não lidas)", async () => {
     await call();
 
-    for (const [table, list] of Object.entries(chains)) {
+    for (const [table, list] of Object.entries(h.chains)) {
       if (table === "integration_logs") continue;
       for (const calls of list) {
         expect(
@@ -311,7 +248,7 @@ describe("GET /api/v1/context", () => {
     const payload = await body();
 
     expect(payload.data.messages.map((m: { id: string }) => m.id)).toEqual(["m1", "m2"]);
-    const [messages] = chains.chat_messages;
+    const [messages] = h.chains.chat_messages;
     expect(where(messages, "conversation_id", CONVERSATION_ID)).toBe(true);
     expect(has(messages, "neq", "type", "note")).toBe(true);
     expect(has(messages, "order", "created_at", { ascending: false })).toBe(true);
@@ -334,7 +271,7 @@ describe("GET /api/v1/context", () => {
     expect(payload.data.open_tickets[0].assignee).not.toHaveProperty("avatar_color");
     expect(payload.data.recent_tickets).toMatchObject([{ id: "t0", status: "fechado" }]);
     expect(payload.data.recent_tickets[0]).not.toHaveProperty("allowed_transitions");
-    const recent = chains.ticket_queue.find((calls) => where(calls, "is_terminal", true)) ?? [];
+    const recent = h.chains.ticket_queue.find((calls) => where(calls, "is_terminal", true)) ?? [];
     expect(where(recent, "contact_id", CONTACT_ID)).toBe(true);
     expect(has(recent, "limit", 5)).toBe(true);
     // Pelo encerramento: updated_at muda quando um analista é excluído.
@@ -343,7 +280,7 @@ describe("GET /api/v1/context", () => {
   });
 
   it("SLA calculado pela regra da view: prazo de 1ª resposta vencido sem resposta = breached", async () => {
-    tables.ticket_queue = (calls) =>
+    h.tables.ticket_queue = (calls) =>
       where(calls, "is_terminal", true)
         ? { data: [], error: null }
         : { data: [ticketRow({ first_response_due_at: PAST, first_responded_at: null })], error: null };
@@ -354,7 +291,7 @@ describe("GET /api/v1/context", () => {
   });
 
   it("matriz de transições indisponível: allowed_transitions null (nunca []), o resto sai", async () => {
-    tables.ticket_status_transitions = () => ({ data: null, error: { message: "boom" } });
+    h.tables.ticket_status_transitions = () => ({ data: null, error: { message: "boom" } });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const response = await call();
@@ -367,7 +304,7 @@ describe("GET /api/v1/context", () => {
 
   it("mais de 20 tickets abertos: open_tickets_truncated avisa o corte", async () => {
     const rows = Array.from({ length: 21 }, (_, index) => ticketRow({ id: index === 0 ? "t1" : `t${index + 1}`, number: 200 + index }));
-    tables.ticket_queue = (calls) => (where(calls, "is_terminal", true) ? { data: [], error: null } : { data: rows, error: null });
+    h.tables.ticket_queue = (calls) => (where(calls, "is_terminal", true) ? { data: [], error: null } : { data: rows, error: null });
 
     const payload = await body();
 
@@ -379,7 +316,7 @@ describe("GET /api/v1/context", () => {
     ["destino desconhecido", { from_status: "em_atendimento", to_status: "arquivado" }],
     ["origem desconhecida", { from_status: "arquivado", to_status: "resolvido" }],
   ])("matriz com status %s: allowed_transitions null, nunca uma lista parcial", async (_label, bad) => {
-    tables.ticket_status_transitions = () => ({
+    h.tables.ticket_status_transitions = () => ({
       data: [{ from_status: "em_atendimento", to_status: "resolvido" }, bad],
       error: null,
     });
@@ -396,7 +333,7 @@ describe("GET /api/v1/context", () => {
     ["humano assumiu", "human"],
     ["encerrada", "resolved"],
   ])("conversa %s: ai_may_reply false", async (_label, status) => {
-    tables.chat_conversations = (calls) =>
+    h.tables.chat_conversations = (calls) =>
       where(calls, "contact_id", CONTACT_ID)
         ? { data: conversationRow(status), error: null }
         : { data: { active_ticket_id: null }, error: null };
@@ -405,22 +342,22 @@ describe("GET /api/v1/context", () => {
   });
 
   it("sem conversa: sem mensagens nem tickets abertos, e a IA não responde", async () => {
-    tables.chat_conversations = () => ({ data: null, error: null });
+    h.tables.chat_conversations = () => ({ data: null, error: null });
 
     const payload = await body();
 
     expect(payload.data).toMatchObject({ conversation: null, messages: [], open_tickets: [], ai_may_reply: false });
-    expect(chains.chat_messages).toBeUndefined();
+    expect(h.chains.chat_messages).toBeUndefined();
   });
 
   it("contato sem empresa: alerta sem_empresa, sem consultar empresa nem contrato", async () => {
-    tables.contacts = () => ({ data: contactRow({ customer_id: null }), error: null });
+    h.tables.contacts = () => ({ data: contactRow({ customer_id: null }), error: null });
 
     const payload = await body();
 
     expect(payload.data).toMatchObject({ customer: null, contract: null, contract_alert: "sem_empresa" });
-    expect(chains.customers).toBeUndefined();
-    expect(chains.support_contracts).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
+    expect(h.chains.support_contracts).toBeUndefined();
   });
 
   it.each([
@@ -428,7 +365,7 @@ describe("GET /api/v1/context", () => {
     ["contrato suspenso", [contractRow("suspenso")], "suspenso"],
     ["só contrato encerrado", [contractRow("encerrado")], "encerrado"],
   ])("empresa com %s: alerta %s", async (_label, rows, alert) => {
-    tables.support_contracts = () => ({ data: rows, error: null });
+    h.tables.support_contracts = () => ({ data: rows, error: null });
 
     expect((await body()).data.contract_alert).toBe(alert);
   });
@@ -441,7 +378,7 @@ describe("GET /api/v1/context", () => {
     ["o contrato", "support_contracts"],
     ["as mensagens", "chat_messages"],
   ])("leitura d%s que falhou é 503 inteiro, nunca contexto pela metade", async (_label, table) => {
-    tables[table] = () => ({ data: null, error: { message: "boom" } });
+    h.tables[table] = () => ({ data: null, error: { message: "boom" } });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const response = await call();
@@ -457,8 +394,8 @@ describe("GET /api/v1/context", () => {
     ["dos tickets encerrados do contato", true],
     ["dos tickets abertos da conversa", false],
   ])("leitura %s que falhou é 503", async (_label, terminal) => {
-    const base = tables.ticket_queue;
-    tables.ticket_queue = (calls) =>
+    const base = h.tables.ticket_queue;
+    h.tables.ticket_queue = (calls) =>
       where(calls, "is_terminal", terminal) ? { data: null, error: { message: "boom" } } : base(calls);
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -467,7 +404,7 @@ describe("GET /api/v1/context", () => {
   });
 
   it("empresa do contato que some entre as leituras é 503, não 'sem empresa'", async () => {
-    tables.customers = () => ({ data: null, error: null });
+    h.tables.customers = () => ({ data: null, error: null });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     expect((await call()).status).toBe(503);
@@ -475,7 +412,7 @@ describe("GET /api/v1/context", () => {
   });
 
   it("mensagem fora do vocabulário do banco é 503, não some", async () => {
-    tables.chat_messages = () => ({ data: [messageRow("m1", PAST, { sender_type: "robo" })], error: null });
+    h.tables.chat_messages = () => ({ data: [messageRow("m1", PAST, { sender_type: "robo" })], error: null });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     expect((await call()).status).toBe(503);
@@ -492,16 +429,16 @@ describe("GET /api/v1/context", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error.fields).toHaveProperty(field);
-    expect(chains.contact_phone_identities).toBeUndefined();
+    expect(h.chains.contact_phone_identities).toBeUndefined();
   });
 
   it("exige context:read (contacts:read sozinho não basta)", async () => {
-    tokenScopes = ["contacts:read", "customers:read"];
+    h.scopes = ["contacts:read", "customers:read"];
 
     const response = await call();
 
     expect(response.status).toBe(403);
     expect((await response.json()).error.required).toEqual(["context:read"]);
-    expect(chains.contact_phone_identities).toBeUndefined();
+    expect(h.chains.contact_phone_identities).toBeUndefined();
   });
 });

@@ -12,13 +12,12 @@ import { GET as listCustomers } from "@/app/api/v1/customers/route";
 import { contactSchema, contractSchema, customerSchema, itemOf, pageOf } from "@/lib/api/v1/cadastros";
 import { decodeCursor, encodeCursor } from "@/lib/api/v1/cursor";
 
-// Empresas e contatos da v1 (PR 6b). O banco é um builder falso que grava a
-// cadeia de cada `from()`: os testes conferem os FILTROS que chegam ao
-// PostgREST, não só a resposta.
+import { createHarness, has } from "./test-harness";
 
-type Call = [string, ...unknown[]];
-type Result = { data: unknown; error: { message: string; code?: string } | null };
-type Responder = (calls: Call[]) => Result;
+
+// Empresas e contatos da v1 (PR 6b). O banco é o Supabase falso de
+// test-harness.ts: os testes conferem os FILTROS que chegam ao PostgREST, não
+// só a resposta.
 
 const CONTACT_ID = "0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b";
 const CUSTOMER_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
@@ -66,101 +65,19 @@ const contractRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-let tables: Record<string, Responder>;
-let rpcs: Record<string, (args: Record<string, unknown>) => Result>;
-/** Cada `from(tabela)` vira uma cadeia de chamadas aqui. */
-let chains: Record<string, Call[][]>;
-let rpcCalls: [string, Record<string, unknown>][];
-let tokenScopes: string[];
-
-function builder(table: string): unknown {
-  const calls: Call[] = [];
-  (chains[table] ??= []).push(calls);
-  const respond = () => (tables[table] ?? (() => ({ data: null, error: null })))(calls);
-  const chain: unknown = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (prop === "then") {
-          return (resolve: (v: Result) => unknown, reject: (e: unknown) => unknown) =>
-            Promise.resolve(respond()).then(resolve, reject);
-        }
-        if (prop === "maybeSingle" || prop === "single") {
-          return async () => {
-            calls.push([String(prop)]);
-            return respond();
-          };
-        }
-        return (...args: unknown[]) => {
-          calls.push([String(prop), ...args]);
-          return chain;
-        };
-      },
-    }
-  );
-  return chain;
-}
-
-const has = (calls: Call[], ...call: unknown[]) =>
-  calls.some((c) => c.length === call.length && c.every((v, i) => Object.is(v, call[i]) || JSON.stringify(v) === JSON.stringify(call[i])));
-const lastChain = (table: string) => chains[table]?.at(-1) ?? [];
+const h = createHarness(adminClientMock);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  chains = {};
-  rpcCalls = [];
-  tokenScopes = ["contacts:read", "contacts:write", "customers:read"];
-  tables = {
-    api_tokens: () => ({
-      data: {
-        id: "tok-1",
-        name: "IA",
-        token_prefix: "crmsuporte_a",
-        scopes: tokenScopes,
-        actor_type: "ai",
-        rate_limit_per_min: 100_000,
-        expires_at: null,
-        last_used_at: new Date().toISOString(),
-      },
-      error: null,
-    }),
-    integration_logs: () => ({ data: null, error: null }),
-  };
-  rpcs = {
-    api_idempotency_begin: () => ({ data: { outcome: "started", attempt_id: "att-1" }, error: null }),
-    api_idempotency_finish: () => ({ data: null, error: null }),
-    api_idempotency_release: () => ({ data: null, error: null }),
-  };
-  adminClientMock.mockImplementation(() => ({
-    from: (table: string) => builder(table),
-    rpc: async (name: string, args: Record<string, unknown>) => {
-      rpcCalls.push([name, args]);
-      return (rpcs[name] ?? (() => ({ data: null, error: { message: `rpc ${name} não mockada` } })))(args);
-    },
-  }));
+  h.reset(["contacts:read", "contacts:write", "customers:read"]);
 });
 
-let ip = 0;
 type Handler<P> = (request: Request, context: { params: Promise<P> }) => Promise<Response>;
 function call<P extends object>(
   handler: Handler<P>,
   options: { path?: string; method?: string; body?: unknown; rawBody?: string; params?: P; headers?: Record<string, string> } = {}
 ) {
-  ip += 1;
-  const hasBody = options.body !== undefined || options.rawBody !== undefined;
-  return handler(
-    new Request(`http://crm.test/api/v1${options.path ?? "/x"}`, {
-      method: options.method ?? "GET",
-      headers: {
-        authorization: "Bearer crmsuporte_x",
-        "x-forwarded-for": `203.0.113.${ip % 250}`,
-        ...(hasBody ? { "content-type": "application/json" } : {}),
-        ...options.headers,
-      },
-      body: options.rawBody ?? (options.body !== undefined ? JSON.stringify(options.body) : undefined),
-    }),
-    { params: Promise.resolve((options.params ?? {}) as P) }
-  );
+  return handler(h.request(options.path ?? "/x", options), { params: Promise.resolve((options.params ?? {}) as P) });
 }
 
 const json = async (response: Response) => response.json();
@@ -169,7 +86,7 @@ const json = async (response: Response) => response.json();
 
 describe("GET /api/v1/contacts", () => {
   it("responde no schema publicado, só ativos e não anonimizados, em updated_at crescente", async () => {
-    tables.contacts = () => ({ data: [contactRow({ search_name: "maria", avatar_key: "x" })], error: null });
+    h.tables.contacts = () => ({ data: [contactRow({ search_name: "maria", avatar_key: "x" })], error: null });
 
     const response = await call(listContacts, { path: "/contacts" });
     const body = await json(response);
@@ -178,7 +95,7 @@ describe("GET /api/v1/contacts", () => {
     expect(pageOf(contactSchema).safeParse(body).success).toBe(true);
     expect(body.meta.next_cursor).toBeNull();
     expect(body.data[0]).not.toHaveProperty("search_name");
-    const calls = lastChain("contacts");
+    const calls = h.lastChain("contacts");
     expect(has(calls, "is", "anonymized_at", null)).toBe(true);
     expect(has(calls, "is", "archived_at", null)).toBe(true);
     expect(has(calls, "order", "updated_at", { ascending: true })).toBe(true);
@@ -187,11 +104,11 @@ describe("GET /api/v1/contacts", () => {
   });
 
   it("include_archived=true tira só o filtro de arquivado (anonimizado continua fora)", async () => {
-    tables.contacts = () => ({ data: [], error: null });
+    h.tables.contacts = () => ({ data: [], error: null });
 
     await call(listContacts, { path: "/contacts?include_archived=true" });
 
-    const calls = lastChain("contacts");
+    const calls = h.lastChain("contacts");
     expect(has(calls, "is", "archived_at", null)).toBe(false);
     expect(has(calls, "is", "anonymized_at", null)).toBe(true);
   });
@@ -200,19 +117,19 @@ describe("GET /api/v1/contacts", () => {
     const rows = [1, 2, 3].map((n) =>
       contactRow({ id: `${n}f8e7d6c-5b4a-4938-8271-605f4e3d2c1b`, updated_at: `2026-09-29T12:00:0${n}.5+00:00` })
     );
-    tables.contacts = () => ({ data: rows, error: null });
+    h.tables.contacts = () => ({ data: rows, error: null });
 
     const first = await json(await call(listContacts, { path: "/contacts?limit=2" }));
 
     expect(first.data).toHaveLength(2);
     expect(decodeCursor(first.meta.next_cursor)).toEqual({ updatedAt: rows[1].updated_at, id: rows[1].id });
-    expect(has(lastChain("contacts"), "limit", 3)).toBe(true);
+    expect(has(h.lastChain("contacts"), "limit", 3)).toBe(true);
 
     await call(listContacts, { path: `/contacts?limit=2&cursor=${first.meta.next_cursor}` });
 
     expect(
       has(
-        lastChain("contacts"),
+        h.lastChain("contacts"),
         "or",
         `updated_at.gt.${rows[1].updated_at},and(updated_at.eq.${rows[1].updated_at},id.gt.${rows[1].id})`
       )
@@ -220,18 +137,18 @@ describe("GET /api/v1/contacts", () => {
   });
 
   it("phone: normaliza e procura pelo alias primeiro", async () => {
-    tables.contact_phone_identities = () => ({ data: { contact_id: CONTACT_ID }, error: null });
-    tables.contacts = () => ({ data: [contactRow()], error: null });
+    h.tables.contact_phone_identities = () => ({ data: { contact_id: CONTACT_ID }, error: null });
+    h.tables.contacts = () => ({ data: [contactRow()], error: null });
 
     await call(listContacts, { path: `/contacts?phone=${encodeURIComponent("+55 (27) 99999-0000")}` });
 
-    expect(has(lastChain("contact_phone_identities"), "eq", "normalized_phone", "27999990000")).toBe(true);
-    expect(has(lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
+    expect(has(h.lastChain("contact_phone_identities"), "eq", "normalized_phone", "27999990000")).toBe(true);
+    expect(has(h.lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
   });
 
   it("phone sem alias cai na coluna do contato; o GET nunca cria", async () => {
-    tables.contact_phone_identities = () => ({ data: null, error: null });
-    tables.contacts = (calls) =>
+    h.tables.contact_phone_identities = () => ({ data: null, error: null });
+    h.tables.contacts = (calls) =>
       calls.some(([method]) => method === "maybeSingle")
         ? { data: { id: CONTACT_ID }, error: null }
         : { data: [contactRow()], error: null };
@@ -239,30 +156,30 @@ describe("GET /api/v1/contacts", () => {
     const body = await json(await call(listContacts, { path: "/contacts?phone=27999990000" }));
 
     expect(body.data).toHaveLength(1);
-    const [lookup, list] = chains.contacts;
+    const [lookup, list] = h.chains.contacts;
     expect(has(lookup, "eq", "normalized_phone", "27999990000")).toBe(true);
     expect(has(list, "eq", "id", CONTACT_ID)).toBe(true);
-    expect(rpcCalls.some(([name]) => name === "resolve_contact_identity")).toBe(false);
+    expect(h.rpcCalls.some(([name]) => name === "resolve_contact_identity")).toBe(false);
   });
 
   it("número sem dono: página vazia, sem consultar a lista", async () => {
-    tables.contact_phone_identities = () => ({ data: null, error: null });
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contact_phone_identities = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     const body = await json(await call(listContacts, { path: "/contacts?phone=27999990000" }));
 
     expect(body).toEqual({ ok: true, data: [], meta: { next_cursor: null } });
-    expect(chains.contacts).toHaveLength(1);
+    expect(h.chains.contacts).toHaveLength(1);
   });
 
   it("q vira um ilike por token no search_name; customer_id e updated_since filtram", async () => {
-    tables.contacts = () => ({ data: [], error: null });
+    h.tables.contacts = () => ({ data: [], error: null });
 
     await call(listContacts, {
       path: `/contacts?q=${encodeURIComponent("João  Silva")}&customer_id=${CUSTOMER_ID}&updated_since=2026-09-29T09:00:00-03:00`,
     });
 
-    const calls = lastChain("contacts");
+    const calls = h.lastChain("contacts");
     expect(has(calls, "ilike", "search_name", "%joao%")).toBe(true);
     expect(has(calls, "ilike", "search_name", "%silva%")).toBe(true);
     expect(has(calls, "eq", "customer_id", CUSTOMER_ID)).toBe(true);
@@ -285,18 +202,18 @@ describe("GET /api/v1/contacts", () => {
     expect(response.status).toBe(400);
     expect(body.error.code).toBe("validation_error");
     expect(body.error.fields).toHaveProperty(field);
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it("q vazio é 'sem busca': 200, sem ilike", async () => {
-    tables.contacts = () => ({ data: [], error: null });
+    h.tables.contacts = () => ({ data: [], error: null });
 
     expect((await call(listContacts, { path: "/contacts?q=" })).status).toBe(200);
-    expect(lastChain("contacts").some(([method]) => method === "ilike")).toBe(false);
+    expect(h.lastChain("contacts").some(([method]) => method === "ilike")).toBe(false);
   });
 
   it("leitura que falhou é 503, nunca lista vazia", async () => {
-    tables.contacts = () => ({ data: null, error: { message: "boom" } });
+    h.tables.contacts = () => ({ data: null, error: { message: "boom" } });
 
     const response = await call(listContacts, { path: "/contacts" });
 
@@ -305,24 +222,24 @@ describe("GET /api/v1/contacts", () => {
   });
 
   it("alias que falhou também é 503", async () => {
-    tables.contact_phone_identities = () => ({ data: null, error: { message: "boom" } });
+    h.tables.contact_phone_identities = () => ({ data: null, error: { message: "boom" } });
 
     expect((await call(listContacts, { path: "/contacts?phone=27999990000" })).status).toBe(503);
   });
 
   it("exige contacts:read (contacts:write sozinho não lê)", async () => {
-    tokenScopes = ["contacts:write", "customers:read"];
+    h.scopes = ["contacts:write", "customers:read"];
 
     const response = await call(listContacts, { path: "/contacts" });
 
     expect(response.status).toBe(403);
     expect((await json(response)).error.required).toEqual(["contacts:read"]);
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it("o curinga contacts:* lê", async () => {
-    tokenScopes = ["contacts:*"];
-    tables.contacts = () => ({ data: [], error: null });
+    h.scopes = ["contacts:*"];
+    h.tables.contacts = () => ({ data: [], error: null });
 
     expect((await call(listContacts, { path: "/contacts" })).status).toBe(200);
   });
@@ -335,11 +252,11 @@ describe("POST /api/v1/contacts", () => {
     call(createContact, { path: "/contacts", method: "POST", body, headers });
 
   beforeEach(() => {
-    rpcs.resolve_contact_identity = () => ({
+    h.rpcs.resolve_contact_identity = () => ({
       data: { contactId: CONTACT_ID, normalizedPhone: "27999990000", created: true },
       error: null,
     });
-    tables.contacts = () => ({ data: contactRow({ source: "api" }), error: null });
+    h.tables.contacts = () => ({ data: contactRow({ source: "api" }), error: null });
   });
 
   it("cria com source api, sem reativar, e responde 201 no schema publicado", async () => {
@@ -348,7 +265,7 @@ describe("POST /api/v1/contacts", () => {
 
     expect(response.status).toBe(201);
     expect(itemOf(contactSchema).safeParse(body).success).toBe(true);
-    const resolve = rpcCalls.find(([name]) => name === "resolve_contact_identity");
+    const resolve = h.rpcCalls.find(([name]) => name === "resolve_contact_identity");
     // Só os dígitos, DDI incluso (como o WhatsApp grava); a RPC normaliza.
     expect(resolve?.[1]).toMatchObject({
       p_phone: "5527999990000",
@@ -356,23 +273,23 @@ describe("POST /api/v1/contacts", () => {
       p_reactivate: false,
       p_name: "Maria",
     });
-    expect(has(lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
-    expect(rpcCalls.map(([name]) => name)).toContain("api_idempotency_finish");
+    expect(has(h.lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
+    expect(h.rpcCalls.map(([name]) => name)).toContain("api_idempotency_finish");
   });
 
   it("telefone que já existe (arquivado) volta 200 como está, sem desarquivar", async () => {
-    rpcs.resolve_contact_identity = () => ({
+    h.rpcs.resolve_contact_identity = () => ({
       data: { contactId: CONTACT_ID, normalizedPhone: "27999990000", created: false },
       error: null,
     });
-    tables.contacts = () => ({ data: contactRow({ archived_at: "2026-09-10T00:00:00+00:00" }), error: null });
+    h.tables.contacts = () => ({ data: contactRow({ archived_at: "2026-09-10T00:00:00+00:00" }), error: null });
 
     const response = await post({ phone: "27999990000" });
     const body = await json(response);
 
     expect(response.status).toBe(200);
     expect(body.data.archived_at).toBe("2026-09-10T00:00:00+00:00");
-    expect(rpcCalls.find(([name]) => name === "resolve_contact_identity")?.[1].p_reactivate).toBe(false);
+    expect(h.rpcCalls.find(([name]) => name === "resolve_contact_identity")?.[1].p_reactivate).toBe(false);
   });
 
   it("sem Idempotency-Key é 400 e a RPC nem é chamada", async () => {
@@ -380,7 +297,7 @@ describe("POST /api/v1/contacts", () => {
 
     expect(response.status).toBe(400);
     expect((await json(response)).error.code).toBe("idempotency_key_required");
-    expect(rpcCalls).toEqual([]);
+    expect(h.rpcCalls).toEqual([]);
   });
 
   it.each([
@@ -396,8 +313,8 @@ describe("POST /api/v1/contacts", () => {
 
     expect(response.status).toBe(400);
     expect(payload.error.fields).toHaveProperty(field);
-    expect(rpcCalls.map(([name]) => name)).not.toContain("resolve_contact_identity");
-    expect(rpcCalls.map(([name]) => name)).toContain("api_idempotency_release");
+    expect(h.rpcCalls.map(([name]) => name)).not.toContain("resolve_contact_identity");
+    expect(h.rpcCalls.map(([name]) => name)).toContain("api_idempotency_release");
   });
 
   it("JSON inválido é 400 invalid_json", async () => {
@@ -413,7 +330,7 @@ describe("POST /api/v1/contacts", () => {
   });
 
   it("valor que o banco recusou (classe 22) é 400, não 500", async () => {
-    rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "invalid byte sequence", code: "22P05" } });
+    h.rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "invalid byte sequence", code: "22P05" } });
 
     const response = await post({ phone: "27999990000" });
 
@@ -422,7 +339,7 @@ describe("POST /api/v1/contacts", () => {
   });
 
   it("número que é alias de outra pessoa é 409 phone_conflict", async () => {
-    rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "contact_phone_identity_conflict", code: "23505" } });
+    h.rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "contact_phone_identity_conflict", code: "23505" } });
 
     const response = await post({ phone: "27999990000" });
 
@@ -431,11 +348,11 @@ describe("POST /api/v1/contacts", () => {
   });
 
   it("contato anonimizado não volta: 409 contact_anonymized", async () => {
-    rpcs.resolve_contact_identity = () => ({
+    h.rpcs.resolve_contact_identity = () => ({
       data: { contactId: CONTACT_ID, normalizedPhone: "27999990000", created: false },
       error: null,
     });
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     const response = await post({ phone: "27999990000" });
 
@@ -444,7 +361,7 @@ describe("POST /api/v1/contacts", () => {
   });
 
   it("falha da RPC é 500 com request_id, sem vazar a mensagem do banco", async () => {
-    rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "segredo do banco", code: "XX000" } });
+    h.rpcs.resolve_contact_identity = () => ({ data: null, error: { message: "segredo do banco", code: "XX000" } });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const response = await post({ phone: "27999990000" });
@@ -456,7 +373,7 @@ describe("POST /api/v1/contacts", () => {
   });
 
   it("repetição com a mesma chave devolve a resposta guardada, sem chamar a RPC", async () => {
-    rpcs.api_idempotency_begin = () => ({
+    h.rpcs.api_idempotency_begin = () => ({
       data: { outcome: "replay", status: 201, body: { ok: true, data: contactRow() } },
       error: null,
     });
@@ -465,16 +382,16 @@ describe("POST /api/v1/contacts", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("Idempotent-Replayed")).toBe("true");
-    expect(rpcCalls.map(([name]) => name)).not.toContain("resolve_contact_identity");
+    expect(h.rpcCalls.map(([name]) => name)).not.toContain("resolve_contact_identity");
   });
 
   it("exige contacts:write", async () => {
-    tokenScopes = ["contacts:read"];
+    h.scopes = ["contacts:read"];
 
     const response = await post({ phone: "27999990000" });
 
     expect(response.status).toBe(403);
-    expect(rpcCalls).toEqual([]);
+    expect(h.rpcCalls).toEqual([]);
   });
 });
 
@@ -482,29 +399,29 @@ describe("POST /api/v1/contacts", () => {
 
 describe("GET /api/v1/contacts/{id}", () => {
   it("devolve o contato no schema publicado, sem anonimizado", async () => {
-    tables.contacts = () => ({ data: contactRow(), error: null });
+    h.tables.contacts = () => ({ data: contactRow(), error: null });
 
     const response = await call(getContact, { params: { id: CONTACT_ID } });
 
     expect(response.status).toBe(200);
     expect(itemOf(contactSchema).safeParse(await json(response)).success).toBe(true);
-    expect(has(lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
-    expect(has(lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
+    expect(has(h.lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
+    expect(has(h.lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
   });
 
   it("inexistente é 404; id fora de UUID é 404 sem consultar", async () => {
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     expect((await call(getContact, { params: { id: CONTACT_ID } })).status).toBe(404);
-    chains = {};
+    h.clearChains();
     const response = await call(getContact, { params: { id: "abc" } });
     expect(response.status).toBe(404);
     expect((await json(response)).error.code).toBe("not_found");
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it("leitura que falhou é 503", async () => {
-    tables.contacts = () => ({ data: null, error: { message: "boom" } });
+    h.tables.contacts = () => ({ data: null, error: { message: "boom" } });
 
     expect((await call(getContact, { params: { id: CONTACT_ID } })).status).toBe(503);
   });
@@ -513,10 +430,10 @@ describe("GET /api/v1/contacts/{id}", () => {
 describe("PATCH /api/v1/contacts/{id}", () => {
   const patch = (body: unknown, id = CONTACT_ID) =>
     call(patchContact, { method: "PATCH", body, params: { id } });
-  const updateArg = () => lastChain("contacts").find(([method]) => method === "update")?.[1];
+  const updateArg = () => h.lastChain("contacts").find(([method]) => method === "update")?.[1];
 
   beforeEach(() => {
-    tables.contacts = () => ({ data: contactRow({ name: "Maria Souza" }), error: null });
+    h.tables.contacts = () => ({ data: contactRow({ name: "Maria Souza" }), error: null });
   });
 
   it("altera só o que veio e devolve o contato no schema publicado", async () => {
@@ -525,8 +442,8 @@ describe("PATCH /api/v1/contacts/{id}", () => {
     expect(response.status).toBe(200);
     expect(itemOf(contactSchema).safeParse(await json(response)).success).toBe(true);
     expect(updateArg()).toEqual({ name: "Maria Souza", customer_id: CUSTOMER_ID });
-    expect(has(lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
-    expect(has(lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
+    expect(has(h.lastChain("contacts"), "eq", "id", CONTACT_ID)).toBe(true);
+    expect(has(h.lastChain("contacts"), "is", "anonymized_at", null)).toBe(true);
   });
 
   it("null limpa", async () => {
@@ -541,7 +458,7 @@ describe("PATCH /api/v1/contacts/{id}", () => {
 
     expect(response.status).toBe(422);
     expect(body.error).toMatchObject({ code: "phone_immutable", fields: { phone: expect.any(String) } });
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it.each([
@@ -562,14 +479,14 @@ describe("PATCH /api/v1/contacts/{id}", () => {
     expect(response.status).toBe(400);
     expect(payload.error.code).toBe("validation_error");
     if (field) expect(payload.error.fields).toHaveProperty(field);
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it.each([
     ["arquivada (trigger)", { message: "CUSTOMER_ARCHIVED" }],
     ["inexistente (FK)", { message: 'violates foreign key constraint "contacts_customer_id_fkey"', code: "23503" }],
   ])("empresa %s é 422 invalid_customer no campo", async (_label, error) => {
-    tables.contacts = () => ({ data: null, error });
+    h.tables.contacts = () => ({ data: null, error });
 
     const response = await patch({ customer_id: CUSTOMER_ID });
     const body = await json(response);
@@ -585,7 +502,7 @@ describe("PATCH /api/v1/contacts/{id}", () => {
   });
 
   it("valor que o banco recusou pelo tipo é 400, não 500", async () => {
-    tables.contacts = () => ({ data: null, error: { message: "invalid input syntax", code: "22P02" } });
+    h.tables.contacts = () => ({ data: null, error: { message: "invalid input syntax", code: "22P02" } });
 
     const response = await patch({ name: "x" });
 
@@ -594,7 +511,7 @@ describe("PATCH /api/v1/contacts/{id}", () => {
   });
 
   it("outro erro do banco é 500, sem a mensagem do banco", async () => {
-    tables.contacts = () => ({ data: null, error: { message: "segredo do banco", code: "XX000" } });
+    h.tables.contacts = () => ({ data: null, error: { message: "segredo do banco", code: "XX000" } });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const response = await patch({ name: "x" });
@@ -605,19 +522,19 @@ describe("PATCH /api/v1/contacts/{id}", () => {
   });
 
   it("inexistente ou anonimizado é 404; id fora de UUID também", async () => {
-    tables.contacts = () => ({ data: null, error: null });
+    h.tables.contacts = () => ({ data: null, error: null });
 
     expect((await patch({ name: "x" })).status).toBe(404);
-    chains = {};
+    h.clearChains();
     expect((await patch({ name: "x" }, "abc")).status).toBe(404);
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 
   it("exige contacts:write", async () => {
-    tokenScopes = ["contacts:read"];
+    h.scopes = ["contacts:read"];
 
     expect((await patch({ name: "x" })).status).toBe(403);
-    expect(chains.contacts).toBeUndefined();
+    expect(h.chains.contacts).toBeUndefined();
   });
 });
 
@@ -625,7 +542,7 @@ describe("PATCH /api/v1/contacts/{id}", () => {
 
 describe("GET /api/v1/customers", () => {
   it("responde no schema publicado, só ativas, em updated_at crescente", async () => {
-    tables.customers = () => ({ data: [customerRow({ search_name: "pao", created_by_user_id: "u1" })], error: null });
+    h.tables.customers = () => ({ data: [customerRow({ search_name: "pao", created_by_user_id: "u1" })], error: null });
 
     const response = await call(listCustomers, { path: "/customers" });
     const body = await json(response);
@@ -633,18 +550,18 @@ describe("GET /api/v1/customers", () => {
     expect(response.status).toBe(200);
     expect(pageOf(customerSchema).safeParse(body).success).toBe(true);
     expect(body.data[0]).not.toHaveProperty("created_by_user_id");
-    const calls = lastChain("customers");
+    const calls = h.lastChain("customers");
     expect(has(calls, "is", "archived_at", null)).toBe(true);
     expect(has(calls, "order", "updated_at", { ascending: true })).toBe(true);
     expect(has(calls, "order", "id", { ascending: true })).toBe(true);
   });
 
   it("cnpj com máscara vira igualdade exata sem máscara", async () => {
-    tables.customers = () => ({ data: [], error: null });
+    h.tables.customers = () => ({ data: [], error: null });
 
     await call(listCustomers, { path: `/customers?cnpj=${encodeURIComponent("11.222.333/0001-81")}` });
 
-    expect(has(lastChain("customers"), "eq", "cnpj", "11222333000181")).toBe(true);
+    expect(has(h.lastChain("customers"), "eq", "cnpj", "11222333000181")).toBe(true);
   });
 
   it("cnpj com dígito verificador errado é 400 no campo, sem consultar", async () => {
@@ -652,25 +569,25 @@ describe("GET /api/v1/customers", () => {
 
     expect(response.status).toBe(400);
     expect((await json(response)).error.fields).toHaveProperty("cnpj");
-    expect(chains.customers).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
   });
 
   it("selo desconhecido vira null; include_archived tira o filtro", async () => {
-    tables.customers = () => ({ data: [customerRow({ contract_status: "outro" })], error: null });
+    h.tables.customers = () => ({ data: [customerRow({ contract_status: "outro" })], error: null });
 
     const body = await json(await call(listCustomers, { path: "/customers?include_archived=true" }));
 
     expect(body.data[0].contract_status).toBeNull();
-    expect(has(lastChain("customers"), "is", "archived_at", null)).toBe(false);
+    expect(has(h.lastChain("customers"), "is", "archived_at", null)).toBe(false);
   });
 
   it("q busca por token; o cursor vira o .or() keyset", async () => {
-    tables.customers = () => ({ data: [], error: null });
+    h.tables.customers = () => ({ data: [], error: null });
     const cursor = encodeCursor({ updated_at: "2026-09-29T12:00:00+00:00", id: CUSTOMER_ID });
 
     await call(listCustomers, { path: `/customers?q=padaria&cursor=${cursor}` });
 
-    const calls = lastChain("customers");
+    const calls = h.lastChain("customers");
     expect(has(calls, "ilike", "search_name", "%padaria%")).toBe(true);
     expect(calls.some(([method]) => method === "or")).toBe(true);
   });
@@ -680,7 +597,7 @@ describe("GET /api/v1/customers", () => {
 
     expect(response.status).toBe(400);
     expect((await json(response)).error.fields).toHaveProperty("q");
-    expect(chains.customers).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
   });
 
   it("phone não é filtro de empresa: 400 no campo", async () => {
@@ -691,37 +608,37 @@ describe("GET /api/v1/customers", () => {
   });
 
   it("leitura que falhou é 503", async () => {
-    tables.customers = () => ({ data: null, error: { message: "boom" } });
+    h.tables.customers = () => ({ data: null, error: { message: "boom" } });
 
     expect((await call(listCustomers, { path: "/customers" })).status).toBe(503);
   });
 
   it("exige customers:read", async () => {
-    tokenScopes = ["contacts:read"];
+    h.scopes = ["contacts:read"];
 
     expect((await call(listCustomers, { path: "/customers" })).status).toBe(403);
-    expect(chains.customers).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
   });
 });
 
 describe("GET /api/v1/customers/{id}", () => {
   it("devolve a empresa, arquivada inclusive, no schema publicado", async () => {
-    tables.customers = () => ({ data: customerRow({ archived_at: "2026-09-20T00:00:00+00:00" }), error: null });
+    h.tables.customers = () => ({ data: customerRow({ archived_at: "2026-09-20T00:00:00+00:00" }), error: null });
 
     const response = await call(getCustomer, { params: { id: CUSTOMER_ID } });
 
     expect(response.status).toBe(200);
     expect(itemOf(customerSchema).safeParse(await json(response)).success).toBe(true);
-    expect(has(lastChain("customers"), "is", "archived_at", null)).toBe(false);
+    expect(has(h.lastChain("customers"), "is", "archived_at", null)).toBe(false);
   });
 
   it("inexistente é 404; falha é 503", async () => {
-    tables.customers = () => ({ data: null, error: null });
+    h.tables.customers = () => ({ data: null, error: null });
     const missing = await call(getCustomer, { params: { id: CUSTOMER_ID } });
     expect(missing.status).toBe(404);
     expect((await json(missing)).error.message).toBe("Empresa não encontrada.");
 
-    tables.customers = () => ({ data: null, error: { message: "boom" } });
+    h.tables.customers = () => ({ data: null, error: { message: "boom" } });
     expect((await call(getCustomer, { params: { id: CUSTOMER_ID } })).status).toBe(503);
   });
 
@@ -730,19 +647,19 @@ describe("GET /api/v1/customers/{id}", () => {
 
     expect(response.status).toBe(404);
     expect((await json(response)).error.code).toBe("not_found");
-    expect(chains.customers).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
   });
 });
 
 describe("GET /api/v1/customers/{id}/contract", () => {
   beforeEach(() => {
-    tables.customers = () => ({ data: { id: CUSTOMER_ID }, error: null });
+    h.tables.customers = () => ({ data: { id: CUSTOMER_ID }, error: null });
   });
 
   it("o vigente, sem valor, cor nem dia de vencimento, no schema publicado", async () => {
     // Na ordem do banco (ends_on desc, nulos primeiro): o encerrado sem término
     // vem antes, e mesmo assim o vigente vence.
-    tables.support_contracts = () => ({
+    h.tables.support_contracts = () => ({
       data: [
         contractRow({ id: "velho", status: "encerrado", ends_on: null }),
         contractRow({ status: "suspenso", ends_on: "2027-01-01", billing_day: 10, monthly_amount: 999 }),
@@ -764,19 +681,19 @@ describe("GET /api/v1/customers/{id}/contract", () => {
   });
 
   it("uma consulta só (um snapshot), na ordem do selo", async () => {
-    tables.support_contracts = () => ({ data: [], error: null });
+    h.tables.support_contracts = () => ({ data: [], error: null });
 
     await call(getContract, { params: { id: CUSTOMER_ID } });
 
-    expect(chains.support_contracts).toHaveLength(1);
-    const calls = lastChain("support_contracts");
+    expect(h.chains.support_contracts).toHaveLength(1);
+    const calls = h.lastChain("support_contracts");
     expect(has(calls, "eq", "customer_id", CUSTOMER_ID)).toBe(true);
     expect(has(calls, "order", "ends_on", { ascending: false, nullsFirst: true })).toBe(true);
     expect(has(calls, "order", "created_at", { ascending: false })).toBe(true);
   });
 
   it("sem vigente, o primeiro encerrado na ordem do banco (a regra do selo)", async () => {
-    tables.support_contracts = () => ({
+    h.tables.support_contracts = () => ({
       data: [
         contractRow({ id: "recente", status: "encerrado", ends_on: "2026-06-30" }),
         contractRow({ id: "antigo", status: "encerrado", ends_on: "2025-12-31" }),
@@ -790,7 +707,7 @@ describe("GET /api/v1/customers/{id}/contract", () => {
   });
 
   it("empresa que nunca teve contrato: data null", async () => {
-    tables.support_contracts = () => ({ data: [], error: null });
+    h.tables.support_contracts = () => ({ data: [], error: null });
 
     const response = await call(getContract, { params: { id: CUSTOMER_ID } });
     const body = await json(response);
@@ -800,22 +717,22 @@ describe("GET /api/v1/customers/{id}/contract", () => {
   });
 
   it("empresa inexistente é 404; id fora de UUID é 404 sem consultar", async () => {
-    tables.customers = () => ({ data: null, error: null });
-    tables.support_contracts = () => ({ data: [], error: null });
+    h.tables.customers = () => ({ data: null, error: null });
+    h.tables.support_contracts = () => ({ data: [], error: null });
 
     expect((await call(getContract, { params: { id: CUSTOMER_ID } })).status).toBe(404);
-    chains = {};
+    h.clearChains();
     expect((await call(getContract, { params: { id: "abc" } })).status).toBe(404);
-    expect(chains.customers).toBeUndefined();
-    expect(chains.support_contracts).toBeUndefined();
+    expect(h.chains.customers).toBeUndefined();
+    expect(h.chains.support_contracts).toBeUndefined();
   });
 
   it.each([
     ["dos contratos", "support_contracts"],
     ["da empresa", "customers"],
   ])("leitura %s que falhou é 503, nunca 'sem contrato' nem 404", async (_label, table) => {
-    tables.support_contracts = () => ({ data: [], error: null });
-    tables[table] = () => ({ data: null, error: { message: "boom" } });
+    h.tables.support_contracts = () => ({ data: [], error: null });
+    h.tables[table] = () => ({ data: null, error: { message: "boom" } });
 
     const response = await call(getContract, { params: { id: CUSTOMER_ID } });
 
@@ -824,7 +741,7 @@ describe("GET /api/v1/customers/{id}/contract", () => {
   });
 
   it("situação fora do vocabulário é 503, nunca 'sem contrato'", async () => {
-    tables.support_contracts = () => ({ data: [contractRow({ status: "outro" })], error: null });
+    h.tables.support_contracts = () => ({ data: [contractRow({ status: "outro" })], error: null });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     expect((await call(getContract, { params: { id: CUSTOMER_ID } })).status).toBe(503);
@@ -832,9 +749,9 @@ describe("GET /api/v1/customers/{id}/contract", () => {
   });
 
   it("exige customers:read", async () => {
-    tokenScopes = ["contacts:read"];
+    h.scopes = ["contacts:read"];
 
     expect((await call(getContract, { params: { id: CUSTOMER_ID } })).status).toBe(403);
-    expect(chains.support_contracts).toBeUndefined();
+    expect(h.chains.support_contracts).toBeUndefined();
   });
 });
