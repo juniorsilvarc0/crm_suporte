@@ -41,6 +41,9 @@ Responder rápido, para analista e gestor:
 - **Clientes:** empresas (CNPJ), contatos (WhatsApp) e contrato de suporte.
 - **Chat ao vivo de WhatsApp (uazapi):** IA e humano na mesma caixa de entrada, com takeover.
 - **API v1 para qualquer integrador:** tokens com escopo, idempotência e webhooks de saída assinados.
+- **CRM operável 100% pela API** (visão do dono, 2026-09-30). Toda ação da tela tem equivalente em `/api/v1`, com escopo próprio. Qualquer agente de IA ou sistema de terceiro opera o CRM com um token, e o perfil do token decide o alcance: leitura, leitura e escrita, ou administrador.
+  - Ações sensíveis (usuários e senhas, emissão de tokens, conexão do WhatsApp, contrato com valor, exclusões) só no perfil de administrador. Um token nunca emite outro com mais poder que ele mesmo.
+  - Recurso novo já nasce com a rota v1. A cobertura do que já existe vem depois do núcleo da Fase 5, começando por empresas (`customers:write`).
 - **Menu Conexão:** reúne todas as credenciais e integrações.
 - **Agenda** (visita técnica, treinamento, implantação, acesso remoto), **follow-ups** ligados a ticket e **financeiro** de contratos, mensalidades e despesas.
 - **Métricas de suporte.**
@@ -68,7 +71,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
-**Sem API pública hoje:** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 para a IA e para outros sistemas entra na Fase 5.
+**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita) e o contexto da triagem (`/context`); tickets, conversas e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
 
 **Tickets (Fase 4, em andamento):** o banco e as rotas de sessão já existem:
 - `/api/tickets`: abrir e listar por conversa;

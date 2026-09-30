@@ -10,8 +10,15 @@ import type { ConversationTickets } from "@/features/tickets/types";
 import type { Database } from "@/lib/supabase/types";
 
 // Teto da lista do chat ("Trocar foco (N abertos)"). Resolvido não é terminal
-// e fica até alguém fechar, então uma conversa antiga pode passar disso.
+// e fica até alguém fechar, então uma conversa antiga pode passar disso: por
+// isso a leitura pede um a mais e devolve `truncated`.
 export const MAX_CONVERSATION_TICKETS = 20;
+
+/** A leitura do servidor: o que o chat recebe, mais o aviso de corte (a API v1 o publica). */
+export type ConversationTicketsRead = ConversationTickets & {
+  /** Há mais não terminais além do teto (o foco entra mesmo assim). */
+  truncated: boolean;
+};
 
 /**
  * Os tickets NÃO terminais da conversa, na ordem "prazo", e o ticket em foco
@@ -30,7 +37,7 @@ export const MAX_CONVERSATION_TICKETS = 20;
 export async function getConversationTickets(
   supabase: SupabaseClient<Database>,
   conversationId: string
-): Promise<ConversationTickets> {
+): Promise<ConversationTicketsRead> {
   const [conversationRes, ticketsRes] = await Promise.all([
     supabase
       .from("chat_conversations")
@@ -39,13 +46,15 @@ export async function getConversationTickets(
       .maybeSingle(),
     orderByDue(
       selectTicketList(supabase).eq("conversation_id", conversationId).eq("is_terminal", false)
-    ).limit(MAX_CONVERSATION_TICKETS),
+    ).limit(MAX_CONVERSATION_TICKETS + 1),
   ]);
 
   if (conversationRes.error) throw conversationRes.error;
   if (ticketsRes.error) throw ticketsRes.error;
 
-  const tickets = toTicketListItems(ticketsRes.data ?? [], "getConversationTickets");
+  const rows = ticketsRes.data ?? [];
+  const truncated = rows.length > MAX_CONVERSATION_TICKETS;
+  const tickets = toTicketListItems(rows.slice(0, MAX_CONVERSATION_TICKETS), "getConversationTickets");
   if (!tickets) throw new Error("getConversationTickets: linha inesperada");
 
   const activeTicketId = conversationRes.data?.active_ticket_id ?? null;
@@ -63,5 +72,5 @@ export async function getConversationTickets(
     }
   }
 
-  return { active_ticket_id: activeTicketId, tickets };
+  return { active_ticket_id: activeTicketId, tickets, truncated };
 }

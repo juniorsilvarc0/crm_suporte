@@ -115,8 +115,9 @@ describe("getConversationTickets", () => {
       ["eq", "is_terminal", false],
     ]);
     expect(MAX_CONVERSATION_TICKETS).toBe(20);
-    expect(listCalls.at(-1)).toEqual(["limit", 20]);
-    expect(result).toEqual({ active_ticket_id: null, tickets: [row()] });
+    // Um a mais: a linha excedente diz se a lista foi cortada.
+    expect(listCalls.at(-1)).toEqual(["limit", 21]);
+    expect(result).toEqual({ active_ticket_id: null, tickets: [row()], truncated: false });
   });
 
   it("erro na lista rejeita em vez de devolver lista vazia", async () => {
@@ -151,7 +152,7 @@ describe("getConversationTickets", () => {
       ["eq", "is_terminal", false],
       ["maybeSingle"],
     ]);
-    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row(), focusedRow()] });
+    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row(), focusedRow()], truncated: false });
   });
 
   it("foco que terminou entre as leituras não entra, e o foco segue no retorno", async () => {
@@ -159,7 +160,7 @@ describe("getConversationTickets", () => {
 
     const result = await getConversationTickets(db, CONVERSATION);
 
-    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row()] });
+    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row()], truncated: false });
   });
 
   it("foco já na lista não faz 3ª leitura", async () => {
@@ -168,6 +169,28 @@ describe("getConversationTickets", () => {
     const result = await getConversationTickets(db, CONVERSATION);
 
     expect(fromMock).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row(), focusedRow()] });
+    expect(result).toEqual({ active_ticket_id: FOCUSED, tickets: [row(), focusedRow()], truncated: false });
+  });
+
+  it("mais de 20 não terminais: devolve 20 e marca truncated, sem esconder o corte", async () => {
+    const rows = Array.from({ length: 21 }, (_, index) => row({ id: `t-${index}`, number: 2000 + index }));
+    queueQueries(conversation(null), ok(rows));
+
+    const result = await getConversationTickets(db, CONVERSATION);
+
+    expect(result.tickets).toHaveLength(20);
+    expect(result.tickets.at(-1)?.number).toBe(2019);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("foco que era a linha excedente entra no fim, pela 3ª leitura", async () => {
+    const rows = [...Array.from({ length: 20 }, (_, index) => row({ id: `t-${index}`, number: 2000 + index })), focusedRow()];
+    queueQueries(conversation(FOCUSED), ok(rows), ok(focusedRow()));
+
+    const result = await getConversationTickets(db, CONVERSATION);
+
+    expect(result.tickets).toHaveLength(21);
+    expect(result.tickets.at(-1)?.id).toBe(FOCUSED);
+    expect(result.truncated).toBe(true);
   });
 });

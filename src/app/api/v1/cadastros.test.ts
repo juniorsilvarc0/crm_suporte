@@ -231,13 +231,28 @@ describe("GET /api/v1/contacts", () => {
 
   it("phone sem alias cai na coluna do contato; o GET nunca cria", async () => {
     tables.contact_phone_identities = () => ({ data: null, error: null });
-    tables.contacts = () => ({ data: [], error: null });
+    tables.contacts = (calls) =>
+      calls.some(([method]) => method === "maybeSingle")
+        ? { data: { id: CONTACT_ID }, error: null }
+        : { data: [contactRow()], error: null };
 
     const body = await json(await call(listContacts, { path: "/contacts?phone=27999990000" }));
 
-    expect(body.data).toEqual([]);
-    expect(has(lastChain("contacts"), "eq", "normalized_phone", "27999990000")).toBe(true);
+    expect(body.data).toHaveLength(1);
+    const [lookup, list] = chains.contacts;
+    expect(has(lookup, "eq", "normalized_phone", "27999990000")).toBe(true);
+    expect(has(list, "eq", "id", CONTACT_ID)).toBe(true);
     expect(rpcCalls.some(([name]) => name === "resolve_contact_identity")).toBe(false);
+  });
+
+  it("número sem dono: página vazia, sem consultar a lista", async () => {
+    tables.contact_phone_identities = () => ({ data: null, error: null });
+    tables.contacts = () => ({ data: null, error: null });
+
+    const body = await json(await call(listContacts, { path: "/contacts?phone=27999990000" }));
+
+    expect(body).toEqual({ ok: true, data: [], meta: { next_cursor: null } });
+    expect(chains.contacts).toHaveLength(1);
   });
 
   it("q vira um ilike por token no search_name; customer_id e updated_since filtram", async () => {
