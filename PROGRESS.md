@@ -27,6 +27,71 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-30] Fase 5 · PR 8a: tickets na API v1 (ler, abrir, editar, status, responsável)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e os integradores leem e conduzem tickets pela v1, sem abrir duplicado e sem sobrescrever a mudança de outro.
+**Arquivos alterados:**
+- `src/app/api/v1/tickets/route.ts`, `[ref]/route.ts`, `[ref]/transitions/route.ts` e `[ref]/assign/route.ts` (novos), com `tickets.test.ts`;
+- `src/lib/api/v1/tickets.ts` (DTO, entradas, erros), `if-match.ts` (novo, com teste), `ticket-write.ts` (novo), `errors.ts` e `openapi.ts`;
+- `src/features/tickets/queries/get-api-ticket.ts` (novo);
+- `src/features/tickets/server/ticket-service.ts`: `createTicket` repassa `status`, `external_id`, `ai_triage` e responsável;
+- `src/features/tickets/schemas/ticket.ts`: exporta `ticketFieldSchemas`;
+- `src/features/tickets/lib/map-ticket-error.ts` e `types.ts`: os checks de `ai_triage` e `external_id` apontam o campo;
+- `src/app/api/v1/test-harness.ts` (novo): o Supabase falso dos testes da v1, e `cadastros.test.ts` e `context.test.ts` migrados para ele;
+- `PRD.md`, `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **Leitura** (`tickets:read`):
+  - `GET /tickets` com cursor e filtros: status e prioridade (lista por vírgula), `is_terminal`, `sla_breached`, fila, responsável (ou `none`), empresa, contato, conversa, `q` e `updated_since`;
+  - `GET /tickets/{ref}` por id ou protocolo, com `ETag: W/"<version>"`.
+- **Escrita** (`tickets:write`), sempre com o token como ator:
+  - `POST /tickets` com `Idempotency-Key` obrigatória. A chave vai também à RPC (`p_idempotency_key`, 2ª camada, por token e sem prazo), e o `external_id` é a 3ª. A origem é o tipo do token, e o token nunca assume;
+  - `PATCH /tickets/{ref}`, `POST /tickets/{ref}/transitions` e `POST /tickets/{ref}/assign`, com If-Match obrigatório (D7): 428 sem ele, 412 com versão velha, e a atual volta no ETag e em `current_version`.
+- **Resposta das escritas:** o ticket relido inteiro, mais `changed` (e `from`/`to` na transição). O no-op vem antes da versão, então repetir uma escrita que já valeu dá 200 com `changed: false`, não 412.
+- **Erros das RPCs no envelope da v1:**
+  - versão velha é 412;
+  - chave ou `external_id` já usados em outra conversa é 422 `idempotency_key_reused`;
+  - `validation` vira `validation_error`;
+  - 409 `invalid_transition` traz `allowed` e `current`.
+
+**Decisões tomadas:**
+- **PR 8 dividido:** 8a (este) e 8b (comentários, anexos multipart e timeline).
+- **`{ref}` aceita id ou protocolo**, também nas escritas: a IA fala em "ticket 1424".
+- **`q` exige também `contacts:read` e `customers:read`:** a busca da view alcança o nome do contato e a razão social e o CNPJ da empresa, que o DTO de ticket não entrega. Sem os dois escopos, 403.
+- **Referências na v1 são uuid ou null, nunca `""`.** A tela usa `""` como "select vazio"; na API, um `""` que tira a fila em silêncio é erro do cliente.
+- **`ai_triage` só entra, não sai** (como na tela). O teto de 16 KB é medido como o banco mede o jsonb, e número em notação científica é recusado.
+
+**Verificação:**
+- **Contra o banco local, com as RPCs reais e um token `ai`:**
+  - a abertura saiu com origem `ai` e ETag, e a repetição veio com `Idempotent-Replayed`;
+  - a mesma chave com outro corpo deu 422, e o mesmo `external_id` com outra chave devolveu o ticket existente;
+  - o PATCH sem If-Match deu 428, e a repetição com versão velha deu `changed: false`;
+  - valor novo com versão velha deu 412 com `current_version`;
+  - a transição inválida deu 409 com `allowed`, e responsável inexistente deu 422;
+  - a trilha ficou com `actor_type ai` e o token.
+  - Tudo desfeito depois: ticket, trilha, eventos e o foco da conversa restaurado; token de teste revogado.
+- **Mutação:** 27 garantias na 1ª rodada, mais 19 nas correções da revisão. Todas pegas; as 3 que sobreviveram na primeira passada viraram teste.
+- **Revisão adversarial:** 15 achados confirmados (8 problemas distintos), todos corrigidos; 5 refutados. Os principais:
+  - o oráculo do `q` sobre contato e empresa;
+  - o `external_id` repetido culpava a Idempotency-Key;
+  - o `""` tirava fila, categoria, empresa ou responsável;
+  - o teto do `ai_triage` era medido diferente do banco e o erro vinha sem campo;
+  - textos do OpenAPI (o 409 de transição e o 404 do `{ref}`);
+  - lacunas de teste.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (2868) · build ✓.
+
+**Pendências / próximos passos:**
+- PR 8b (comentários, anexos multipart com o hash de corpo e timeline).
+- Deploy dos PRs 3 a 8a só com "pode subir", com a reinstalação do vhost do 6b.
+
+**Armadilhas descobertas:**
+- **Repetição idempotente não traz os headers da resposta original** (`api_idempotency_keys` guarda status e corpo). Por isso a versão também vai no corpo (`data.version`), não só no ETag.
+- **`create_ticket` levanta `IDEMPOTENCY_KEY_REUSED` tanto pela chave quanto pelo `external_id`**, sem dizer qual casou. A v1 cita os dois quando o corpo trouxe `external_id`.
+- **`search_text` da `ticket_queue` não é só o título:** junta o nome do contato e o `search_name` da empresa, que tem o CNPJ. Filtro que parece inofensivo pode vazar dado de outro escopo.
+- **O jsonb não mede como o `JSON.stringify`:** ele põe `": "` e `", "` e expande números. Para tetos em bytes, meça no formato do banco.
+- **`const { a: _a, ...resto } = obj` para tirar uma chave deixa aviso de lint** (variável não usada). Liste as chaves que ficam.
+
 ## [2026-09-30] Fase 5 · PR 7: contexto da triagem (`GET /api/v1/context`)
 
 **Agente/Modelo:** Claude Opus 5.5.

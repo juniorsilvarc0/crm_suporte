@@ -71,7 +71,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
-**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita) e o contexto da triagem (`/context`); tickets, conversas e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
+**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) e tickets (ler, abrir, editar, mudar status e atribuir). Comentários e anexos de ticket, conversas e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
 
 **Tickets (Fase 4, em andamento):** o banco e as rotas de sessão já existem:
 - `/api/tickets`: abrir e listar por conversa;

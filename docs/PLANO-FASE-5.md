@@ -129,6 +129,10 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
   - schema v1 próprio: o de sessão tem `take_over default(true)`, que dá FORBIDDEN para token (`schemas/ticket.ts:80`).
 - **Pronto quando:** repetir o POST cria 0 linhas e responde com `Idempotent-Replayed`; corpo diferente dá 422; transição inválida dá 409 com `allowed`.
 
+> **PR 8 dividido em dois** (2026-09-30), para caber numa revisão:
+> - **8a, feito:** `GET /tickets` (cursor, filtros, `sla_breached`); `GET`/`PATCH /tickets/{id ou protocolo}`; `POST /tickets` idempotente em duas camadas (a `Idempotency-Key` também vai como `p_idempotency_key`, e o `external_id` é a 3ª chave); `transitions` e `assign`. O If-Match é obrigatório nas escritas: 428 sem ele, 412 com a versão velha, e a atual volta no ETag. As escritas relêem o ticket e devolvem o DTO inteiro. O Supabase falso dos testes da v1 virou helper (`src/app/api/v1/test-harness.ts`).
+> - **8b:** `comments`, `attachments` (multipart, com o hash de corpo que o PR 4 adiou) e `timeline`.
+
 **PR 9: `feat(banco)`, conversas da IA** · banco · P · depende das decisões D10 e D12; pode entrar no PR 3 se as decisões saírem antes
 - **Arquivos:** `chat_messages.sent_by_token_id`; RPC `conversation_handoff(token, conversation, reason, summary, ticket_id)`, que muda bot→human com trava e grava `ticket_event` quando houver ticket; testes SQL e `db:types`.
 
