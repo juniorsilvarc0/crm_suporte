@@ -27,6 +27,59 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-09-30] Fase 5 · PR 7: contexto da triagem (`GET /api/v1/context`)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA recebe, numa chamada só e pelo telefone, tudo o que precisa para triar.
+**Arquivos alterados:**
+- `src/app/api/v1/context/route.ts` (novo), com `context.test.ts`;
+- `src/features/integrations/server/triage-context.ts` (novo): o builder, que o relay v1 (PR 11) também vai usar;
+- `src/lib/api/v1/context.ts`, `tickets.ts` e `conversations.ts` (novos), `cadastros.ts` e `openapi.ts`;
+- `src/features/contacts/queries/find-contact-by-phone.ts` e `src/features/contracts/queries/get-current-contract.ts`, extraídos das rotas do 6b, que passaram a usá-los. O primeiro tem teste próprio;
+- `src/features/tickets/queries/get-conversation-tickets.ts`: ganhou o aviso de corte (`truncated`), com testes;
+- `PRD.md`, `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- `GET /api/v1/context?phone=` exige o escopo `context:read`. Devolve:
+  - contato, empresa e contrato atual (sem valor);
+  - `contract_alert`: `sem_empresa`, `sem_contrato`, `suspenso`, `encerrado` ou null;
+  - a conversa mais recente;
+  - os tickets abertos dela com `allowed_transitions` e `open_tickets_truncated`;
+  - os 5 últimos tickets encerrados do contato;
+  - as 20 últimas mensagens, sem nota interna;
+  - `ai_may_reply`, verdadeiro só com a conversa em `bot`.
+- **Só lê:** não cria contato, não zera as não lidas e não mexe no foco (conferido no banco local).
+- **Telefone desconhecido ou contato anonimizado:** 200 com `contact: null` e o resto vazio (D11).
+- **Falha de qualquer leitura é 503 inteiro**, nunca contexto pela metade. A exceção é a matriz de transições: ela vira `allowed_transitions: null`, nunca `[]`.
+- **DTOs novos de ticket, conversa e mensagem**, base dos PRs 8 e 10. O SLA sai por `lib/sla.ts`, a mesma regra da view `ticket_queue`. `media_url` não sai, porque é rota de sessão.
+- **PRD:** registrada a visão do dono de 2026-09-30, "CRM operável 100% pela API": perfil de token decide o alcance, e as ações sensíveis ficam atrás de escopo de admin.
+
+**Decisões tomadas:**
+- **Nota interna fica fora das mensagens do contexto:** a IA não tem como repeti-la ao cliente se não a lê.
+- **Tickets abertos são os da conversa mais recente** (o plano); os encerrados recentes são os do contato, em qualquer conversa.
+- **`contract_alert` vem separado do `contract`**, que tem o mesmo formato de `/customers/{id}/contract`. O relay (PR 11) monta o `contract{status,alert}` dele a partir disso.
+- **A matriz de transições é lida sozinha**, e não pelo `getTicketCatalog`: o catálogo inteiro são cinco leituras, e o contexto roda a cada mensagem.
+
+**Verificação:**
+- Testes: resposta no schema publicado; filtros e ordens de cada consulta conferidos; só leitura (nenhuma escrita em tabela nenhuma); 503 em cada leitura que falha; D11; alertas; `ai_may_reply`.
+- **Mutação:** 32 garantias quebradas de propósito, todas pegas.
+- **Contra o banco local:** os 4 contatos e um telefone desconhecido. O SLA vencido e as transições bateram com a view e com a matriz do banco, nenhuma conversa foi alterada, e o `integration_logs` ficou sem o telefone.
+- **Revisão adversarial:** 9 achados confirmados, todos corrigidos; 6 refutados. Os principais:
+  - `open_tickets` cortava em 20 sem avisar, e numa conversa com muitos resolvidos não fechados a IA acharia a lista completa. Agora há `open_tickets_truncated`;
+  - os encerrados recentes eram ordenados por `updated_at`, que muda quando um analista é excluído. Agora é por `closed_at`;
+  - a descrição de `sla.breached` enganava em ticket parado;
+  - cinco lacunas de teste: entidade certa em cada leitura, ordens e desempates, falha da coluna do contato, e status desconhecido na matriz.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (2764) · build ✓.
+
+**Pendências / próximos passos:**
+- PR 8 (tickets v1). É o 3º uso do builder falso do Supabase nos testes da v1: extrair para um helper.
+- Deploy dos PRs 3 a 7 só com "pode subir", com a reinstalação do vhost do 6b.
+
+**Armadilhas descobertas:**
+- **Mudar um tipo compartilhado com o client espalha a edição por dezenas de testes de tela.** Para acrescentar um campo que só o servidor usa, estenda o retorno do servidor (`ConversationTicketsRead`), não o tipo do client.
+- **Resolvido não é terminal e não se fecha sozinho até a Fase 6.** Toda lista de "abertos" pode crescer sem limite numa conversa antiga. Quem corta precisa dizer que cortou.
+- **`updated_at` de ticket encerrado não é o encerramento:** a FK `on delete set null` de um analista excluído reescreve os tickets dele. Para "os mais recentes", use `closed_at`.
+
 ## [2026-09-30] Fase 5 · PR 6b: empresas e contatos na API v1
 
 **Agente/Modelo:** Claude Opus 5.5.

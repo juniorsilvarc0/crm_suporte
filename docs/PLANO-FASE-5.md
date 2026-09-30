@@ -113,6 +113,14 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 - **O que monta:** contato por alias exato, sem criar; empresa e selo; conversa mais recente; `getConversationTickets` + `allowedTargets`; últimas 20 mensagens em keyset, com colunas explícitas e sem zerar `unread`; `ai_may_reply`.
 - **Pronto quando:** telefone desconhecido segue D11, e um catálogo nulo aparece como indisponível, não como `[]`.
 
+> **Feito (2026-09-30).** Além do previsto:
+> - `open_tickets_truncated` avisa quando a conversa tem mais de 20 tickets não terminais;
+> - `contract_alert` sai separado do `contract`, que tem o formato de `/customers/{id}/contract`;
+> - as notas internas ficam fora das mensagens;
+> - a matriz de transições é lida sozinha, sem o catálogo inteiro.
+>
+> O builder mora em `src/features/integrations/server/triage-context.ts`, pronto para o PR 11.
+
 **PR 8: `feat(api)`, tickets v1** · back · G · depende do PR 4
 - **Rotas:** `GET` (cursor + `sla_breached`), `POST` (Idempotency-Key + `p_idempotency_key` como 2ª camada), `GET /{id|number}`, `PATCH` (If-Match → 412), `transitions`, `assign`, `comments`, `attachments` (multipart), `timeline`.
 - **Arquivos:**
