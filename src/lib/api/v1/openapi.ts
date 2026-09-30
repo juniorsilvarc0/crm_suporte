@@ -17,6 +17,7 @@ import {
   ticketCategorySchema,
   ticketStatusSchema,
 } from "@/lib/api/v1/catalog";
+import { triageContextSchema } from "@/lib/api/v1/context";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
@@ -178,6 +179,7 @@ export function buildOpenApiDocument() {
         Customer: z.toJSONSchema(itemOf(customerSchema)),
         CustomerPage: z.toJSONSchema(pageOf(customerSchema)),
         Contract: z.toJSONSchema(itemOf(contractSchema.nullable())),
+        TriageContext: z.toJSONSchema(itemOf(triageContextSchema)),
       },
     },
     paths: {
@@ -223,6 +225,37 @@ export function buildOpenApiDocument() {
         "SlaPolicies"
       ),
       "/users": catalogGet("Quem pode receber ticket (ativos), por nome. Sem e-mail nem papel.", "Users"),
+      "/context": {
+        get: {
+          summary:
+            "Tudo o que a IA precisa para triar, numa ida só: contato, empresa, contrato e alerta, a conversa mais " +
+            "recente, os tickets abertos dela com as transições permitidas, os últimos tickets encerrados, as " +
+            "últimas 20 mensagens (sem notas internas) e `ai_may_reply`. Só lê: não cria contato nem marca como " +
+            "lido. Escopo: `context:read`.",
+          parameters: [
+            {
+              name: "phone",
+              in: "query",
+              required: true,
+              description:
+                "Telefone com DDD, com ou sem DDI 55 e máscara. Igualdade exata com a pessoa (números antigos " +
+                "inclusos), sem tolerância ao nono dígito.",
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            "200": {
+              description: "O contexto. Telefone desconhecido também é 200, com `contact: null` e o resto vazio.",
+              content: json("TriageContext"),
+            },
+            "400": validationError,
+            "503": errorResponse(
+              "Alguma leitura falhou (`unavailable`, com `Retry-After`): o contexto nunca sai pela metade."
+            ),
+            ...authErrors,
+          },
+        },
+      },
       "/contacts": {
         get: {
           summary: "Contatos, com cursor. Anonimizado nunca sai. Escopo: `contacts:read`.",

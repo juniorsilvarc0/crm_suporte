@@ -151,12 +151,14 @@ const searchQuery = z
   })
   .optional();
 
+/** Telefone de BUSCA: a identidade normalizada, para igualdade exata (alias incluso), sem nono dígito. */
+export const phoneLookup = phoneDigits.transform((digits) => normalizePhone(digits));
+
 export const contactListQuerySchema = z.strictObject({
   ...listQueryShape,
   /** Busca pelo nome (tokens, sem acento). */
   q: searchQuery,
-  /** Igualdade exata com a identidade (alias incluso), sem nono dígito. */
-  phone: phoneDigits.transform((digits) => normalizePhone(digits)).optional(),
+  phone: phoneLookup.optional(),
   customer_id: uuidParam("Empresa inválida.").optional(),
 });
 
