@@ -14,10 +14,13 @@ import {
  * tipo gravado sai de `storageContentType`, e HTML, SVG, XML e afins viram
  * `application/octet-stream`: o navegador baixa em vez de executar.
  *
- * Nenhuma URL de storage vai para o banco nem para o navegador. A linha de
- * `ticket_attachments` guarda bucket + `object_key` + sha256, que ficam no
- * servidor; o arquivo sai por `/api/tickets/<id>/attachments/<attachmentId>`,
- * que confere a sessão e redireciona para uma URL assinada curta.
+ * Nenhuma URL de storage vai para o banco. A linha de `ticket_attachments`
+ * guarda bucket + `object_key` + sha256, que ficam no servidor; o arquivo sai
+ * só por uma URL assinada curta, em dois caminhos:
+ *   - a tela: `/api/tickets/<id>/attachments/<attachmentId>` confere a sessão
+ *     e redireciona para ela;
+ *   - a API v1: `/api/v1/tickets/<ref>/attachments/<attachment_id>` confere o
+ *     token (`attachments:read`) e a devolve no corpo.
  */
 
 type Admin = ReturnType<typeof createSupabaseAdminClient>;

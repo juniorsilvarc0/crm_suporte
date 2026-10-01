@@ -153,8 +153,9 @@ export type TicketComment = {
   deleted_at: string | null;
 };
 
-// Anexo do ticket. Nunca leva bucket nem object_key: o arquivo sai por
-// /api/tickets/<id>/attachments/<attachmentId> (sessão + URL assinada curta).
+// Anexo do ticket. Nunca leva bucket nem object_key: o arquivo sai por uma URL
+// assinada curta, pela rota da tela (/api/tickets/<id>/attachments/<attachmentId>,
+// sessão) ou pela da API v1 (token com attachments:read).
 export type TicketAttachment = {
   id: string;
   file_name: string;
