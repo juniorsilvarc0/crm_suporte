@@ -6,10 +6,14 @@ import { getUazapiIntegration } from "@/features/chat/lib/connection/integration
 import { connectUazapi } from "@/features/chat/lib/connection/uazapi";
 
 // Proxy server-side p/ obter o QR da uazapi (evita mixed-content no browser e
-// mantém o token fora do cliente). IMPORTANTE: cada GET chama /instance/connect,
+// mantém o token fora do cliente). IMPORTANTE: cada pedido chama /instance/connect,
 // que (re)inicia o socket de pareamento — NÃO chamar em loop curto. O painel
-// busca no mount, a cada ~25s (validade do QR) ou no "Atualizar". O estado leve
-// é consultado à parte em /api/connection/state.
+// pede ao entrar no fluxo de QR, a cada ~25s (validade do QR) e no "Atualizar".
+// O estado leve é consultado à parte em /api/connection/state.
+//
+// É POST, e não GET, porque o pedido age no provedor: a trava de origem do proxy
+// só cobre escrita, e um GET qualquer site faz o navegador de um administrador
+// logado abrir.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -22,7 +26,7 @@ type QrPayload = {
   message?: string;
 };
 
-export async function GET() {
+export async function POST() {
   const auth = await requireDashboardAdmin();
   if ("error" in auth) return auth.error;
 
