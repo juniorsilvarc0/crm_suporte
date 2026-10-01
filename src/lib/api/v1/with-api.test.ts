@@ -7,7 +7,11 @@ import { hashApiToken } from "@/lib/security/api-token";
 const { adminClientMock } = vi.hoisted(() => ({ adminClientMock: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: adminClientMock }));
 
-import { API_IP_LIMIT_PER_MIN, withApi } from "@/lib/api/v1/with-api";
+import {
+  API_DEFAULT_MAX_BODY_BYTES,
+  API_IP_LIMIT_PER_MIN,
+  withApi,
+} from "@/lib/api/v1/with-api";
 import { canonicalJson, sha256Hex } from "@/lib/api/v1/idempotency";
 
 type TokenRow = {
@@ -314,6 +318,256 @@ describe("withApi — Idempotency-Key", () => {
     expect((await (await route(post('{"a":1}', "curta"), ctx())).json()).error.code).toBe("invalid_idempotency_key");
     expect((await route(post("a=1", "chave-0001", "text/plain"), ctx())).status).toBe(415);
     expect((await (await route(post("{nao-json", "chave-0001"), ctx())).json()).error.code).toBe("invalid_json");
+  });
+
+  describe("multipart (rota que declara body: multipart)", () => {
+    let seq = 0;
+    type Part = [name: string, value: string | File];
+    const pdf = (bytes: string, name = "nota.pdf", type = "application/pdf") => new File([bytes], name, { type });
+    const multipart = (parts: Part[], headers: Record<string, string> = {}) => {
+      seq += 1;
+      const form = new FormData();
+      for (const [name, value] of parts) form.append(name, value);
+      // O Request monta o boundary: cada envio tem um diferente.
+      return new Request("http://crm.test/api/v1/tickets/1/attachments", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "x-forwarded-for": `10.9.0.${seq}`,
+          "Idempotency-Key": "anexo-000001",
+          ...headers,
+        },
+        body: form,
+      });
+    };
+    type FormHandler = (ctx: { form: FormData | null; request: Request }) => Promise<Response>;
+    function uploadRoute(
+      handler = vi.fn<FormHandler>(async () => NextResponse.json({ ok: true, id: "a1" }, { status: 201 }))
+    ) {
+      return {
+        handler,
+        route: withApi(
+          {
+            route: "/api/v1/tickets/[ref]/attachments",
+            scopes: ["tickets:write"],
+            idempotency: "required",
+            body: "multipart",
+            maxBodyBytes: 4096,
+          },
+          handler
+        ),
+      };
+    }
+    const started = (db: ReturnType<typeof fakeDb>) =>
+      db.rpc.mockImplementation(async (fn) =>
+        fn === "api_idempotency_begin"
+          ? { data: { outcome: "started", attempt_id: "att-1" }, error: null }
+          : { data: null, error: null }
+      );
+    const hashOf = (db: ReturnType<typeof fakeDb>) =>
+      db.rpc.mock.calls.find(([fn]) => fn === "api_idempotency_begin")?.[1].p_request_hash;
+    async function hashFor(request: Request) {
+      const db = fakeDb(baseRow());
+      started(db);
+      await uploadRoute().route(request, ctx());
+      return hashOf(db);
+    }
+
+    it("o mesmo arquivo reenviado, com OUTRO boundary, tem o mesmo hash", async () => {
+      const first = multipart([["file", pdf("%PDF-1")]]);
+      const second = multipart([["file", pdf("%PDF-1")]]);
+      // A premissa do teste: os dois corpos crus são diferentes.
+      expect(first.headers.get("content-type")).not.toBe(second.headers.get("content-type"));
+
+      const hash = await hashFor(first);
+
+      expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(await hashFor(second)).toBe(hash);
+    });
+
+    it.each([
+      ["outro conteúdo", [["file", pdf("%PDF-2")]]],
+      ["outro nome de arquivo", [["file", pdf("%PDF-1", "outra.pdf")]]],
+      ["outro tipo", [["file", pdf("%PDF-1", "nota.pdf", "image/png")]]],
+      ["outro nome de campo", [["arquivo", pdf("%PDF-1")]]],
+      ["um campo a mais", [["file", pdf("%PDF-1")], ["descricao", "x"]]],
+      ["as partes em outra ordem", [["descricao", "x"], ["file", pdf("%PDF-1")]]],
+    ] as [string, Part[]][])("%s muda o hash", async (_label, parts) => {
+      const base = await hashFor(multipart([["file", pdf("%PDF-1")]]));
+      const withExtra = await hashFor(multipart([["file", pdf("%PDF-1")], ["descricao", "x"]]));
+
+      const hash = await hashFor(multipart(parts));
+
+      expect(hash).not.toBe(base);
+      if (_label !== "um campo a mais") expect(hash).not.toBe(withExtra);
+    });
+
+    it("o corpo é lido UMA vez: o handler recebe o FormData pronto", async () => {
+      const db = fakeDb(baseRow());
+      started(db);
+      const { route, handler } = uploadRoute();
+
+      await route(multipart([["file", pdf("%PDF-1")]]), ctx());
+
+      const context = handler.mock.calls[0][0];
+      const file = context.form?.get("file");
+      expect(file).toBeInstanceOf(File);
+      expect(await (file as File).text()).toBe("%PDF-1");
+      // Já consumido aqui: quem chamasse request.formData() de novo quebraria.
+      expect(context.request.bodyUsed).toBe(true);
+    });
+
+    it("multipart malformado é 400 invalid_multipart com a dica das aspas, sem reservar a chave", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = uploadRoute();
+
+      const response = await route(
+        post("isto não é multipart", "anexo-000001", "multipart/form-data; boundary=xyz"),
+        ctx()
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error.code).toBe("invalid_multipart");
+      expect(body.error.message).toContain("aspas");
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("falha que não é de parse (ex.: memória) é 500, não 'multipart inválido'", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = uploadRoute();
+      const request = multipart([["file", pdf("%PDF-1")]]);
+      vi.spyOn(request, "formData").mockRejectedValue(new RangeError("Array buffer allocation failed"));
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const response = await route(request, ctx());
+
+      expect(response.status).toBe(500);
+      expect((await response.json()).error.code).toBe("internal_error");
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      errorLog.mockRestore();
+    });
+
+    it("JSON na rota de anexo é 415, sem ler o corpo nem reservar a chave", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = uploadRoute();
+      const request = post('{"file":"x"}', "anexo-000001");
+
+      const response = await route(request, ctx());
+      const body = await response.json();
+
+      expect(response.status).toBe(415);
+      expect(body.error.message).toContain("multipart/form-data");
+      expect(request.bodyUsed).toBe(false);
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("Content-Length acima do teto da rota é 413 antes de ler o corpo", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = uploadRoute();
+      const request = multipart([["file", pdf("%PDF-1")]], { "content-length": "4097" });
+
+      const response = await route(request, ctx());
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error.code).toBe("payload_too_large");
+      expect(request.bodyUsed).toBe(false);
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(db.logs[0]).toMatchObject({ http_status: 413 });
+    });
+
+    it("body multipart sem idempotência é erro de quem escreve a rota, na definição", () => {
+      expect(() =>
+        withApi({ route: "/api/v1/x", scopes: [], body: "multipart" }, async () => NextResponse.json({}))
+      ).toThrow(/multipart/);
+    });
+  });
+
+  describe("corpo: tipo e teto nas rotas JSON", () => {
+    it("multipart numa rota JSON é 415, sem ler o corpo nem reservar a chave", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = idempotentRoute();
+      const form = new FormData();
+      form.set("file", new File(["%PDF-1"], "nota.pdf"));
+      const request = new Request("http://crm.test/api/v1/tickets", {
+        method: "POST",
+        headers: { authorization: `Bearer ${TOKEN}`, "x-forwarded-for": "10.8.0.1", "Idempotency-Key": "chave-0001" },
+        body: form,
+      });
+
+      // Nem a cópia é lida: o tipo errado sai pelo cabeçalho.
+      const clone = vi.spyOn(request, "clone");
+
+      const response = await route(request, ctx());
+      const body = await response.json();
+
+      expect(response.status).toBe(415);
+      expect(body.error.message).not.toContain("multipart");
+      expect(clone).not.toHaveBeenCalled();
+      expect(request.bodyUsed).toBe(false);
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("Content-Length acima de 1 MB é 413 antes de ler, também em rota sem idempotência", async () => {
+      fakeDb(baseRow());
+      const handler = vi.fn(async () => NextResponse.json({ ok: true }));
+      const route = withApi({ route: "/api/v1/tickets/[ref]", scopes: [] }, handler);
+      const request = new Request("http://crm.test/api/v1/tickets/1", {
+        method: "PATCH",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "x-forwarded-for": "10.8.0.2",
+          "content-type": "application/json",
+          "content-length": String(API_DEFAULT_MAX_BODY_BYTES + 1),
+        },
+        body: "{}",
+      });
+
+      const response = await route(request, ctx());
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error.message).toContain("1 MB");
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("sem Content-Length (chunked), a leitura para no teto: 413 sem reservar a chave", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = idempotentRoute();
+      const big = JSON.stringify({ texto: "x".repeat(API_DEFAULT_MAX_BODY_BYTES) });
+
+      const response = await route(post(big), ctx());
+
+      expect(response.status).toBe(413);
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("caminho que não cabe na chave de idempotência é 404, sem ir ao banco", async () => {
+      const db = fakeDb(baseRow());
+      const { route, handler } = idempotentRoute();
+      const request = new Request(`http://crm.test/api/v1/tickets/${"9".repeat(520)}/comments`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "x-forwarded-for": "10.8.0.3",
+          "content-type": "application/json",
+          "Idempotency-Key": "chave-0001",
+        },
+        body: "{}",
+      });
+
+      const response = await route(request, ctx());
+
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("not_found");
+      expect(db.rpc).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    });
   });
 
   it("número fora do intervalo (1e400) é JSON inválido, sem reservar a chave", async () => {
