@@ -30,6 +30,9 @@ function parseInstant(value: string): ParsedInstant | null {
   const match = INSTANT_RE.exec(value);
   if (!match) return null;
   const [, year, month, day, hour, minute, second, fraction = "", zone] = match;
+  // O Postgres não tem ano 0: aceito aqui, o cursor viraria 22008 no banco
+  // (um "tente de novo" para uma entrada que nunca vai passar).
+  if (Number(year) < 1) return null;
 
   // setUTCFullYear em vez de Date.UTC: este leva os anos 0–99 para 1900+.
   const date = new Date(0);

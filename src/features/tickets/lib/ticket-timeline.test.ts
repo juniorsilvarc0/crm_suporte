@@ -111,6 +111,7 @@ describe("isTimelineInstant", () => {
     ["minuto 60", "2026-09-26T12:60:00+00:00"],
     ["segundo 60", "2026-09-26T12:00:60+00:00"],
     ["fuso +16", "2026-09-26T12:00:00+16:00"],
+    ["ano 0000 (o Postgres não tem)", "0000-01-01T00:00:00Z"],
     ["espaço antes", " 2026-09-26T12:00:00Z"],
     ["quebra de linha depois", "2026-09-26T12:00:00Z\n"],
     ["z minúsculo", "2026-09-26T12:00:00z"],
