@@ -177,12 +177,13 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - A IA só envia em conversa `bot` (409 `conversation_not_owned_by_ai`). O status é relido na hora do envio, e não na leitura inicial: é a "checagem condicional" deste plano.
 >   - **No máximo uma vez.** 502 `whatsapp_unavailable` = não saiu, e a mesma chave tenta de novo. 504 `delivery_unknown` = o provedor não confirmou; a linha fica `pending`, e enquanto estiver assim a mesma chave não reenvia. A chave vale para um texto só (422).
 >   - Tetos por conversa, por token: 20 envios por minuto e 100 por hora.
-> - **10c, a fazer (tela):**
->   - "IA" ou "Automático" na mensagem de token, e a assinatura da nota sem autor usuário;
->   - rótulo de `ticket.handoff_requested` na timeline;
->   - `sent_by_token_id` nos itens de mensagem da timeline;
->   - sem "Tentar novamente" na mensagem de token (o servidor já recusa);
->   - quem apaga e quem edita a mensagem e a nota da IA (proposta: admin apaga, ninguém edita).
+> - **10c, feito (tela):**
+>   - "IA" ou "Integração" na mensagem de token (na bolha, na citação e na barra de resposta), e a nota de token assinada do mesmo jeito;
+>   - `ticket.handoff_requested` aparece na timeline como "Pediu atendimento humano" (o motivo está na nota vizinha);
+>   - `sent_by_token_id` nos itens de mensagem da timeline (tela e API v1);
+>   - a mensagem de token que falhou só avisa ("Não enviada"), sem "Tentar novamente";
+>   - a mensagem de token não tem "Editar" (apaga-se e escreve-se outra).
+> - **10d, a fazer (decisão do dono):** o administrador apagar a nota de um token. Hoje ninguém apaga nem edita. Mexe na regra da nota, na rota e em `/api/app-users` (a tela precisa saber o papel de quem vê).
 > - **Fora deles, em PRs próprios:**
 >   - o teto do corpo nas escritas sem Idempotency-Key (o `withApi` só confere o Content-Length);
 >   - conciliar o envio de desfecho desconhecido pelo `track_id` (`POST /message/find` da uazapi), e levar o "no máximo uma vez" também para a tela;

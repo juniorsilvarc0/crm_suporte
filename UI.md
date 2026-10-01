@@ -603,6 +603,11 @@ Superfície própria com tokens `--wa-*` no `globals.css` (bolhas, fundo). É a 
 - **A citação é um bloco clicável dentro da bolha**, com borda à esquerda, autor e duas linhas do original. Clicar leva até a mensagem original e **pisca** ela (`.wa-quoted-flash`) — sem o pisca o scroll chega lá e o olho não acha qual é.
 - **Trocar de conversa ou ir para anotação interna cancela a resposta pendente.** Citação de outro contato é erro garantido, e anotação não vai ao contato.
 - **O botão do menu fica FORA da bolha**, na faixa livre da linha, e o popup abre para esse lado (`side="inline-start"` na saída, `inline-end` na entrada). Dentro da bolha ele cobria o texto e o menu abria por cima da própria mensagem.
+- **Mensagem de token diz quem a enviou.** A mensagem da IA leva "IA" e a de uma integração leva "Integração", acima do conteúdo, com `BotIcon`, na mesma posição do "Encaminhada" e sem itálico. O texto de um analista traz a assinatura dele; o de um token não traz nenhuma, e sem o rótulo a resposta da IA passaria por resposta da equipe.
+  - O rótulo sai de `automatedSenderLabel` (`lib/message-sender.ts`), e os nomes são os da trilha do ticket: "IA", "Integração" (token) e "Automático" (o próprio sistema, sem token). Na mensagem, na nota do chat e na trilha, o mesmo token tem o mesmo nome. ⚠️ A nota do ticket e o anexo ainda dizem "Integração" para qualquer token, inclusive o da IA: esses itens não trazem o tipo do token.
+  - A citação e a barra "Respondendo…" dizem o mesmo ("Respondendo a IA"), no lugar de "Você".
+  - A bolha da IA não cola na do analista: lado igual não basta para agrupar (`startsBubbleGroup`).
+  - Texto a 80% de opacidade, e não os 60% do "Encaminhada": no tema escuro 60% fica em 3,5:1.
 - **Geometria do WhatsApp Web:** raio `7.5px`, `px-[9px] pt-[6px] pb-[8px]`, sombra `0 1px .5px rgba(11,20,26,.13)`. Não `rounded-md` + `shadow-sm`.
 - **Texto colado nunca define a largura da bolha.** A bolha e seus filhos flex usam `min-w-0`; texto, legenda, citação e nota interna usam `overflow-wrap:anywhere`. Isso quebra URL/token sem espaços dentro do limite de 84% no mobile e 68% no desktop, sem cortar conteúdo nem criar rolagem horizontal.
 - **URL `http(s)` é link de verdade**, preserva o texto visível e abre em nova aba com `noopener noreferrer`. URL dentro de código monoespaçado continua literal: formatação técnica não vira ação escondida.
@@ -643,6 +648,7 @@ Superfície própria com tokens `--wa-*` no `globals.css` (bolhas, fundo). É a 
 ### §5.7.10 Anotação interna
 
 - **Toda nota é assinada.** "Nota interna · Carla", ou "Você" para o próprio autor. Sem autor conhecido, **sem assinatura** — nota antiga fica sem, e isso é honesto. Não se inventa nome para preencher a linha.
+- **A nota de um token é assinada pelo que ele é:** "Nota interna · IA" (o resumo do handoff, por exemplo) ou "Nota interna · Integração". Ninguém a edita nem apaga pela tela: a regra é "só o autor", e o autor não é uma pessoa.
 - **Só o autor edita e apaga.** Nota é registro de equipe: quem reescreve o que a colega anotou apaga o histórico de quem falou o quê com o paciente. O mesmo predicado (`note-actions.ts`) decide o item do menu e a recusa da rota.
 - **Sem janela de tempo para editar**, ao contrário da mensagem: não há celular do outro lado mostrando a versão antiga.
 - **A confirmação de apagar diz a verdade**: "some para toda a equipe; o contato nunca a viu". A copy de mensagem promete apagar para o contato — usá-la aqui seria mentira.
@@ -781,6 +787,7 @@ O menu da bolha completo: `Responder · Copiar · Encaminhar · Editar · ──
 - **"Apagar" no menu mobile é vermelho**, como no menu contextual do iOS; o separador fica antes de “Mais…”. No dropdown desktop, a confirmação continua sendo o ponto de maior ênfase destrutiva.
 - **Apagar confirma antes.** A ação é irreversível e sai da nossa mão — o WhatsApp apaga do celular do paciente. `Dialog` `sm:max-w-sm`, uma linha de texto, Cancelar + Apagar (`variant="destructive"`).
 - **"Editar" some depois de 15 minutos** (limite do WhatsApp). Item que sempre falha é pior que item ausente.
+- **Mensagem de token não tem "Editar".** A linha seguiria assinada pela IA com um texto que ela não escreveu. Apaga-se (qualquer analista, como hoje) e escreve-se outra. O mesmo predicado recusa na rota.
 - **A janela de edição é medida quando o menu ABRE**, não a cada render: ler o relógio durante a renderização é impuro (`react-hooks/purity`), e recalcular faria o item sumir debaixo do cursor. Quem decide se o *gatilho* existe é `isEditableMessage`, que não olha a hora.
 - **"Editada" ao lado da hora** quando há `metadata.editedAt` — sem isso o texto muda sozinho e ninguém sabe por quê. O `<span>` de reserva da última linha (§5.7.1) cresce junto, senão o texto passa por baixo.
 
@@ -813,6 +820,7 @@ O menu da bolha completo: `Responder · Copiar · Encaminhar · Editar · ──
 - **A bolha otimista já nasce com a assinatura do operador** (`*Ana:*`). Sem isso a linha em negrito brotava ~1s depois e a bolha crescia na cara de quem enviou.
 - **Enquanto não voltou do servidor, a mensagem não oferece responder, encaminhar nem toque longo** — ela ainda não tem id que alguém consiga citar. Editar e apagar já dependiam do `external_id`.
 - **Falhou? A bolha vira o aviso** — ✕ e "Tentar novamente" ali mesmo, sem toast e sem perder o texto. O reenvio reusa a **mesma** mensagem (idempotência por `clientId` na rota); nunca nasce uma segunda. Toast só quando o operador já trocou de conversa e não há bolha para avisar.
+- **A mensagem de token que falhou só avisa:** ✕ e o texto "Não enviada", sem botão. Quem a reenvia é o próprio token, com a chave dele (`canRetryMessage`; o servidor recusa o resto). O texto está ali porque o ✕ sozinho seria só cor, e usa `text-red-700 dark:text-red-200`: o `red-500` do "Tentar novamente" dá 3,4:1 no claro e 2,1:1 no escuro sobre a bolha de saída.
 - ⚠️ **Nunca desabilite o `textarea` durante uma requisição.** Campo desabilitado **perde o foco** no navegador e ele não volta sozinho — era a causa única do composer travado *e* do foco perdido depois do Enter.
 - **Rascunho é por conversa.** O texto não enviado espera o operador voltar. O dono do rascunho é o `ChatShell`, porque o `ChatView` é desmontado a cada troca de conversa.
 - **Rolagem:** a própria mensagem sempre leva a conversa ao fim (instantâneo, não suave). Mensagem que chega enquanto se lê o histórico **não** move a tela — acende a seta de "ir para a última".
@@ -1338,7 +1346,9 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
   - sem a equipe, o filtro de responsável da lista oferece só "Eu" e "Sem responsável", com "Não foi possível carregar a equipe." junto ao campo.
 - **Sem Realtime de tickets:** `router.refresh()` depois de cada ação e no `visibilitychange`.
 - **Timeline** (`ticket-timeline`), com o `ol` em `border-s`, sem `max-h`:
-  - itens: status, evento, "Nota do ticket" (editar e apagar só pelo autor), "Nota no chat", mensagem compacta (Cliente, IA, Analista, Celular da empresa) com link para a conversa, e anexo;
+  - itens: status, evento, "Nota do ticket" (editar e apagar só pelo autor), "Nota no chat", mensagem compacta (Cliente, IA, Integração, Analista, Celular da empresa; "Automático" para mensagem do sistema sem token) com link para a conversa, e anexo;
+  - a "Nota no chat" e a mensagem de um token levam o nome que ele tem na trilha: "IA" ou "Integração";
+  - o pedido de handoff (`ticket.handoff_requested`) aparece como "Pediu atendimento humano", com `HeadsetIcon`. O motivo não se repete ali: ele abre a nota interna gravada no mesmo instante, que fica logo acima. Evento sem texto próprio continua "Atividade registrada";
   - "Carregar anteriores" monta o cursor com `URLSearchParams` (o `+` do fuso) e junta as páginas sem duplicar;
   - composer com Ctrl/⌘+Enter.
 - **Anexos** (`ticket-attachments`):

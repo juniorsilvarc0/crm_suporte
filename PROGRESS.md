@@ -27,6 +27,68 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5 · PR 10c: a IA e as integrações aparecem na tela
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Quem atende vê quando uma mensagem ou nota veio da IA ou de uma integração, e o pedido de handoff tem nome na timeline do ticket.
+**Arquivos alterados:**
+- chat: `src/features/chat/types.ts`, `lib/message-sender.ts` (novo), `lib/note-actions.ts`, `lib/message-actions.ts`, `lib/outgoing-message.ts`, `components/message-bubble.tsx`, `components/chat-footer.tsx` e `components/chat-view.tsx`, com os testes (os da bolha, do rodapé e do helper são novos);
+- tickets: `src/features/tickets/types.ts`, `lib/timeline-view.ts`, `components/ticket-timeline.tsx` e `queries/get-ticket-timeline.ts`, com os testes;
+- API: `src/lib/api/v1/ticket-activity.ts`, com `src/app/api/v1/ticket-activity.test.ts`;
+- `UI.md`, `PRD.md`, `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **`ChatMessage` ganhou `sender_type` e `sent_by_token_id`.** As leituras da tela já traziam os dois (`select("*")` e o Realtime); faltava o tipo.
+- **Bolha:** a mensagem da IA leva "IA" e a de uma integração leva "Integração", acima do conteúdo. A citação e a barra "Respondendo…" dizem o mesmo, no lugar de "Você". A bolha da IA não cola na do analista.
+- **Nota de token:** "Nota interna · IA" ou "· Integração", no chat e na timeline do ticket.
+- **Falha de token:** ✕ e "Não enviada", sem "Tentar novamente". O servidor já recusava o reenvio (PR 10b).
+- **Mensagem de token não tem "Editar".** O predicado é o mesmo da rota, que passa a recusar.
+- **Timeline do ticket:** `ticket.handoff_requested` vira "Pediu atendimento humano", com ícone próprio. A mensagem de token leva o mesmo nome que na bolha.
+- **`sent_by_token_id` nos itens de mensagem da timeline,** na tela e na API v1 (`GET /tickets/{ref}/timeline`).
+
+**Decisões tomadas:**
+- **Um helper só para o nome** (`automatedSenderLabel`), usado na bolha, na citação, na barra de resposta, na nota e na timeline do ticket. Os nomes são os da trilha: "IA", "Integração" (token) e "Automático" (o próprio sistema, sem token). Na 1ª versão a integração aparecia como "Automático" na mensagem e "Integração" no evento do mesmo token; o revisor apontou.
+- **As regras de ação valem pelo remetente ou pelo token** (`isAutomatedMessage`): o banco aceita uma linha `ai` sem o token gravado, e ela não pode virar editável.
+- **O pedido de handoff não repete o motivo.** O banco grava a nota e o evento no mesmo instante, e a timeline põe a nota logo acima do evento: o motivo apareceria duas vezes seguidas.
+- **Ninguém edita a mensagem de um token.** A linha seguiria assinada pela IA com um texto que ela não escreveu, e a API mostraria esse texto à própria IA como dela. Apagar continua como hoje (qualquer analista, para todos).
+- **"Não enviada" por extenso na falha de token:** sem o botão, o ✕ sozinho seria só cor (UI §1). Em `red-700` no claro e `red-200` no escuro: o `red-500` do "Tentar novamente" dá 3,4:1 e 2,1:1 sobre a bolha de saída.
+- **`TicketMessageSender` virou o `MessageSenderType` do chat:** eram dois vocabulários iguais.
+- **Administrador apagar a nota de um token ficou fora.** Pede o papel de quem vê na tela (`/api/app-users`) e muda permissão; vai num PR próprio (10d), com a decisão do dono.
+
+**Verificação:**
+- **Testes:** três arquivos novos (a bolha, com 22 casos; a barra de resposta, com 4; o helper de remetente, com 16) e casos novos nos que já existiam: ações da mensagem, nota, timeline do ticket (texto, componente e consulta), a rota da timeline na API e a conversa (agrupamento das bolhas). O componente publicado no OpenAPI passou a ser comparado com o schema da rota.
+- **Mutação:** 90 trocas no código do PR (47 minhas e 43 do 2º revisor, rodadas por ele numa cópia e por mim no fim). Todas derrubam algum teste. Na 1ª passada do revisor, 21 das dele atravessavam; viraram os casos acima.
+- **Revisão adversarial** (2 revisores independentes, cada um numa cópia própria). Nenhum defeito de comportamento. Corrigidos:
+  - responder a uma mensagem da IA dizia "Respondendo você mesmo";
+  - o token de integração tinha dois nomes na mesma timeline ("Automático" na mensagem, "Integração" no evento);
+  - o pedido de handoff repetia o motivo da nota que fica logo acima, e o teste afirmava a ordem que o banco nunca grava;
+  - a bolha da IA colava na do analista;
+  - o contraste do rótulo e do "Não enviada" no tema escuro;
+  - as lacunas de teste (o menu da bolha, a barra de resposta, o nome repetido, o OpenAPI da timeline).
+- Sem navegador (AGENTS §3.12): a tela é conferida por teste de componente.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3434 na máquina; no CI são 3 a menos) · build ✓.
+- As skills `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente; no lugar delas ficaram a revisão adversarial e os quatro comandos rodados.
+
+**Pendências / próximos passos:**
+- **PR 10d (decisão do dono):** o administrador apagar a nota de um token. Hoje a nota da IA não sai da tela por ninguém.
+- **A falha de um token não tem saída na tela.** Não reenvia, não edita e não apaga (apagar exige o id do provedor, que a mensagem que não saiu não tem). Se a conversa já saiu de `bot`, nem a IA a reenvia, e a bolha "IA · Não enviada" fica para sempre. Falta uma ação de dispensar.
+- **A nota do ticket e o anexo de um token dizem "Integração" mesmo quando o token é da IA** (`comment-actions.ts`). Esses itens trazem o id do token, não o tipo dele.
+- **A busca dentro da conversa** ainda rotula toda saída como "Você", inclusive a da IA. A rota de busca não traz o `sender_type`, e nem ela nem o componente têm teste.
+- **A rota de editar responde à mensagem de token com o texto da janela vencida** ("não pode mais ser editada"). Só chega ali uma aba antiga ou uma chamada direta.
+- **Campo novo e quem valida fechado.** Os schemas publicados saem com `additionalProperties: false`, e o PRD promete mudança só aditiva. Um integrador que valide a resposta contra o schema antigo quebra a cada campo novo. Decidir no PR da documentação da API (PR 14): avisar no OpenAPI ou publicar as respostas abertas.
+- **Contraste do que já existia:** "Encaminhada" (60%) e "Tentar novamente" (`red-500`) ficam abaixo de 4,5:1 no tema escuro.
+- **Mensagem do celular da empresa** (`device`) segue sem rótulo na bolha; a timeline do ticket já diz "Celular da empresa".
+- **As pendências do PR 10b seguem valendo** (conciliar o envio pendente, medir a instância deslogada, `{{...}}` no texto).
+
+**Armadilhas descobertas:**
+- **Campo novo obrigatório num tipo de tela quebra as fábricas dos testes, não o código.** `ChatMessage` é montado à mão em sete arquivos de teste. O `tsc` aponta os que não usam cast; a fábrica com `as ChatMessage` compila sem o campo, e o teste passa a medir `undefined`.
+- **`toEqual` trata chave `undefined` como ausente.** O teste da consulta da timeline passava sem `sent_by_token_id` na linha de mentira. Ponha o campo na fábrica.
+- **Teste por trecho de texto não vê nome repetido.** `toHaveTextContent("IA")` passa com "IA · IA". Para o nome de quem enviou, `within(item).getByText("IA")`: texto exato, uma vez.
+- **O teste da rota valida a resposta contra o mesmo schema que a rota usa.** Afrouxar o schema nunca o derruba. O que o integrador lê em `/openapi.json` precisa de teste próprio, comparando o componente publicado.
+- **Regra medida só no predicado não mede a tela.** "Mensagem de token não tem Editar" passava no helper, e tirar a regra do menu da bolha não derrubava nada. Abra o menu no teste.
+- **No mesmo instante, a timeline põe mensagem antes de evento** (`KIND_RANK`). A nota e o evento do handoff nascem na mesma transação: no teste, use o mesmo `at`.
+- **Rota sem teste herda a regra pelo predicado.** `PATCH .../messages/[messageId]` não tem teste próprio; a recusa da edição de mensagem de token é medida em `message-actions.test.ts`, e a rota chama o mesmo predicado.
+
 ## [2026-10-01] Fase 5 · PR 10b: envio de texto pela API v1, no máximo uma vez
 
 **Agente/Modelo:** Claude Opus 5.5.
