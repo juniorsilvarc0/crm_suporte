@@ -354,6 +354,10 @@ describe("POST /api/v1/tickets", () => {
 
     const withoutExternal = await json(await post(body, { "idempotency-key": "abertura-0002" }));
     expect(withoutExternal.error.fields).toBeUndefined();
+
+    // A recusa de chave reusada não fica guardada: quem a recebe não toma a chave.
+    expect(rpcNames()).toContain("api_idempotency_release");
+    expect(rpcNames()).not.toContain("api_idempotency_finish");
   });
 
   it("violação do teto no banco aponta o campo ai_triage", async () => {
