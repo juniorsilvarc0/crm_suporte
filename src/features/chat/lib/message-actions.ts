@@ -1,3 +1,4 @@
+import { isAutomatedMessage } from "@/features/chat/lib/message-sender";
 import type { UazapiMediaType } from "@/features/chat/lib/senders/uazapi";
 import type { ChatMessage } from "@/features/chat/types";
 
@@ -75,11 +76,16 @@ export function isForwardedMessage(message: ChatMessage): boolean {
  *
  * `external_id` nulo significa que o envio ainda não voltou (ou falhou): sem o
  * id do provedor não há o que editar do lado do WhatsApp.
+ *
+ * A mensagem de um token (a IA ou uma integração) não se edita pela tela: a
+ * linha seguiria assinada por ele, com um texto que ele não escreveu. Apaga-se
+ * e escreve-se outra.
  */
 export function isEditableMessage(message: ChatMessage): boolean {
   if (!isActionable(message)) return false;
   if (message.direction !== "outbound") return false;
   if (!message.external_id) return false;
+  if (isAutomatedMessage(message)) return false;
   return EDITABLE_TYPES.includes(message.type);
 }
 
@@ -104,6 +110,18 @@ export function canEditMessage(message: ChatMessage, now: number): boolean {
 export function canDeleteMessage(message: ChatMessage): boolean {
   if (!isActionable(message)) return false;
   return message.direction === "outbound" && Boolean(message.external_id);
+}
+
+/**
+ * "Tentar novamente" de um envio que falhou. Só para a mensagem escrita pela
+ * tela: a de um token é reenviada só por ele, com a chave dele, e o servidor
+ * recusa o resto (`not_author`, em send-outbound.ts).
+ */
+export function canRetryMessage(
+  message: Pick<ChatMessage, "direction" | "delivery_status" | "is_deleted" | "sender_type" | "sent_by_token_id">
+): boolean {
+  if (message.direction !== "outbound" || message.is_deleted) return false;
+  return message.delivery_status === "failed" && !isAutomatedMessage(message);
 }
 
 /** Encaminhar é reenviar: precisa haver conteúdo reenviável. */

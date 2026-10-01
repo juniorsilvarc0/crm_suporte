@@ -67,16 +67,33 @@ describe("noteAuthorLabel", () => {
   ]);
 
   it("o próprio autor lê 'Você'", () => {
-    expect(noteAuthorLabel({ sent_by_user_id: "u1" }, names, "u1")).toBe("Você");
+    expect(noteAuthorLabel({ sent_by_user_id: "u1", sender_type: "agent", sent_by_token_id: null }, names, "u1")).toBe("Você");
   });
 
   it("outra pessoa aparece pelo nome", () => {
-    expect(noteAuthorLabel({ sent_by_user_id: "u2" }, names, "u1")).toBe("Carla");
+    expect(noteAuthorLabel({ sent_by_user_id: "u2", sender_type: "agent", sent_by_token_id: null }, names, "u1")).toBe("Carla");
+  });
+
+  // A nota de um token (o resumo do handoff, por exemplo) é assinada pelo que
+  // ele é: o banco amarra `ai`/`system` ao tipo do token.
+  it("nota de token é assinada como IA ou Integração", () => {
+    expect(noteAuthorLabel({ sent_by_user_id: null, sender_type: "ai", sent_by_token_id: "t1" }, names, "u1")).toBe("IA");
+    expect(noteAuthorLabel({ sent_by_user_id: null, sender_type: "system", sent_by_token_id: "t2" }, names, "u1")).toBe(
+      "Integração"
+    );
+  });
+
+  it("com autor usuário, vale a pessoa, não o remetente", () => {
+    expect(noteAuthorLabel({ sent_by_user_id: "u2", sender_type: "ai", sent_by_token_id: null }, names, "u1")).toBe("Carla");
+  });
+
+  it("autor usuário sem nome conhecido não vira IA: fica sem assinatura", () => {
+    expect(noteAuthorLabel({ sent_by_user_id: "u9", sender_type: "ai", sent_by_token_id: null }, names, "u1")).toBeNull();
   });
 
   // Honestidade: sem o nome, sem assinatura. Nada é inventado.
   it("autor desconhecido não vira assinatura", () => {
-    expect(noteAuthorLabel({ sent_by_user_id: "u9" }, names, "u1")).toBeNull();
-    expect(noteAuthorLabel({ sent_by_user_id: null }, names, "u1")).toBeNull();
+    expect(noteAuthorLabel({ sent_by_user_id: "u9", sender_type: "agent", sent_by_token_id: null }, names, "u1")).toBeNull();
+    expect(noteAuthorLabel({ sent_by_user_id: null, sender_type: "agent", sent_by_token_id: null }, names, "u1")).toBeNull();
   });
 });

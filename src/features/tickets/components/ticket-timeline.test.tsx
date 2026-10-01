@@ -14,6 +14,7 @@ import type {
   TicketComment,
   TicketTimelinePage,
   TimelineCommentItem,
+  TimelineEventItem,
   TimelineItem,
   TimelineMessageItem,
   TimelineStatusItem,
@@ -69,7 +70,22 @@ function message(overrides: Partial<TimelineMessageItem> = {}): TimelineMessageI
     file_name: null,
     delivery_status: "delivered",
     sent_by_user_id: null,
+    sent_by_token_id: null,
     is_deleted: false,
+    ...overrides,
+  };
+}
+
+function event(overrides: Partial<TimelineEventItem> = {}): TimelineEventItem {
+  return {
+    kind: "event",
+    id: "ev-1",
+    at: "2026-09-26T12:02:00+00:00",
+    seq: 2,
+    event_type: "ticket.created",
+    actor_type: "agent",
+    actor_user_id: ANA,
+    metadata: {},
     ...overrides,
   };
 }
@@ -146,6 +162,72 @@ describe("TicketTimeline", () => {
     expect(text.some((t) => t?.includes("Usuário removido"))).toBe(true);
     // Só o autor tem o menu: nenhuma dessas é da Ana.
     expect(screen.queryByRole("button", { name: "Ações da nota" })).toBeNull();
+  });
+
+  it("o pedido de handoff da IA: a nota assinada com o motivo, e logo abaixo o pedido, sem repetir o motivo", () => {
+    // O banco grava a nota e o evento na mesma transação: o instante é o mesmo.
+    const at = "2026-09-26T12:03:00+00:00";
+    renderTimeline(
+      page([
+        event({
+          at,
+          event_type: "ticket.handoff_requested",
+          actor_type: "ai",
+          actor_user_id: null,
+          metadata: { reason: "Cliente pediu um atendente", note_id: "m3" },
+        }),
+        message({
+          id: "m3",
+          at,
+          direction: "outbound",
+          type: "note",
+          sender_type: "ai",
+          sent_by_token_id: "tok-1",
+          content: "Cliente pediu um atendente\n\nRecebeu dois boletos no mês.",
+        }),
+      ])
+    );
+
+    const [note, request] = entries();
+    expect(note).toHaveTextContent("Nota no chat");
+    expect(note).toHaveTextContent("IA");
+    expect(note).toHaveTextContent("Cliente pediu um atendente");
+    expect(note).toHaveTextContent("Recebeu dois boletos no mês.");
+    expect(request).toHaveTextContent("Pediu atendimento humano");
+    expect(request).toHaveTextContent("IA");
+    expect(request).not.toHaveTextContent("Atividade registrada");
+    expect(request).not.toHaveTextContent("Cliente pediu um atendente");
+  });
+
+  it("o token de integração tem um nome só: na nota, na mensagem e na trilha", () => {
+    renderTimeline(
+      page([
+        event({ id: "ev-9", at: "2026-09-26T12:06:00+00:00", event_type: "ticket.focused", actor_type: "api", actor_user_id: null }),
+        message({ id: "m5", at: "2026-09-26T12:05:00+00:00", direction: "outbound", sender_type: "system", sent_by_token_id: "tok-2", content: "Seu boleto vence amanhã." }),
+        message({ id: "m4", at: "2026-09-26T12:04:00+00:00", direction: "outbound", type: "note", sender_type: "system", sent_by_token_id: "tok-2", content: "Importado do ERP" }),
+      ])
+    );
+
+    const [note, sent, focused] = entries();
+    expect(note).toHaveTextContent("Nota no chat");
+    expect(note).toHaveTextContent("Integração");
+    // Texto exato do remetente: "Integração · Integração" (a assinatura da nota,
+    // que agora também assina token, aplicada à mensagem) não passa.
+    expect(within(sent).getByText("Integração")).toBeInTheDocument();
+    expect(sent).toHaveTextContent("Seu boleto vence amanhã.");
+    expect(focused).toHaveTextContent("Integração");
+    for (const entry of [note, sent, focused]) expect(entry).not.toHaveTextContent("Automático");
+  });
+
+  it("a mensagem da IA mostra que é dela", () => {
+    renderTimeline(
+      page([message({ id: "m6", direction: "outbound", sender_type: "ai", sent_by_token_id: "tok-1", content: "Olá, sou a assistente." })])
+    );
+
+    const [sent] = entries();
+    // Uma vez só: "IA · IA" não passa.
+    expect(within(sent).getByText("IA")).toBeInTheDocument();
+    expect(sent).toHaveTextContent("Olá, sou a assistente.");
   });
 
   it("falha sem itens: frase e Tentar de novo, que recarrega a página", async () => {

@@ -1,3 +1,4 @@
+import { automatedSenderLabel } from "@/features/chat/lib/message-sender";
 import type { ChatMessage } from "@/features/chat/types";
 
 /**
@@ -48,16 +49,17 @@ export function canDeleteNote(
  * Como assinar a nota na bolha.
  *
  * Sem autor conhecido devolve `null` e a bolha não inventa um nome — nota
- * antiga (ou gravada por integração) fica sem assinatura, que é honesto.
+ * antiga fica sem assinatura, que é honesto. A nota de um token é assinada
+ * pelo que ele é ("IA" ou "Integração"): é o que o banco registra.
  * "Você" em vez do próprio nome porque é o que a pessoa espera ler.
  */
 export function noteAuthorLabel(
-  message: Pick<ChatMessage, "sent_by_user_id">,
+  message: Pick<ChatMessage, "sent_by_user_id" | "sender_type" | "sent_by_token_id">,
   names: ReadonlyMap<string, string>,
   viewerId: string | null | undefined
 ): string | null {
   const authorId = message.sent_by_user_id;
-  if (!authorId) return null;
+  if (!authorId) return automatedSenderLabel(message);
   if (viewerId && authorId === viewerId) return "Você";
   return names.get(authorId) ?? null;
 }

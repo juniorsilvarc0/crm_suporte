@@ -1,3 +1,4 @@
+import { automatedSenderLabel } from "@/features/chat/lib/message-sender";
 import { ticketStatusLabel } from "@/features/tickets/lib/ticket-actions";
 import { isTicketPriority, TICKET_PRIORITY_LABEL } from "@/features/tickets/lib/ticket-priority";
 import { compareTimelineItems, isTimelineInstant } from "@/features/tickets/lib/ticket-timeline";
@@ -239,6 +240,10 @@ export function eventLines(
     }
     case "ticket.updated":
       return updatedLines(meta.changes, catalog);
+    case "ticket.handoff_requested":
+      // Sem o motivo: ele abre a nota interna que conversation_handoff grava no
+      // mesmo instante, e a nota aparece colada a esta linha.
+      return ["Pediu atendimento humano"];
     default:
       return ["Atividade registrada"];
   }
@@ -252,9 +257,14 @@ const SENDER_LABEL: Record<TicketMessageSender, string> = {
   system: "Automático",
 };
 
-/** Remetente da mensagem do WhatsApp na timeline. */
-export function messageSenderLabel(item: Pick<TimelineMessageItem, "sender_type">): string {
-  return SENDER_LABEL[item.sender_type];
+/**
+ * Remetente da mensagem do WhatsApp na timeline. A de um token leva o mesmo
+ * nome que ele tem no chat e na trilha ("IA", "Integração").
+ */
+export function messageSenderLabel(
+  item: Pick<TimelineMessageItem, "sender_type" | "sent_by_token_id">
+): string {
+  return automatedSenderLabel(item) ?? SENDER_LABEL[item.sender_type];
 }
 
 const MEDIA_LABEL: Partial<Record<TimelineMessageItem["type"], string>> = {

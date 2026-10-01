@@ -155,6 +155,7 @@ const messageRow = (micros: number, overrides: Row = {}): Row => ({
   file_name: null,
   delivery_status: "delivered",
   sent_by_user_id: null,
+  sent_by_token_id: null,
   is_deleted: false,
   created_at: iso(micros),
   ...overrides,
@@ -295,6 +296,22 @@ describe("getTicketTimeline: leitura", () => {
     expect(fromMock).not.toHaveBeenCalled();
   });
 
+  it("mensagem de token traz o token que a enviou", async () => {
+    seed({
+      messages: [
+        messageRow(1, { id: "ia", direction: "outbound", sender_type: "ai", sent_by_token_id: "tok-1" }),
+      ],
+    });
+
+    const page = await getTicketTimeline(TICKET);
+
+    expect(page.items).toEqual([
+      expect.objectContaining({ id: "ia", sender_type: "ai", sent_by_user_id: null, sent_by_token_id: "tok-1" }),
+    ]);
+    // Coluna inteira, sem apelido: `sent_by_token_id:outra_coluna` não passa.
+    expect(TIMELINE_MESSAGE_SELECT.split(", ")).toContain("sent_by_token_id");
+  });
+
   it("os selects são explícitos e não pedem o que não sai do servidor", () => {
     const selects = [
       TIMELINE_STATUS_SELECT,
@@ -342,6 +359,7 @@ describe("getTicketTimeline: união", () => {
       file_name: null,
       delivery_status: "delivered",
       sent_by_user_id: null,
+      sent_by_token_id: null,
       is_deleted: false,
     });
     expect(page.items.find((item) => item.id === "a")).toEqual({

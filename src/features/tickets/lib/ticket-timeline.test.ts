@@ -31,6 +31,7 @@ const message = (id: string, at: string): TimelineMessageItem => ({
   file_name: null,
   delivery_status: "delivered",
   sent_by_user_id: null,
+  sent_by_token_id: null,
   is_deleted: false,
 });
 

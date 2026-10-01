@@ -16,6 +16,12 @@ export type MessageDeliveryStatus =
   | "delivered"
   | "read"
   | "failed";
+/**
+ * chat_messages.sender_type (check do banco). `device` = o celular da empresa,
+ * fora do CRM. `ai` e `system` são o que os tokens da API v1 gravam (a IA e uma
+ * integração); `system` sem token fica para o próprio CRM.
+ */
+export type MessageSenderType = "contact" | "device" | "agent" | "ai" | "system";
 
 export type ChatIntegration = {
   id: string;
@@ -60,6 +66,7 @@ export type ChatMessage = {
   conversation_id: string;
   external_id: string | null;
   direction: MessageDirection;
+  sender_type: MessageSenderType;
   type: MessageType;
   content: string | null;
   media_url: string | null;
@@ -67,6 +74,8 @@ export type ChatMessage = {
   quoted_message_id: string | null;
   delivery_status: MessageDeliveryStatus;
   sent_by_user_id: string | null;
+  /** O token da API que enviou (a IA ou uma integração); `null` no resto. */
+  sent_by_token_id: string | null;
   is_deleted: boolean;
   metadata: Record<string, unknown>;
   created_at: string;
