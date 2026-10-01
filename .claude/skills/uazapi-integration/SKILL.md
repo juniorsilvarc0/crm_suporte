@@ -29,6 +29,11 @@ OUTBOUND (nós → WhatsApp)
      → senders/uazapi (POST /send/text|/send/media, header token lido do Vault)
      → grava external_id=messageid, delivery_status='sent'
      → o echo fromMe volta pelo webhook e é RECONCILIADO (não duplica)
+
+  API v1 (IA e integrações) → POST /api/v1/conversations/[id]/messages  (só texto)
+     → o MESMO caminho do texto da tela: lib/send-outbound.ts
+     → a linha nasce com sent_by_token_id e sender_type 'ai' (token de IA) ou 'system'
+     → NO MÁXIMO UMA VEZ por Idempotency-Key (ver §5.1)
 ```
 
 | Camada | Arquivo | Papel |
@@ -36,7 +41,8 @@ OUTBOUND (nós → WhatsApp)
 | Conexão | `connection/uazapi.ts` | `connectUazapi`(QR) · `getUazapiStatus` · `registerUazapiWebhook` · **`disconnectUazapi`** |
 | Conexão | `connection/ssrf-guard.ts` | `assertSafeUrl`/`safeBaseUrl` — bloqueia URL interna/ofuscada |
 | Conexão | `connection/integration.ts` | `getUazapiIntegration` / `getIntegrationCredentials` — a linha uazapi com o token lido do **Vault**; `get/setChatIntegrationSecret` |
-| Envio | `senders/uazapi.ts` | `sendUazapiText` · `sendUazapiMedia` · `sendUazapiAudio` · `toUazapiNumber` · **`deleteUazapiMessage`** · **`editUazapiMessage`** |
+| Envio | `senders/uazapi.ts` | `sendUazapiText` · `sendUazapiMedia` · `sendUazapiAudio` · `toUazapiNumber` · **`deleteUazapiMessage`** · **`editUazapiMessage`** · `UazapiHttpError` · `uazapiSendDefinitelyFailed` (a falha prova que NÃO saiu?) |
+| Envio | `lib/send-outbound.ts` | `sendOutboundText` — o envio de TEXTO, único para a tela e para a API v1: `clientId`, linha `pending`, provedor, resultado. Muda quem assina e o que se faz quando o provedor não confirma |
 | Ações | `lib/message-actions.ts` | `canEdit/canDelete/canForwardMessage` · `buildForwardPayload` — regras puras, compartilhadas por UI e rota |
 | Entrada | `normalizers/uazapi.ts` | envelope real → `NormalizedMessage` · `extractUazapiStatuses` · **`extractUazapiMedia`** |
 | Persistência | `upsert-message.ts` | grava conversa+mensagem, dedup `(conversation_id, external_id)`, avatar/nome sem sobrescrever com null |
@@ -47,6 +53,7 @@ OUTBOUND (nós → WhatsApp)
 | Rota webhook | `api/chat/webhook/uazapi/route.ts` | recebe eventos (secret do Vault, status, mídia, **apagada**, echo, inbound, contato, relay) |
 | Rotas de mídia | `api/chat/media/[id]` · `api/contacts/[id]/avatar` | sessão + 302 para URL assinada de 10 min |
 | Rotas envio | `api/chat/conversations/[id]/{send,send-audio,send-file}/route.ts` | texto / áudio / anexo |
+| Rota envio v1 | `api/v1/conversations/[id]/messages/route.ts` | `POST`: texto pela IA ou por uma integração (token com `messages:send`) |
 | Rotas mensagem | `api/chat/conversations/[id]/messages/[messageId]/route.ts` | `PATCH` edita · `DELETE` apaga para todos |
 | Rota encaminhar | `api/chat/conversations/[id]/forward/route.ts` | reenvia com `forward:true` (máx. 5 destinos) |
 | Realtime | `hooks/use-chat-realtime.ts` | INSERT+UPDATE de mensagens; INSERT+UPDATE de conversas |
@@ -56,7 +63,7 @@ OUTBOUND (nós → WhatsApp)
 
 ## 2. Contrato uazapi — REAL (confirmado)
 
-> 📗 **Doc oficial: `https://docs.uazapi.com/openapi-bundled.json`** (uazapiGO 2.1.1, 132 rotas).
+> 📗 **Doc oficial: `https://docs.uazapi.com/openapi-bundled.json`** (uazapiGO 2.4.2 e 148 rotas em 2026-10-01; era 2.1.1 com 132).
 > `docs.uazapi.com` é um SPA e não serve nada útil para `curl`/WebFetch — ele **carrega** esse JSON, cujo caminho está no bundle JS. Baixe o arquivo e leia o spec; **não** deduza contrato por tentativa e erro, e **não** chame endpoint destrutivo para descobrir formato.
 
 Auth: **header `token: <token>`** (NÃO Bearer). Base URL por-integração em `chat_integrations.config.apiUrl`.
@@ -80,6 +87,9 @@ Auth: **header `token: <token>`** (NÃO Bearer). Base URL por-integração em `c
 - **`track_id`** = id da NOSSA `chat_messages` (casa status + reconcilia echo fromMe).
 - **`replyid`** = `messageid` da uazapi (nosso `external_id`) a citar. É **oficial**, está no spec — já esteve marcado como palpite no código, não é.
 - **`forward: true`** marca a mensagem como "Encaminhada". ⚠️ **Não existe endpoint de encaminhar**: encaminhar é reenviar o conteúdo com essa bandeira ligada (é o que a rota `.../forward` faz).
+- **Respostas de erro do `/send/text`** (spec): `400` pedido inválido, `401` token inválido, `429` limite, `500` erro interno. O `500` tem duas formas: genérico (`{"error":"Failed to send message"}`) e **recusa do próprio WhatsApp**, com `error_source: "whatsapp_server"`, `provider_code` e `error_key` (ex.: 463, restrição da conta para iniciar conversas). Só a segunda prova que a mensagem não saiu.
+- ⚠️ **A uazapi troca placeholders no texto** antes de entregar: `{{name}}`, `{{first_name}}`, `{{wa_name}}`, `{{wa_contactName}}`, `{{lead_*}}` e `{{lead_field01}}`…`{{lead_field20}}`. O spec não documenta como desligar. O CRM grava o texto como foi pedido; com um marcador desses, o cliente recebe outra coisa. Vale para a tela e para a API v1.
+- **`POST /message/find`** aceita `track_source` + `track_id`: dá para perguntar ao provedor se uma mensagem nossa existe lá. Ainda não é usado (ver §5.1).
 
 **⚠️ Editar e apagar — armadilhas (`.../messages/[messageId]/route.ts`):**
 
@@ -117,7 +127,7 @@ Envelope: `{ EventType, message?, event?, chat?, owner, instanceName, token }`.
 
 - **`chat_integrations`** — `provider='uazapi'` (único aceito), `config={apiUrl}` (**o check do banco recusa token ali**), `token_secret_id`/`webhook_secret_id` (Vault), `phone_number` (dono, preenchido ao conectar), `is_active`. **Single-tenant: `unique(provider)`**, id estável (reconectar não duplica conversas). Apagar a linha apaga os segredos no Vault (trigger).
 - **`chat_conversations`** — 1 por contato; `external_id`=telefone; `contact_avatar_url` (do `chat.imagePreview`); `status ∈ {bot,human,resolved}`; `unique(integration_id, external_id)`.
-- **`chat_messages`** — `external_id`(messageid), `direction`, `sender_type` (`contact` entrada · `device` fromMe do celular · `agent` enviado pelo CRM · `ai`/`system` depois; check casa com `direction`), `type`, `content`, `media_bucket`/`media_key` + `media_url` = `/api/chat/media/<id>`, `delivery_status`, `metadata.uazapiId`/`thumbKey`/`thumbUrl`; `unique(conversation_id, external_id)` (dedup do echo).
+- **`chat_messages`** — `external_id`(messageid), `direction`, `sender_type` (`contact` entrada · `device` fromMe do celular · `agent` enviado pelo analista · `ai`/`system` enviado por token da API v1, com `sent_by_token_id`; o check casa com `direction`, e um trigger amarra `ai`/`system` ao tipo do token), `type`, `content`, `media_bucket`/`media_key` + `media_url` = `/api/chat/media/<id>`, `delivery_status`, `metadata.uazapiId`/`thumbKey`/`thumbUrl`; `unique(conversation_id, external_id)` (dedup do echo).
 - **`contacts`** — criado no inbound (`resolve_contact_identity`), dedup por `normalized_phone` (sem o DDI 55); telefone imutável; foto em `avatar_bucket`/`avatar_key`.
 - **Bucket `chat-media`** (**privado**, 50 MB, lista de MIME literal sem parâmetros) — mídia re-hospedada e foto do contato. Nada grava URL do storage: a rota do app assina na hora.
 
@@ -141,6 +151,32 @@ Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vaul
 
 - **Vídeo > 10MB é comprimido com ffmpeg** (`compress-video.ts`: 720p, H.264/AAC, `+faststart`) — como o WhatsApp faz — pra caber no limite (~16MB). Cai de volta ao original se o ffmpeg falhar. **A imagem de produção precisa do ffmpeg** (instalado no `Dockerfile.production`).
 - **⚠️ Limite de body do Next 16:** o default é **10MB** (`experimental.proxyClientMaxBodySize`) — subido p/ `"64mb"` no `next.config.ts`. Sem isso, upload grande é truncado e `request.formData()` quebra. Se anexo grande "carrega e não vai", suspeite disso.
+
+## 5.1 Envio de texto: tela × token (`lib/send-outbound.ts`)
+
+Os dois chamam `sendOutboundText`. O que muda é quem assina a linha e o que se faz quando o provedor não confirma.
+
+| | Analista (rota de sessão) | Token (API v1) |
+|---|---|---|
+| Autor da linha | `agent` + `sent_by_user_id` | `ai` ou `system` + `sent_by_token_id` |
+| Assinatura no texto | apelido ou 1º nome | nenhuma (quem assina é a IA) |
+| Chave do envio (`metadata.clientId`) | criada pela tela | `k` + sha256(`token:Idempotency-Key`) |
+| Falha do provedor | sempre `failed`; o analista decide se reenvia | `failed` só se **com certeza não saiu**; senão a linha fica `pending` |
+| Mesma chave, linha `pending` | devolve a linha | `outcome_unknown` (a API responde 504) |
+| Mesma chave, outro texto | devolve a linha (o texto vem dela) | recusa (422) |
+
+- **"Com certeza não saiu"** (`uazapiSendDefinitelyFailed`):
+  - a URL da integração não passou na guarda (`UnsafeUrlError`);
+  - nenhum pedido chegou ao provedor: a conexão nem abriu (`ENOTFOUND`, `ECONNREFUSED`, `UND_ERR_CONNECT_TIMEOUT`…) ou o certificado dele foi recusado (`CERT_HAS_EXPIRED`…). Códigos medidos no Node 22 e 25;
+  - 4xx do provedor;
+  - corpo do erro com `error_source: whatsapp_server`, ou dizendo que não há sessão (`No session`, `… not connected`).
+- **Desfecho desconhecido** é todo o resto: demora, conexão que cai no meio (`UND_ERR_SOCKET`, `ECONNRESET`), 5xx genérico ou de proxy, resposta ilegível. O provedor pode ter aceitado.
+- ⚠️ **Não medido:** o que o `/send/text` devolve com a instância deslogada. O spec não diz; nas outras rotas é `No session` com 401 ou 500. Se vier o 500 genérico (`Failed to send message`), a mensagem do token fica `pending`. Medir com uma instância de teste, nunca com a de produção.
+- **Por que a diferença:** o token é um programa que repete sozinho. Marcar `failed` o que talvez saiu e mandar repetir entrega a mesma mensagem duas vezes ao cliente.
+- **A linha `pending` de um token só anda pelo webhook** (`Sent`/`Delivered`/`Read`, casados pelo `external_id` que o eco grava). Um tick que chegue antes do eco não casa com nada e se perde. Se o provedor não enviou, a linha fica `pending` para sempre: ainda não há conciliação pelo `/message/find`.
+- **Cada linha só é reenviada por quem a escreveu.** O "Tentar novamente" da tela sobre uma linha de token recebe 409.
+- **`beforeSend`** é a última conferência de quem chama, feita só quando a mensagem vai mesmo ao provedor. A API v1 relê ali o status da conversa (a IA só fala em `bot`) e aplica os tetos por conversa.
+- ⚠️ O caminho da tela ainda tem a janela antiga: resposta que se perde vira `failed`, e o "Tentar novamente" pode entregar em dobro. Fechar isso pede um estado de "não confirmado" na tela.
 
 ## 6. Relay ao agente + contato automático
 
@@ -168,7 +204,11 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 
 **"Vídeo carrega e não envia"** → tamanho > 64MB (limite) OU `proxyClientMaxBodySize` não configurado OU o WhatsApp rejeitou (>16MB sem compressão → confira que o ffmpeg está na imagem e o vídeo foi comprimido: log `[send-file] vídeo comprimido: X -> Y`).
 
-**"IA responde após eu assumir"** → relay é só com `status='bot'`. Confira o status da conversa.
+**"IA responde após eu assumir"** → relay é só com `status='bot'`. Confira o status da conversa. Pela API v1 a IA recebe 409 `conversation_not_owned_by_ai`; só passa a mensagem que já estava a caminho do provedor no instante do "Assumir".
+
+**"Mensagem da IA parada no relógio (pending)"** → o provedor não confirmou o envio (§5.1). Veja no log `[send] provedor não confirmou o envio:` e o erro. Se o cliente recebeu, o eco e os ticks do webhook levam a linha adiante; se não, ela fica assim. A mesma Idempotency-Key responde 504 `delivery_unknown` e não reenvia enquanto a linha estiver `pending`.
+
+**"A API responde 502 whatsapp_unavailable"** → a mensagem não saiu: o provedor recusou (4xx, ou corpo dizendo que não há sessão), o WhatsApp recusou (`whatsapp_server`) ou o provedor não foi alcançado. A linha fica `failed`, e a mesma chave tenta de novo.
 
 ## 9. Segurança
 

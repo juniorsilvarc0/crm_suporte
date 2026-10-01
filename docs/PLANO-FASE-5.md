@@ -171,12 +171,23 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - `POST /conversations/{id}/handoff` (`conversations:handoff`, com Idempotency-Key): chama `conversation_handoff` e devolve o resultado do pedido (`conversation_id`, `status`, `changed`, `ticket_id`, `note_id`). Conversa resolvida é 409 `conversation_not_owned_by_ai`, com `current`.
 >   - `PUT /conversations/{id}/active-ticket` (`tickets:write`, sem Idempotency-Key: PUT já é idempotente), via `setActiveTicket`. Devolve o foco que ficou.
 >   - As escritas devolvem o resultado da operação, não a conversa: o escopo de escrita não dá a leitura. O telefone do canal nunca sai.
-> - **10b, a fazer:**
->   - `send-outbound.ts` e `POST /conversations/{id}/messages` (o envio da IA, com `client_id`), mais o 409 em conversa que não é `bot`;
->   - na tela: rótulo de `ticket.handoff_requested` na timeline, assinatura da nota sem autor usuário e "IA" na mensagem da IA;
+> - **10b, feito:** o envio de texto pela API, sem nada de tela.
+>   - `send-outbound.ts`, extraído da rota de envio da tela, que passa a chamá-lo. Para o analista o comportamento é o de antes.
+>   - `POST /conversations/{id}/messages` (`messages:send`, com Idempotency-Key). O corpo é só `{text}`: a chave do envio sai da Idempotency-Key e do token, e não de um `client_id` no corpo. O token de IA grava `ai`; o de integração, `system`.
+>   - A IA só envia em conversa `bot` (409 `conversation_not_owned_by_ai`). O status é relido na hora do envio, e não na leitura inicial: é a "checagem condicional" deste plano.
+>   - **No máximo uma vez.** 502 `whatsapp_unavailable` = não saiu, e a mesma chave tenta de novo. 504 `delivery_unknown` = o provedor não confirmou; a linha fica `pending`, e enquanto estiver assim a mesma chave não reenvia. A chave vale para um texto só (422).
+>   - Tetos por conversa, por token: 20 envios por minuto e 100 por hora.
+> - **10c, a fazer (tela):**
+>   - "IA" ou "Automático" na mensagem de token, e a assinatura da nota sem autor usuário;
+>   - rótulo de `ticket.handoff_requested` na timeline;
 >   - `sent_by_token_id` nos itens de mensagem da timeline;
->   - quem apaga a nota da IA (proposta: admin apaga, ninguém edita).
-> - **Fora dos dois, num PR próprio:** o teto do corpo nas escritas sem Idempotency-Key (o `withApi` só confere o Content-Length).
+>   - sem "Tentar novamente" na mensagem de token (o servidor já recusa);
+>   - quem apaga e quem edita a mensagem e a nota da IA (proposta: admin apaga, ninguém edita).
+> - **Fora deles, em PRs próprios:**
+>   - o teto do corpo nas escritas sem Idempotency-Key (o `withApi` só confere o Content-Length);
+>   - conciliar o envio de desfecho desconhecido pelo `track_id` (`POST /message/find` da uazapi), e levar o "no máximo uma vez" também para a tela;
+>   - `redirect: "error"` no `fetch` do provedor (hoje um redirecionamento levaria o cabeçalho `token` a outro host);
+>   - o que fazer com `{{...}}` no texto (a uazapi troca os placeholders antes de entregar).
 
 **PR 11: `feat(chat)`, relay v1** · back · M · depende dos PRs 2, 4 e 7, e das decisões D2 e D3
 - **O que muda:**
@@ -248,6 +259,7 @@ O texto abaixo é o da análise, com as opções que foram consideradas.
    - lease de 5 min;
    - obrigatória em tickets, contacts, comments, attachments e handoff;
    - em `messages`, `client_id` é a chave;
+   - **Como ficou (PR 10b, 2026-10-01):** em `messages` a Idempotency-Key é obrigatória como nas outras escritas, e é dela (com o id do token) que sai a chave gravada na linha; não existe `client_id` no corpo. E o 422 `idempotency_key_reused` que vem do handler **não** é guardado: ele libera a chave, para a recusa não tomar o lugar do pedido dono.
    - `idempotency_key_reused` vira 422 só no envelope v1: a sessão continua com 409 (`map-ticket-error.ts:91-96`).
 7. **D7. If-Match.** **Recomendação:** obrigatório em PATCH, transitions e assign (428 se ausente, 412 no conflito), com ETag `W/"<version>"`. Documentar que o mesmo valor com versão velha dá `changed:false`, porque o no-op vem antes da checagem (`tickets.sql:1497-1501`).
 8. **D8. PII na query string.** `?phone=` e `?cnpj=` entram no `access.log` compartilhado (`nginx-host.conf:63-66`).
