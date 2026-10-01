@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpcMock } = vi.hoisted(() => ({ rpcMock: vi.fn() }));
+const { rpcMock, hasEnvMock } = vi.hoisted(() => ({ rpcMock: vi.fn(), hasEnvMock: vi.fn() }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  hasSupabaseServerEnv: () => true,
+  hasSupabaseServerEnv: hasEnvMock,
   createSupabaseServerClient: () => ({ rpc: rpcMock }),
 }));
 
@@ -11,6 +11,7 @@ import {
   getRuntimeEnvironmentVariable,
   getTranscriptionModelConfig,
   invalidateRuntimeEnvironmentCache,
+  readRuntimeEnvironmentVariable,
   RuntimeEnvironmentUnavailableError,
 } from "@/features/settings/lib/get-runtime-environment";
 
@@ -20,6 +21,7 @@ function vault(rows: { name: string; value: string }[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  hasEnvMock.mockReturnValue(true);
   invalidateRuntimeEnvironmentCache();
   delete process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_TRANSCRIPTION_MODEL;
@@ -35,7 +37,7 @@ describe("getRuntimeEnvironmentVariable", () => {
       source: "vault",
     });
     expect(rpcMock).toHaveBeenCalledWith("get_app_environment_variables", {
-      p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL"],
+      p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL", "RELAY_SIGNING_SECRET"],
     });
   });
 
@@ -106,5 +108,71 @@ describe("getTranscriptionModelConfig", () => {
       value: "gpt-4o-transcribe",
       source: "vault",
     });
+  });
+});
+
+describe("readRuntimeEnvironmentVariable", () => {
+  const one = (value: unknown) => rpcMock.mockResolvedValue({ data: value, error: null });
+
+  it("lê UMA variável pelo nome, direto do cofre", async () => {
+    one("chave-de-assinatura");
+
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBe("chave-de-assinatura");
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("get_app_environment_variable", { p_name: "RELAY_SIGNING_SECRET" });
+  });
+
+  it("sem cache: cada chamada vai ao cofre, e a troca vale na leitura seguinte", async () => {
+    one("chave-1");
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBe("chave-1");
+    one("chave-2");
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBe("chave-2");
+    one(null);
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBeNull();
+
+    expect(rpcMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("não lê nem alimenta o cache do catálogo", async () => {
+    vault([{ name: "RELAY_SIGNING_SECRET", value: "do-cache" }]);
+    await getRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET");
+    one("do-cofre-agora");
+
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBe("do-cofre-agora");
+    // O cache segue com o que tinha: a leitura direta não o toca.
+    await expect(getRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toEqual({
+      value: "do-cache",
+      source: "vault",
+    });
+  });
+
+  it.each([
+    ["ausente", null],
+    ["vazia", ""],
+    ["de outro tipo", 42],
+  ])("variável %s é `sem valor`", async (_label, value) => {
+    one(value);
+
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBeNull();
+  });
+
+  it("falha fechada quando o cofre não responde: não é o mesmo que `sem valor`", async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: "timeout" } });
+
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).rejects.toThrow(
+      new RuntimeEnvironmentUnavailableError("timeout").message
+    );
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).rejects.toBeInstanceOf(
+      RuntimeEnvironmentUnavailableError
+    );
+  });
+
+  it("sem Supabase configurado: falha fechada, sem tentar ler", async () => {
+    hasEnvMock.mockReturnValue(false);
+
+    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).rejects.toBeInstanceOf(
+      RuntimeEnvironmentUnavailableError
+    );
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 });

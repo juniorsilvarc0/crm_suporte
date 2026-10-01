@@ -76,6 +76,41 @@ describe("POST /api/settings/environment-variables", () => {
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["curta", "1"],
+    ["31 caracteres", "a".repeat(31)],
+    ["com espaço no meio", `${"a".repeat(20)} ${"b".repeat(20)}`],
+    ["com quebra de linha colada no fim", `${"a".repeat(40)}\n`],
+    ["só espaços", " ".repeat(40)],
+  ])("chave de assinatura do relay %s é recusada, sem gravar", async (_label, value) => {
+    const response = await POST(request("POST", { name: " relay_signing_secret ", value }));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.errors.value[0]).toContain("32 caracteres ou mais, sem espaços");
+    expect(JSON.stringify(body)).not.toContain(value.trim() || "a".repeat(40));
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("chave de assinatura do relay com 32 caracteres sem espaço é gravada", async () => {
+    const value = "f".repeat(32);
+
+    const response = await POST(request("POST", { name: "RELAY_SIGNING_SECRET", value, replace: true }));
+
+    expect(response.status).toBe(200);
+    expect(rpcMock).toHaveBeenCalledWith("set_app_environment_variable", {
+      p_name: "RELAY_SIGNING_SECRET",
+      p_value: value,
+      p_replace: true,
+    });
+  });
+
+  it("o piso é só da chave de assinatura: outra variável aceita valor curto", async () => {
+    const response = await POST(request("POST", { name: "OUTRA_CHAVE", value: "x" }));
+
+    expect(response.status).toBe(200);
+  });
+
   it("não substitui silenciosamente uma chave existente", async () => {
     rpcMock.mockResolvedValue({ data: null, error: { code: "23505" } });
 
