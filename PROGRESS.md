@@ -27,6 +27,64 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Escrita só é aceita da própria origem
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Um pedido de escrita só é atendido quando parte do próprio CRM; o que vem de outra origem é recusado antes de chegar à rota.
+**Arquivos alterados:** `src/lib/auth/route-guard.ts` (função `isCrossOriginWrite`), `src/proxy.ts` (chama a regra antes de tudo), os testes `src/lib/auth/route-guard.test.ts` e `src/proxy.test.ts` (novo), e os docs `AGENTS.md` §3.2, `PRD.md` §9, `docs/PLANO-FASE-5.md` e este PROGRESS.
+
+**O que foi feito:**
+- **A regra** (`isCrossOriginWrite`, pura, no guard) vale para todo método que não é GET, HEAD ou OPTIONS:
+  - com `Sec-Fetch-Site` (o navegador diz de onde o pedido partiu, e uma página não o forja), só passam `same-origin` (a própria tela) e `none` (ação direta do usuário);
+  - sem ele (navegador antigo, ou HTTP fora de localhost), vale o `Origin`, que tem de ser do próprio host. O próprio host é o `Host` do pedido ou o de `APP_PUBLIC_URL`;
+  - sem nenhum dos dois não é navegador (curl, outro servidor), e o pedido segue para a checagem de sessão de sempre.
+- **O proxy** confere a regra antes de qualquer outra coisa e responde 403 `{ ok: false, error: "cross_origin", message }`. A rota não chega a rodar.
+- **Isentas:** `/api/chat/webhook/*` e `/api/v1/*`. São chamadas por servidores, com credencial própria, e não leem o cookie. `/api/auth/*` **não** é isenta: login, logout e definir senha são da tela.
+- **Dois testes de alcance** em `src/proxy.test.ts`: o proxy roda em `/api/:path*`, e não há route handler fora de `src/app/api`. A trava só age onde o proxy roda; os dois seguram a premissa.
+
+**Decisões tomadas:**
+- **Por que era preciso:** o cookie é `SameSite=Lax`. Isso barra o POST vindo de outro SITE, mas não o de outra origem do MESMO site (um subdomínio vizinho, outra porta em localhost), e as rotas leem JSON mandado como `text/plain`, que o navegador envia sem preflight. Saiu da revisão do PR 12a.
+- **No proxy, e não em cada rota.** Os guards (`requireDashboardUser` e afins) não recebem o pedido nem o método, e são chamados também em leitura. Um ponto só, antes de tudo, cobre todas as rotas de escrita de uma vez. O custo: a trava depende de o proxy rodar. Os dois testes de alcance e o roteiro por HTTP no build de produção seguram isso.
+- **A regra não olha se o caminho é de `/api`.** O proxy lê o caminho como veio (`/%61pi/...` não começa com `/api/`), e o roteador poderia ler de outro jeito. Página não recebe escrita, então recusar em qualquer caminho não custa nada e tira a dependência.
+- **Isenção estreita:** o prefixo escrito assim mesmo, e nenhum `%` no caminho. `..` chega resolvido pelo parser; codificado (`/api/v1/..%2f...`) ele começaria com o prefixo isento. Nenhuma rota do webhook ou da v1 precisa de `%` no caminho, e quem chama de servidor não manda `Origin`.
+- **`Sec-Fetch-Site` primeiro, `Origin` como reserva.** É a ordem que não quebra pedido legítimo: atrás de um proxy que troque o `Host`, o navegador novo continua dizendo `same-origin`. Só o navegador antigo depende de o host bater, e para ele vale também `APP_PUBLIC_URL`.
+- **A regra não "conserta" o que recebe.** Método ou `Sec-Fetch-Site` em outra caixa, ou com espaço, não é o que um navegador manda: cai do lado da recusa. Só o host próprio é comparado sem diferenciar caixa, porque nome de host não a diferencia.
+- **Leitura (GET) fica de fora.** Link, imagem e navegação vindos de outro lugar são legítimos. Por isso rota que muda estado não pode ser GET.
+- **Só o host é comparado na reserva por `Origin`.** http contra https no mesmo host fica com o HSTS (`next.config.ts`).
+- **Sem registro em log da recusa.** Qualquer um manda um POST com o cabeçalho e encheria o log. O motivo vai no corpo (`error: "cross_origin"`), que é o que a aba de rede mostra.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4173 em 218 arquivos; eram 4088 em 217) · `build` ✓.
+- **Mutação:** 100 alterações propositais em `route-guard.ts` e `proxy.ts`, e todas derrubam algum teste. Não foi assim de primeira: 2 sobreviveram à primeira rodada, e a revisão mostrou outras 3 que a lista não tinha (o `Host` trocado pelo host da URL, 401 para toda `/api` sem sessão, e subdomínio do próprio host aceito). Cada uma virou teste. Duas saíram da lista por serem equivalentes, com o motivo anotado no roteiro.
+- **Revisão:** dois revisores independentes, cada um numa cópia privada (segurança; regressão e testes). Nenhum contorno da regra, e nenhum uso legítimo quebrado: as 69 escritas do front usam URL relativa, o service worker não toca em `/api` nem em pedido que não é GET, e o nginx de produção repassa o `Host`. O que mudou por causa deles:
+  - a regra deixou de olhar se o caminho é de `/api`, e a isenção passou a recusar caminho com `%`: o proxy roda para `/%61pi/...`, mas vê um caminho que não começa com `/api/`;
+  - origem sem host é recusada mesmo com host próprio vazio (`APP_PUBLIC_URL` sem esquema vira host `""`);
+  - os testes do proxy passaram a montar o pedido na forma real (a URL com o endereço em que o servidor escuta, o host público só no `Host`), e o das rotas isentas passou a rodar sem sessão. Do jeito anterior, trocar o `Host` pelo host da URL, ou responder 401 a toda `/api` sem sessão, passava nos testes;
+  - faltava o caso "subdomínio do próprio host", que é a topologia de produção;
+  - o comentário do proxy dizia "rota nenhuma", e GET fica de fora.
+- **Por HTTP, contra o stack local:** 42 verificações no servidor de desenvolvimento e 45 no build de produção (standalone). Com o cookie de um administrador: escrita vinda de outro subdomínio, de outro site, de outra porta e com `Origin: null` leva 403; a própria tela, o curl e o `Origin` do próprio app passam; o webhook e a v1 respondem pelas regras deles; e 21 formas de caminho (`//`, `..`, `%2e%2e`, `%2f`, `/%61pi/`, maiúsculas, `\`, `;`) não chegam a rota nenhuma. O roteiro não grava nada: confere por hash que a senha local não mudou, e que não há usuário nem registro a mais.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. No lugar: a revisão adversarial e os quatro comandos acima.
+
+**Pendências / próximos passos:**
+- **Escrita por GET:** a trava não cobre GET, nem HEAD (o Next responde HEAD chamando o handler de GET). Revisar as rotas de GET que têm efeito, num PR próprio.
+- **Segunda camada:** a trava mora só no proxy. Repeti-la nas rotas pede o método, que os guards não recebem. Proposta, sem data.
+- **Oito pontos da tela mostram o código `cross_origin` no lugar da frase:** os do chat e da conexão leem `error`, e não `message`. O 401 do proxy já tinha o mesmo efeito. Só aparece se a trava disparar num uso legítimo.
+- **Atrás de túnel ou de proxy que troque o `Host`,** `APP_PUBLIC_URL` tem de ser o endereço que o navegador usa. Só importa para navegador sem `Sec-Fetch-Site`.
+
+**Armadilhas descobertas:**
+- **`SameSite=Lax` não separa subdomínios.** "Site" é o domínio registrável: `a.exemplo.com.br` e `b.exemplo.com.br` são o mesmo site, e `localhost:3000` e `localhost:3001` também. Cookie não tem porta.
+- **`text/plain` é um tipo "simples":** o navegador o manda para outra origem sem preflight, e `readJsonBody` faz o parse do texto.
+- **`request.nextUrl.pathname` não decodifica `%XX`,** e o `matcher` do proxy casa também a forma decodificada: o proxy RODA para `/%61pi/...`, mas vê um caminho que não começa com `/api/`. Regra de segurança por prefixo de caminho, no proxy, tem de falhar para o lado fechado.
+- **A URL que o proxy recebe leva o endereço em que o servidor escuta** (`localhost:3000`), e não o host público, que só vem no cabeçalho `Host`. Teste de proxy que monta a URL com o host público não vê a diferença entre `request.nextUrl.host` e `request.headers.get("host")`.
+- **Mock de sessão que devolve um usuário para qualquer token** faz o teste de "rota aberta sem sessão" passar com sessão. Em teste de rota pública, a sessão é `null`.
+- **`new URL("localhost:3200")` é válida:** esquema `localhost:`, host vazio. Variável de URL sem esquema não lança; devolve host `""`.
+- **O Next responde HEAD chamando o handler de GET.** GET com efeito é efeito também por HEAD.
+- **Rota de sessão nova:** mora em `src/app/api/`, e escrita nunca é GET. Prefixo novo em `ORIGIN_EXEMPT_API_PREFIXES` só para rota que NÃO lê o cookie.
+- **Chamar rota de sessão por script:** sem `Origin` e sem `Sec-Fetch-Site`, passa como antes. Quem mandar um `Origin` de outro host leva 403.
+- **O `Sec-Fetch-Site` só existe em contexto seguro** (HTTPS ou localhost). Pelo IP da rede local em HTTP, o Chrome não o manda, e a regra cai no `Origin`.
+- **O parser de URL já devolve o host em minúsculas** e sem a porta padrão, e o `Headers` já entrega o valor sem espaço em volta. Normalizar de novo é código que nenhum pedido alcança.
+- **Pipeline engole o código de saída:** `pnpm typecheck | tail -1 && ...` segue mesmo com erro, porque o status é o do `tail`. Para encadear verificação, rodar sem pipe e ler `$?`.
+
 ## [2026-10-01] Fase 5, PR 12a: chave de assinatura gerada pelo CRM e teste de conexão do agente
 
 **Agente/Modelo:** Claude Opus 5.5.

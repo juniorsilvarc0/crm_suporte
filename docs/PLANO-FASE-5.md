@@ -245,6 +245,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - **Fica para a Fase 6 ou para decisão do dono:** testar uma URL antes de salvá-la (hoje o teste só vai à URL salva, e salvar já manda o repasse para ela).
 > - **12b, a fazer:** a leitura real de `get-integration-logs.ts` com filtros, e a Saúde. A taxa de erro do relay tem de filtrar pela ação `conversation.message_received`: o teste (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider `relay`.
 > - **Rotação do segredo do webhook (D13): proposta de adiar, aguardando o dono.** A opção recomendada pede migration (o segredo anterior valendo por N minutos), e a alternativa abre uma janela de 401 na entrada do WhatsApp. Ninguém pediu a rotação até aqui, e ela não pode ser testada em produção.
+> - **Fora do plano, saído da revisão do 12a (2026-10-01, PR próprio):** o proxy passou a recusar escrita que não partiu do próprio app (`isCrossOriginWrite`). Vale para todas as rotas de sessão, e não só para as da Fase 5; o webhook e a API v1 ficam de fora. Ver `AGENTS.md` §3.2 e o PROGRESS da data.
 
 **PR 13: `feat(conexao)`, front das abas** · front · G · depende dos PRs 5 e 12
 - **Abas com a aba na URL:** é o 3º uso, então `service-settings-tabs.tsx` vira um componente em `src/components/layout`.
