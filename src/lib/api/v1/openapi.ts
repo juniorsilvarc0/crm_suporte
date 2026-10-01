@@ -25,6 +25,9 @@ import {
   conversationMessageSchema,
   handoffBodySchema,
   handoffResultSchema,
+  MESSAGES_PER_CONVERSATION_PER_HOUR,
+  MESSAGES_PER_CONVERSATION_PER_MIN,
+  messageSendBodySchema,
 } from "@/lib/api/v1/conversations";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import {
@@ -286,6 +289,8 @@ export function buildOpenApiDocument() {
         TimelinePage: z.toJSONSchema(pageOf(timelineItemSchema)),
         Conversation: z.toJSONSchema(itemOf(conversationDetailSchema)),
         ConversationMessagePage: z.toJSONSchema(pageOf(conversationMessageSchema)),
+        ConversationMessage: z.toJSONSchema(itemOf(conversationMessageSchema)),
+        MessageSend: z.toJSONSchema(messageSendBodySchema, { io: "input" }),
         Handoff: z.toJSONSchema(handoffBodySchema, { io: "input" }),
         HandoffResult: z.toJSONSchema(itemOf(handoffResultSchema)),
         ActiveTicket: z.toJSONSchema(activeTicketBodySchema, { io: "input" }),
@@ -761,6 +766,67 @@ export function buildOpenApiDocument() {
             "404": conversationNotFoundError,
             "503": unavailableError,
             ...authErrors,
+          },
+        },
+        post: {
+          summary:
+            "Envia um TEXTO ao cliente pelo WhatsApp. A mensagem fica gravada com o token como autor: `sender_type` " +
+            "`ai` para um token de IA, `system` para um de integração. O CRM não assina nem altera o texto (só tira " +
+            "o espaço das pontas). A IA só envia na conversa que está com ela (`status: bot`); depois do handoff, " +
+            "ou com um analista atendendo, é 409. O envio é NO MÁXIMO UMA VEZ por Idempotency-Key, e a chave vale " +
+            "para um texto só, para sempre nesta conversa. Depois de um 502 a mensagem não saiu, e a mesma chave " +
+            "tenta de novo. Depois de um 504 ela PODE ter saído: a mesma chave não manda de novo enquanto não se " +
+            "souber, só responde o que a mensagem virou (200 quando o WhatsApp confirmar; 504 enquanto não se sabe; " +
+            "se o WhatsApp avisar que ela falhou, a chave volta a tentar). Para insistir numa mensagem de desfecho " +
+            "desconhecido é preciso outra chave, sabendo que o cliente pode recebê-la em dobro. " +
+            `Tetos por conversa, por token: ${MESSAGES_PER_CONVERSATION_PER_MIN} envios por minuto e ` +
+            `${MESSAGES_PER_CONVERSATION_PER_HOUR} por hora. Escopo: \`messages:send\`.`,
+          parameters: [idParam("da conversa"), idempotencyKeyParam],
+          requestBody: { required: true, content: json("MessageSend") },
+          responses: {
+            "201": {
+              description:
+                "A mensagem que o WhatsApp aceitou, como está gravada. O `delivery_status` vem `sent`, ou já " +
+                "`delivered`/`read` se a confirmação chegou antes da resposta; `pending` só se a gravação do aceite " +
+                "falhou (a mensagem saiu mesmo assim).",
+              content: json("ConversationMessage"),
+            },
+            "200": {
+              description:
+                "A mensagem que esta Idempotency-Key já tinha enviado, sem reenviar, como está agora (`delivery_status`, " +
+                "`is_deleted`).",
+              content: json("ConversationMessage"),
+            },
+            "400": errorResponse(
+              "Corpo inválido (`validation_error`), JSON inválido (`invalid_json`) ou Idempotency-Key ausente/malformada."
+            ),
+            "404": conversationNotFoundError,
+            "409": errorResponse(
+              "A conversa não está com a IA (`conversation_not_owned_by_ai`, com `current`); ou ela não tem canal de " +
+                "WhatsApp para envio (`channel_unavailable`: sem telefone ou sem integração); ou a mesma " +
+                "Idempotency-Key ainda está em andamento (`idempotency_in_progress`)."
+            ),
+            "413": errorResponse("Corpo acima de 1 MB (`payload_too_large`)."),
+            "415": errorResponse("Corpo fora de JSON (`unsupported_media_type`)."),
+            "422": errorResponse(
+              "Idempotency-Key já usada com outra requisição, ou nesta conversa para outra mensagem (`idempotency_key_reused`)."
+            ),
+            "502": errorResponse(
+              "A mensagem NÃO saiu (`whatsapp_unavailable`, com `Retry-After`): o WhatsApp recusou o envio ou não " +
+                "foi alcançado. Ela fica gravada como não enviada (`failed`); repetir com a MESMA chave tenta de " +
+                "novo a mesma mensagem, sem duplicar. Se continuar falhando, passe a conversa para um analista."
+            ),
+            "504": errorResponse(
+              "O WhatsApp não confirmou o envio (`delivery_unknown`, com `Retry-After`): a mensagem pode ou não ter " +
+                "saído, e fica gravada como `pending`. Repita o pedido com a MESMA chave para saber o desfecho; " +
+                "nada é reenviado."
+            ),
+            "503": unavailableError,
+            ...authErrors,
+            "429": errorResponse(
+              "Limite do token ou do IP, ou envios demais para esta conversa no minuto ou na hora (`rate_limited`, " +
+                "com `Retry-After`)."
+            ),
           },
         },
       },

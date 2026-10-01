@@ -194,6 +194,40 @@ export const handoffBodySchema = z.strictObject(
   { error: "Envie um objeto JSON." }
 );
 
+/** Teto do texto de uma mensagem enviada pela API (o do WhatsApp Business). */
+export const MESSAGE_TEXT_MAX = 4096;
+
+/**
+ * Quantos envios UM token tenta numa conversa, por minuto e por hora. O limite
+ * do token é por requisição, de qualquer rota: um agente em laço o gastaria
+ * inteiro despejando texto num cliente só, e o WhatsApp bane número que faz
+ * isso. O teto da hora segura o laço que dura, como duas automações
+ * respondendo uma à outra. Contam as tentativas de envio (inclusive a que o
+ * provedor recusa); repetir uma chave que já saiu não conta. Por processo, como
+ * os outros limites da v1 (D5).
+ */
+export const MESSAGES_PER_CONVERSATION_PER_MIN = 20;
+export const MESSAGES_PER_CONVERSATION_PER_HOUR = 100;
+
+/**
+ * POST /conversations/{id}/messages: só texto. O CRM não assina nem altera o
+ * conteúdo (D12: quem assina é a IA); só tira o espaço das pontas.
+ */
+export const messageSendBodySchema = z.strictObject(
+  {
+    text: z
+      .string({ error: "Informe o texto." })
+      .trim()
+      .min(1, { error: "Informe o texto." })
+      .max(MESSAGE_TEXT_MAX, { error: `Máximo de ${MESSAGE_TEXT_MAX.toLocaleString("pt-BR")} caracteres.` })
+      .refine(isPgSafeText, PG_UNSAFE_TEXT_MESSAGE)
+      .describe(
+        "O texto que vai ao cliente pelo WhatsApp, como está: o CRM não acrescenta assinatura. Evite `{{...}}`: o provedor do WhatsApp troca marcadores como `{{name}}` antes de entregar, e o cliente receberia um texto diferente do gravado."
+      ),
+  },
+  { error: "Envie um objeto JSON." }
+);
+
 /** PUT /conversations/{id}/active-ticket. `null` tira o foco. */
 export const activeTicketBodySchema = z.strictObject(
   {
