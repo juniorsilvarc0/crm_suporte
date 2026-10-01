@@ -134,13 +134,13 @@ isOneToOne: false
                   ]
                 },"chat_messages": {
                   Row: {
-                    "content": string | null,"conversation_id": string,"created_at": string,"delivery_status": string,"direction": string,"external_id": string | null,"id": string,"is_deleted": boolean,"media_bucket": string | null,"media_key": string | null,"media_mime_type": string | null,"media_url": string | null,"metadata": NonNullable<Json>,"quoted_message_id": string | null,"sender_type": string,"sent_by_user_id": string | null,"ticket_id": string | null,"type": string
+                    "content": string | null,"conversation_id": string,"created_at": string,"delivery_status": string,"direction": string,"external_id": string | null,"id": string,"is_deleted": boolean,"media_bucket": string | null,"media_key": string | null,"media_mime_type": string | null,"media_url": string | null,"metadata": NonNullable<Json>,"quoted_message_id": string | null,"sender_type": string,"sent_by_token_id": string | null,"sent_by_user_id": string | null,"ticket_id": string | null,"type": string
                   }
                   Insert: {
-                    "content"?: string | null,"conversation_id": string,"created_at"?: string,"delivery_status"?: string,"direction": string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type": string,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
+                    "content"?: string | null,"conversation_id": string,"created_at"?: string,"delivery_status"?: string,"direction": string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type": string,"sent_by_token_id"?: string | null,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
                   }
                   Update: {
-                    "content"?: string | null,"conversation_id"?: string,"created_at"?: string,"delivery_status"?: string,"direction"?: string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type"?: string,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
+                    "content"?: string | null,"conversation_id"?: string,"created_at"?: string,"delivery_status"?: string,"direction"?: string,"external_id"?: string | null,"id"?: string,"is_deleted"?: boolean,"media_bucket"?: string | null,"media_key"?: string | null,"media_mime_type"?: string | null,"media_url"?: string | null,"metadata"?: NonNullable<Json>,"quoted_message_id"?: string | null,"sender_type"?: string,"sent_by_token_id"?: string | null,"sent_by_user_id"?: string | null,"ticket_id"?: string | null,"type"?: string
                   }
                   Relationships: [
                     {
@@ -154,6 +154,12 @@ isOneToOne: false
       columns: ["quoted_message_id"]
 isOneToOne: false
       referencedRelation: "chat_messages"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "chat_messages_sent_by_token_id_fkey"
+      columns: ["sent_by_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
       referencedColumns: ["id"]
     },{
       foreignKeyName: "chat_messages_sent_by_user_id_fkey"
@@ -840,6 +846,9 @@ isOneToOne: false
                            },
 "clear_chat_conversation":
 { Args: { "p_conversation_id": string }; Returns: Json
+                           },
+"conversation_handoff":
+{ Args: { "p_actor_token_id": string,"p_conversation_id": string,"p_reason": string,"p_summary"?: string,"p_ticket_id"?: string }; Returns: Json
                            },
 "create_app_user":
 { Args: { "p_apelido_atendimento"?: string,"p_assinar_mensagens"?: boolean,"p_avatar_color": string,"p_email": string,"p_must_change_password"?: boolean,"p_name": string,"p_password": string,"p_role": string }; Returns: {
