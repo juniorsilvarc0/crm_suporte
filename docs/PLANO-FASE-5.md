@@ -165,6 +165,19 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
   - `api/v1/conversations/[id]` (GET), `messages` (GET/POST), `handoff` e `active-ticket` (via `setActiveTicket`).
 - **Pronto quando:** a mensagem da IA aparece como "IA", preenche `first_ai_response_at` e é conciliada no eco; numa conversa `human`, o POST responde 409.
 
+> **PR 10 dividido em dois** (2026-10-01), para caber numa revisão:
+> - **10a, feito:** o que não envia nada ao WhatsApp.
+>   - `GET /conversations/{id}` e `GET /conversations/{id}/messages` (`conversations:read`). As mensagens vêm da mais nova para a mais antiga, com cursor próprio; a nota interna só entra com `comments:read`.
+>   - `POST /conversations/{id}/handoff` (`conversations:handoff`, com Idempotency-Key): chama `conversation_handoff` e devolve o resultado do pedido (`conversation_id`, `status`, `changed`, `ticket_id`, `note_id`). Conversa resolvida é 409 `conversation_not_owned_by_ai`, com `current`.
+>   - `PUT /conversations/{id}/active-ticket` (`tickets:write`, sem Idempotency-Key: PUT já é idempotente), via `setActiveTicket`. Devolve o foco que ficou.
+>   - As escritas devolvem o resultado da operação, não a conversa: o escopo de escrita não dá a leitura. O telefone do canal nunca sai.
+> - **10b, a fazer:**
+>   - `send-outbound.ts` e `POST /conversations/{id}/messages` (o envio da IA, com `client_id`), mais o 409 em conversa que não é `bot`;
+>   - na tela: rótulo de `ticket.handoff_requested` na timeline, assinatura da nota sem autor usuário e "IA" na mensagem da IA;
+>   - `sent_by_token_id` nos itens de mensagem da timeline;
+>   - quem apaga a nota da IA (proposta: admin apaga, ninguém edita).
+> - **Fora dos dois, num PR próprio:** o teto do corpo nas escritas sem Idempotency-Key (o `withApi` só confere o Content-Length).
+
 **PR 11: `feat(chat)`, relay v1** · back · M · depende dos PRs 2, 4 e 7, e das decisões D2 e D3
 - **O que muda:**
   - o envelope sai sem `token`, com `relay_version`, `conversation_status`, `conversation_id`, `contact`, `customer`, `contract{status,alert}` e `active_ticket` na raiz, montados pelo builder do PR 7;

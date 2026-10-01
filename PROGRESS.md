@@ -27,6 +27,84 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5 · PR 10a: conversas na API v1 (ler, handoff e ticket em foco)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e os integradores leem a conversa e as mensagens, passam a conversa para um humano e escolhem o ticket em foco pela v1. Nada aqui envia mensagem ao WhatsApp.
+**Arquivos alterados:**
+- `src/app/api/v1/conversations/[id]/route.ts`, `messages/route.ts`, `handoff/route.ts` e `active-ticket/route.ts` (novos), com `src/app/api/v1/conversations.test.ts`;
+- `src/features/chat/queries/get-api-conversation.ts` e `src/features/chat/lib/conversation-status.ts` (novos, o segundo com teste);
+- `src/lib/api/v1/conversations.ts`, `cursor.ts` (com teste), `openapi.ts` e `tickets.ts`;
+- `src/features/tickets/server/ticket-service.ts`, `lib/map-ticket-error.ts` (os dois com teste) e `types.ts`;
+- `src/app/api/v1/api-v1-guards.test.ts` (varredores novos, que valem para toda rota da v1);
+- `PRD.md`, `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **`GET /conversations/{id}`** (`conversations:read`): quem conduz, o ticket em foco e o contato. Só lê: não marca como lida.
+- **`GET /conversations/{id}/messages`** (`conversations:read`): da mais nova para a mais antiga, com cursor próprio e `limit` de 1 a 200. Traz o token ou o usuário que enviou. Sem mídia por URL.
+- **`POST /conversations/{id}/handoff`** (`conversations:handoff`, com Idempotency-Key): chama `conversation_handoff` e devolve o resultado do pedido (`conversation_id`, `status`, `changed`, `ticket_id`, `note_id`). Conversa resolvida é 409 `conversation_not_owned_by_ai`, com `current`.
+- **`PUT /conversations/{id}/active-ticket`** (`tickets:write`): chama `ticket_set_active` e devolve o foco que ficou.
+- **`handoffConversation`** em `ticket-service.ts`, ao lado do "Assumir": mesma tradução de erros, mesmo aviso ao agente quando a conversa passa a `human`, e o telefone do canal nunca sai dali.
+- **Mapa de erros:** `CONVERSATION_NOT_OWNED_BY_AI` (409, com o status da conversa lido do HINT), `INVALID_HANDOFF` (400) e `INVALID_SENDER` (500). O teste do mapa passou a conferir as TAGs das duas migrations.
+- **`cursor.ts`:** um codec só para o par (instante, id); o cursor das mensagens é o `m1`, e o de cadastro (`v1`) não vale nele.
+
+**Decisões tomadas:**
+- **PR 10 dividido em dois.** O 10a é o que não envia nada ao WhatsApp. O envio da IA mexe na rota de envio da tela (ponto sensível) e vai sozinho no 10b, com os rótulos na tela.
+- **As escritas devolvem o resultado da operação, não a conversa.** A 1ª versão relia a conversa e a devolvia inteira. Os revisores mostraram que um token só com `tickets:write` ou só com `conversations:handoff` passava a ler status, contato e datas sem `conversations:read`. Sem a releitura também some o 503 depois de a escrita já ter valido.
+- **Nota interna só com `comments:read`,** como na timeline: o corte é na consulta, para não furar a paginação. A IA não lê a própria nota de handoff.
+- **O foco exige `tickets:write`,** não um escopo de conversa: é o foco que decide em que ticket a mensagem cai, e abrir ticket (mesmo escopo) já o move.
+- **O `note_id` sai na resposta do handoff e na trilha do ticket.** É só um id: sem `comments:read` e `conversations:read` não há como ler a nota.
+- **Conversa arquivada ou removida é devolvida no GET,** como no `/context`: remover só tira da caixa de entrada.
+- **`PUT` sem Idempotency-Key:** pôr o mesmo foco de novo já é no-op.
+
+**Verificação:**
+- **Rotas:** 95 casos em `conversations.test.ts`, com as respostas conferidas contra os schemas publicados e os filtros conferidos na consulta.
+- **Varredores da v1** (`api-v1-guards.test.ts`), agora para as 34 rotas:
+  - o log leva o molde da rota;
+  - o escopo e a Idempotency-Key que o OpenAPI anuncia são os que a rota exige;
+  - todo caminho e método do OpenAPI tem rota;
+  - todo `$ref` aponta para um componente que existe, e todo componente é usado.
+- **Mapa de erros:** o teste lê todas as migrations de `_tickets` em diante. Uma TAG nova sem entrada no mapa reprova, em vez de virar 500 em produção.
+- **Mutação:** 93 trocas no código do PR (rotas, consulta, schemas, cursor, serviço, mapa de erros, OpenAPI). Nenhuma sobreviveu. O 3º revisor tinha achado 22 que atravessavam a suíte; todas viraram teste.
+- **Contra o banco local** (`next dev` da worktree, tokens criados e apagados no fim), 41 verificações:
+  - leitura da conversa sem telefone nem nome, e só com as chaves do contrato;
+  - mensagens paginadas sem repetir nem pular; a nota do time só para o token com `comments:read`;
+  - foco: troca, no-op, `null`, ticket de outra conversa (422);
+  - handoff: nota e evento gravados uma vez só apesar das repetições; a mesma chave repete a resposta (`Idempotent-Replayed`), e outro corpo com a mesma chave é 422; conversa resolvida é 409 com `current`; conversa arquivada sai do arquivo;
+  - um token só com `conversations:handoff` passa a conversa e não recebe nenhum dado dela; o `GET` com ele é 403;
+  - o corpo guardado da idempotência não tem o telefone;
+  - as 30 chamadas ficaram em `integration_logs` com o molde da rota.
+  Nenhuma URL de agente estava configurada no servidor de teste: nada saiu para fora.
+- **Revisão adversarial** (3 revisores independentes): nenhum defeito de comportamento. Corrigidos:
+  - a conversa devolvida a quem não tem o escopo de leitura, e o 503 depois da escrita;
+  - os textos do OpenAPI (ordem das mensagens, chave nova a cada handoff, 403 de token revogado no meio da chamada);
+  - as lacunas de teste. A mais séria: a regra da nota interna em `/messages` só era medida com os escopos padrão do arnês, e liberá-la para `comments:write` (que a IA tem) passava. Agora há uma tabela de escopos.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3177) · build ✓.
+
+**Pendências / próximos passos:**
+- **PR 10b:**
+  - `send-outbound.ts` e `POST /conversations/{id}/messages`, com o 409 em conversa que não é `bot`;
+  - na tela: rótulo de `ticket.handoff_requested`, assinatura da nota sem autor usuário e "IA" na mensagem da IA;
+  - `sent_by_token_id` nos itens de mensagem da timeline (hoje só `GET /messages` o traz);
+  - quem apaga a nota da IA (proposta: admin apaga, ninguém edita).
+- **Teto do corpo nas escritas sem Idempotency-Key** (este `PUT`, `PATCH` de ticket e de contato, `transitions`, `assign`): o `withApi` só confere o Content-Length. Sem ele (corpo em pedaços), o JSON é lido inteiro, até o limite de 64 MB do servidor. Em produção o nginx repassa com Content-Length, e o teto de 1 MB vale. Fechar no `withApi`, num PR próprio.
+- **Decisões para o dono:**
+  - um token com `conversations:handoff` pode passar qualquer conversa `bot` para um humano; o único freio é o limite de requisições do token, e a volta é pela tela, uma por vez;
+  - o foco pode ser trocado pela API mesmo com a conversa em `human` (abrir ticket já fazia isso). Restringir a IA à conversa `bot` valeria para as duas rotas.
+- **Contato anonimizado:** `/context` e `/contacts` o escondem; `GET /conversations/{id}`, `/messages` e a timeline não conferem. Ainda não existe fluxo que anonimize; quando existir, essas leituras entram junto.
+- **Limites de texto contam unidades UTF-16,** não caracteres: um motivo com 251 emojis é recusado como "acima de 500". Vale para título, descrição e comentário também.
+- **O `pattern` de uuid no OpenAPI sai sem a opção de ignorar caixa:** a API aceita maiúsculas e o schema publicado não. Vale para todos os campos de id da v1.
+- **Teste de tela instável:** `contact-info-sheet.test.tsx`, "toque fora com o Novo ticket sujo…". Digita no título antes de o catálogo carregar, e com a máquina carregada só a 1ª letra fica. Falha também sem este PR. Corrigir à parte.
+
+**Armadilhas descobertas:**
+- **Devolver o recurso relido numa escrita é dar a leitura dele.** Se a rota de escrita tem escopo próprio, o token passa a ler sem o escopo de leitura, mesmo quando nada muda. Devolva o resultado da operação.
+- **Idempotency-Key guarda o `changed: false` por 24 h.** Uma IA que derive a chave da conversa recebe o replay mesmo depois de a conversa voltar para `bot`. Chave nova a cada pedido.
+- **`created_at` da mensagem não é a hora de chegada.** Na entrada é a hora do provedor; na saída, a do servidor. Quem sincroniza relendo "até a primeira mensagem conhecida" perde a que chegou atrasada.
+- **O arnês de teste da v1 devolve a mesma linha para qualquer consulta.** Um caso só prova um filtro se conferir a cadeia (`has`, `where`); e "a rota não lê X" se confere com `h.chains.X` indefinido.
+- **`next build` com o `next dev` da mesma pasta rodando:** pare o servidor de teste antes.
+- **O `vitest` roda um teste velho de dentro de `.next/standalone`** (cópia que o build deixa; o `vitest.config.ts` não tem `exclude`). Na máquina, a contagem vem com 1 arquivo e 3 testes a mais que no CI. Não é deste PR.
+- **Teste do arnês só com os escopos padrão não mede regra de escopo.** `h.reset([...])` dá todos os escopos do arquivo a todo caso: "sem o escopo X" e "com escopo a mais" precisam trocar `h.scopes` no próprio caso.
+
 ## [2026-10-01] Fase 5 · PR 9: banco das conversas da IA (autoria por token e handoff)
 
 **Agente/Modelo:** Claude Opus 5.5.
