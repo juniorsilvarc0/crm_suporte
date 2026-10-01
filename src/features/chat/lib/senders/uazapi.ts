@@ -16,7 +16,7 @@
 // status (messages_update) e p/ deduplicar o echo `fromMe` no webhook.
 
 import { siteConfig } from "@/config/site";
-import { safeBaseUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import { safeBaseUrl, UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
 import {
   buildMessageLinkPreview,
   type MessageLinkPreview,
@@ -47,6 +47,87 @@ export type UazapiMediaType =
   | "document"
   | "sticker";
 
+/**
+ * O provedor respondeu com erro. A mensagem é a de sempre; o status e o que o
+ * corpo diz vêm à parte, para `uazapiSendDefinitelyFailed`.
+ */
+export class UazapiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** `error_source` do corpo de erro da uazapi (ex.: `whatsapp_server`). */
+    readonly errorSource: string | null,
+    /** `error` do corpo de erro da uazapi (ex.: `No session`). */
+    readonly providerError: string | null = null
+  ) {
+    super(message);
+  }
+}
+
+function errorBodyOf(body: string): { source: string | null; error: string | null } {
+  try {
+    const json = JSON.parse(body) as { error_source?: unknown; error?: unknown } | null;
+    return {
+      source: typeof json?.error_source === "string" ? json.error_source : null,
+      error: typeof json?.error === "string" ? json.error : null,
+    };
+  } catch {
+    return { source: null, error: null };
+  }
+}
+
+/**
+ * Erros de rede em que nenhum pedido chegou ao provedor: a conexão nem abriu,
+ * ou o certificado dele foi recusado ainda no aperto de mão. Códigos medidos no
+ * Node 22 e 25 (`fetch failed`, com o código em `cause`).
+ */
+const NEVER_REQUESTED = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
+
+/**
+ * O que a uazapi escreve quando não há sessão do WhatsApp (`No session`,
+ * `client is not connected`): sem sessão não havia como enviar. São os textos
+ * do OpenAPI dela em outras rotas; o do `/send/text` deslogado não está
+ * documentado nem foi medido.
+ */
+const NO_SESSION = /no session|not connected/i;
+
+/**
+ * A falha do envio deixa CERTEZA de que a mensagem não saiu?
+ *
+ * Só nestes casos: a URL da integração não passou na guarda; nenhum pedido
+ * chegou ao provedor; o provedor recusou o pedido (4xx); ou o corpo do erro diz
+ * que o próprio WhatsApp recusou a mensagem (`error_source: whatsapp_server`,
+ * que o OpenAPI da uazapi documenta no 500) ou que não há sessão. Todo o resto
+ * é desfecho DESCONHECIDO — demora, conexão que cai no meio, 5xx genérico ou de
+ * proxy, resposta ilegível: o provedor pode ter aceitado, e reenviar entregaria
+ * a mesma mensagem duas vezes.
+ */
+export function uazapiSendDefinitelyFailed(err: unknown): boolean {
+  if (err instanceof UnsafeUrlError) return true;
+  if (err instanceof UazapiHttpError) {
+    return (
+      (err.status >= 400 && err.status < 500) ||
+      err.errorSource === "whatsapp_server" ||
+      NO_SESSION.test(err.providerError ?? "")
+    );
+  }
+  const cause = err instanceof Error ? err.cause : null;
+  const code = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
+  return typeof code === "string" && NEVER_REQUESTED.has(code);
+}
+
 /** Número para envio: só dígitos (DDI incluso), sem '+' nem sufixos. */
 export function toUazapiNumber(phone: string): string {
   return phone.replace(/\D/g, "");
@@ -70,10 +151,19 @@ async function postUazapi(
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`uazapi ${path} ${res.status}: ${text.slice(0, 200)}`);
+    const body = errorBodyOf(text);
+    throw new UazapiHttpError(
+      `uazapi ${path} ${res.status}: ${text.slice(0, 200)}`,
+      res.status,
+      body.source,
+      body.error
+    );
   }
 
-  const json = (await res.json().catch(() => ({}))) as {
+  // 2xx é aceite, venha o corpo que vier: ilegível ou `null` fica sem ids, e
+  // não vira falha (que faria a mesma mensagem ser reenviada).
+  const parsed: unknown = await res.json().catch(() => null);
+  const json = (parsed && typeof parsed === "object" ? parsed : {}) as {
     id?: unknown;
     messageid?: unknown;
   };

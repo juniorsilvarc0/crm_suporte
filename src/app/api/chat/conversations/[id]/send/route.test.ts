@@ -26,7 +26,7 @@ const params = { params: Promise.resolve({ id: "conversation-1" }) };
 
 type Result = { data?: unknown; error?: unknown };
 
-const calls: { table: string; method: string; payload?: unknown }[] = [];
+const calls: { table: string; method: string; payload?: unknown; args?: unknown[] }[] = [];
 const queues = new Map<string, Result[]>();
 
 /**
@@ -38,8 +38,8 @@ const queues = new Map<string, Result[]>();
 function builder(table: string, result: Result) {
   const self: Record<string, unknown> = {};
   for (const method of ["select", "insert", "update", "eq", "in", "limit"]) {
-    self[method] = (payload?: unknown) => {
-      calls.push({ table, method, payload });
+    self[method] = (...args: unknown[]) => {
+      calls.push({ table, method, payload: args[0], args });
       return self;
     };
   }
@@ -211,6 +211,24 @@ describe("POST /send — idempotência por clientId", () => {
     expect(insertedMessage()).toBe(false);
   });
 
+  it("para a tela o clientId não é amarrado ao texto: com outro texto no corpo, devolve a linha que já saiu", async () => {
+    queueConversation();
+    const already = {
+      id: "message-1",
+      delivery_status: "sent",
+      content: "*Ana:*\nbom dia",
+      metadata: { clientId: "abc-123" },
+    };
+    queue("chat_messages", { data: already, error: null });
+
+    const response = await POST(request({ content: "outro texto", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: already });
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
+  });
+
   it("reenvia a MESMA linha que falhou, sem assinar duas vezes", async () => {
     queueConversation();
     queue(
@@ -308,6 +326,22 @@ describe("POST /send — idempotência por clientId", () => {
     ).toBe(true);
   });
 
+  it("credencial que não pôde ser lida: 500, e o log leva o erro do banco (não um desfecho do helper)", async () => {
+    queueConversation();
+    const failure = new Error("vault fora do ar");
+    credentialsMock.mockRejectedValue(failure);
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Internal error" });
+    expect(log).toHaveBeenCalledWith("[POST /api/chat/conversations/[id]/send]", failure);
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
+    log.mockRestore();
+  });
+
   it("sem token no Vault não envia nem grava mensagem", async () => {
     queueConversation();
     queue("chat_messages", { data: null, error: null });
@@ -316,8 +350,357 @@ describe("POST /send — idempotência por clientId", () => {
     const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "No integration" });
     expect(credentialsMock).toHaveBeenCalledWith(expect.anything(), "integration-1");
     expect(sendTextMock).not.toHaveBeenCalled();
     expect(insertedMessage()).toBe(false);
+  });
+});
+
+// O envio passou a morar em send-outbound.ts (o mesmo caminho da API v1). Estes
+// casos fixam o que a TELA recebe de cada desfecho dele.
+describe("POST /send — desfechos do envio", () => {
+  it("conversa sem endereço do canal é 400, sem buscar a credencial nem gravar", async () => {
+    queue("chat_conversations", {
+      data: { id: "conversation-1", external_id: " ", contact_phone: null, integration_id: "integration-1" },
+      error: null,
+    });
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "No phone on conversation" });
+    expect(credentialsMock).not.toHaveBeenCalled();
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
+  });
+
+  it("falha do provedor é 502, e a linha vira failed (sem regredir um tick)", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null } // update para failed
+    );
+    sendTextMock.mockRejectedValue(new Error("uazapi fora do ar"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "Falha ao enviar pela API do WhatsApp." });
+    const failed = calls.find(
+      (call) =>
+        call.table === "chat_messages" &&
+        call.method === "update" &&
+        (call.payload as { delivery_status?: string })?.delivery_status === "failed"
+    );
+    expect(failed).toBeDefined();
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("responder: grava a citação e manda ao provedor o id DELE da mensagem citada", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "quoted-1", external_id: "provider-quoted" }, error: null }, // a citada
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null }, // update external_id
+      { error: null }, // update delivery_status
+      { data: { id: "message-1", delivery_status: "sent" }, error: null }
+    );
+
+    const response = await POST(request({ content: "sim", quotedMessageId: "quoted-1" }), params);
+
+    expect(response.status).toBe(200);
+    expect(calls.find((call) => call.table === "chat_messages" && call.method === "insert")?.payload).toMatchObject({
+      quoted_message_id: "quoted-1",
+    });
+    expect(sendTextMock).toHaveBeenCalledWith(
+      "https://api.uazapi.test",
+      "token",
+      "5511999999999",
+      "*Ana:*\nsim",
+      { trackId: "message-1", replyId: "provider-quoted" }
+    );
+  });
+
+  it("para o analista até a demora do provedor vira failed: é ele quem decide se reenvia", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null } // update para failed
+    );
+    sendTextMock.mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(502);
+    expect(
+      calls.some(
+        (call) =>
+          call.table === "chat_messages" &&
+          call.method === "update" &&
+          (call.payload as { delivery_status?: string })?.delivery_status === "failed"
+      )
+    ).toBe(true);
+    log.mockRestore();
+  });
+
+  it("para o analista, a gravação que lança depois do envio segue como sempre foi: failed e 502", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      // gravar o external_id LANÇA (não devolve erro)
+      Object.defineProperty({}, "error", {
+        get() {
+          throw new Error("rede do banco caiu");
+        },
+      }),
+      { error: null } // update para failed
+    );
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(sendTextMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(502);
+    expect(
+      calls.some(
+        (call) =>
+          call.table === "chat_messages" &&
+          call.method === "update" &&
+          (call.payload as { delivery_status?: string })?.delivery_status === "failed"
+      )
+    ).toBe(true);
+    log.mockRestore();
+  });
+
+  it("clique duplo em que a outra requisição já falhou: devolve a linha failed, para a tela oferecer o reenvio", async () => {
+    queueConversation();
+    const winner = { id: "message-1", delivery_status: "failed", metadata: { clientId: "abc-123" } };
+    queue(
+      "chat_messages",
+      { data: null, error: null },
+      { data: null, error: { code: "23505" } },
+      { data: winner, error: null }
+    );
+
+    const response = await POST(request({ content: "bom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: winner });
+    expect(sendTextMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["failed", "sent"])(
+    "a tela não reenvia nem devolve a mensagem %s de um token: 409, sem gravar nem mandar",
+    async (status) => {
+      queueConversation();
+      queue("chat_messages", {
+        data: {
+          id: "message-1",
+          delivery_status: status,
+          content: "Olá, sou a assistente.",
+          quoted_message_id: null,
+          sent_by_token_id: "token-1",
+          sent_by_user_id: null,
+          metadata: { clientId: "k0123456789abcdef0123456789abcdef01234567" },
+        },
+        error: null,
+      });
+
+      const response = await POST(
+        request({ content: "Olá, sou a assistente.", clientId: "k0123456789abcdef0123456789abcdef01234567" }),
+        params
+      );
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual({
+        error: "Esta mensagem foi enviada por uma integração e só ela pode reenviá-la.",
+      });
+      expect(sendTextMock).not.toHaveBeenCalled();
+      expect(calls.some((call) => call.table === "chat_messages" && ["insert", "update"].includes(call.method))).toBe(false);
+    }
+  );
+
+  it("mensagem citada que não é desta conversa é 400, sem gravar nem mandar", async () => {
+    queueConversation();
+    queue("chat_messages", { data: null, error: null }); // a citada não existe aqui
+
+    const response = await POST(request({ content: "sim", quotedMessageId: "de-outra-conversa" }), params);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "quoted message not found" });
+    expect(sendTextMock).not.toHaveBeenCalled();
+    expect(insertedMessage()).toBe(false);
+  });
+
+  // ── o protocolo com o banco ─────────────────────────────────────────────────
+
+  /** O que o envio fez em chat_messages, na ordem, com os argumentos. */
+  const messageSteps = () =>
+    calls.filter((call) => call.table === "chat_messages").map((call) => [call.method, ...(call.args ?? [])]);
+
+  it("envio aceito: os UPDATEs miram a linha gravada e o sent só sobrescreve pending", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null }, // update external_id
+      { error: null }, // update delivery_status
+      { data: { id: "message-1", delivery_status: "sent" }, error: null }
+    );
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: { id: "message-1", delivery_status: "sent" } });
+    expect(messageSteps().slice(2)).toEqual([
+      ["update", { external_id: "provider-1", metadata: { uazapiId: "uazapi-1" } }],
+      ["eq", "id", "message-1"],
+      ["update", { delivery_status: "sent" }],
+      ["eq", "id", "message-1"],
+      ["in", "delivery_status", ["pending"]],
+      ["select"],
+      ["eq", "id", "message-1"],
+    ]);
+  });
+
+  it("falha do provedor: só esta linha vira failed, e só se ainda estava pending", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null } // update para failed
+    );
+    sendTextMock.mockRejectedValue(new Error("uazapi fora do ar"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await POST(request({ content: "bom dia" }), params);
+
+    expect(messageSteps().slice(2)).toEqual([
+      ["update", { delivery_status: "failed" }],
+      ["eq", "id", "message-1"],
+      ["in", "delivery_status", ["pending"]],
+    ]);
+    log.mockRestore();
+  });
+
+  it("no reenvio valem o texto e a citação da LINHA, não os do corpo (a tela manda o texto já assinado)", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      {
+        data: {
+          id: "message-1",
+          delivery_status: "failed",
+          content: "*Ana:*\nbom dia",
+          quoted_message_id: "quoted-1",
+          metadata: { clientId: "abc-123" },
+        },
+        error: null,
+      },
+      { data: { id: "quoted-1", external_id: "provider-quoted" }, error: null }, // a citada da linha
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // volta a pendente
+      { error: null }, // update external_id
+      { error: null }, // update delivery_status
+      { data: { id: "message-1", delivery_status: "sent" }, error: null }
+    );
+
+    // O "Tentar novamente" manda o conteúdo da bolha, que já está assinado (use-messages.ts).
+    const response = await POST(request({ content: "*Ana:*\nbom dia", clientId: "abc-123" }), params);
+
+    expect(response.status).toBe(200);
+    expect(insertedMessage()).toBe(false);
+    expect(sendTextMock).toHaveBeenCalledWith("https://api.uazapi.test", "token", "5511999999999", "*Ana:*\nbom dia", {
+      trackId: "message-1",
+      replyId: "provider-quoted",
+    });
+    // Só a linha que falhou volta a pending.
+    const flip = messageSteps().findIndex(
+      ([method, values]) => method === "update" && (values as { delivery_status?: string }).delivery_status === "pending"
+    );
+    expect(messageSteps().slice(flip, flip + 3)).toEqual([
+      ["update", { delivery_status: "pending" }],
+      ["eq", "id", "message-1"],
+      ["eq", "delivery_status", "failed"],
+    ]);
+  });
+
+  it("a citação é procurada só dentro da conversa", async () => {
+    queueConversation();
+    queue("chat_messages", { data: null, error: null });
+
+    await POST(request({ content: "sim", quotedMessageId: "de-outra-conversa" }), params);
+
+    expect(messageSteps().filter(([method]) => method === "eq")).toEqual([
+      ["eq", "id", "de-outra-conversa"],
+      ["eq", "conversation_id", "conversation-1"],
+    ]);
+  });
+
+  it("a conversa é lida pelo id da rota", async () => {
+    queueConversation();
+    queue("chat_messages", { data: { id: "message-1", delivery_status: "pending" }, error: null }, { error: null }, { error: null }, {
+      data: { id: "message-1", delivery_status: "sent" },
+      error: null,
+    });
+
+    await POST(request({ content: "bom dia" }), params);
+
+    expect(calls.filter((call) => call.table === "chat_conversations").map((call) => [call.method, ...(call.args ?? [])])).toEqual([
+      ["select", "id, external_id, contact_phone, integration_id"],
+      ["eq", "id", "conversation-1"],
+    ]);
+  });
+
+  it("a mensagem nasce com a hora do servidor", async () => {
+    queueConversation();
+    queue("chat_messages", { data: { id: "message-1", delivery_status: "pending" }, error: null }, { error: null }, { error: null }, {
+      data: { id: "message-1", delivery_status: "sent" },
+      error: null,
+    });
+    const before = Date.now();
+
+    await POST(request({ content: "bom dia" }), params);
+
+    const inserted = calls.find((call) => call.table === "chat_messages" && call.method === "insert")?.payload as { created_at?: string };
+    expect(Date.parse(String(inserted?.created_at))).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(String(inserted?.created_at))).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("erro do banco ao gravar é 500 sem o detalhe, e nada vai ao WhatsApp", async () => {
+    queueConversation();
+    queue("chat_messages", { data: null, error: { code: "23514", message: "segredo do banco" } });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Internal error" });
+    expect(sendTextMock).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("releitura que falha depois do envio devolve a linha como foi gravada", async () => {
+    queueConversation();
+    queue(
+      "chat_messages",
+      { data: { id: "message-1", delivery_status: "pending" }, error: null }, // insert
+      { error: null }, // update external_id
+      { error: null }, // update delivery_status
+      { data: null, error: { message: "timeout" } } // a releitura falhou
+    );
+
+    const response = await POST(request({ content: "bom dia" }), params);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ message: { id: "message-1", delivery_status: "pending" } });
+    expect(sendTextMock).toHaveBeenCalledTimes(1);
   });
 });

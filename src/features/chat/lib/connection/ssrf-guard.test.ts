@@ -1,11 +1,36 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { assertSafeUrl, safeBaseUrl } from "./ssrf-guard";
+import { assertSafeUrl, safeBaseUrl, UnsafeUrlError } from "./ssrf-guard";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 // Nota: em ambiente de teste NODE_ENV !== 'production', então http e localhost
 // são liberados (facilita testes locais); faixas privadas seguem bloqueadas.
 
 describe("assertSafeUrl", () => {
+  // Quem envia distingue "a URL foi recusada, nada saiu" de qualquer outra falha
+  // pelo tipo do erro (senders/uazapi.ts).
+  it.each([
+    ["URL malformada", "não é url", "URL inválida."],
+    ["esquema que não é http(s)", "ftp://exemplo.com", "A URL deve usar http ou https."],
+    ["host de rede interna", "https://10.0.0.5", "A URL aponta para um host de rede interna (bloqueado)."],
+  ])("%s lança UnsafeUrlError, com a mensagem de sempre", (_label, url, message) => {
+    const attempt = () => assertSafeUrl(url);
+
+    expect(attempt).toThrow(UnsafeUrlError);
+    expect(attempt).toThrow(message);
+  });
+
+  it("http em produção lança UnsafeUrlError", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const attempt = () => assertSafeUrl("http://free.uazapi.com");
+
+    expect(attempt).toThrow(UnsafeUrlError);
+    expect(attempt).toThrow("Em produção a URL deve usar HTTPS.");
+  });
+
   it("aceita https público", () => {
     expect(() => assertSafeUrl("https://free.uazapi.com")).not.toThrow();
     expect(assertSafeUrl("https://free.uazapi.com").hostname).toBe("free.uazapi.com");
