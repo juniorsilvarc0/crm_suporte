@@ -20,6 +20,13 @@ import {
 import { triageContextSchema } from "@/lib/api/v1/context";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import {
+  attachmentLinkSchema,
+  attachmentSchema,
+  commentBodySchema,
+  commentSchema,
+  timelineItemSchema,
+} from "@/lib/api/v1/ticket-activity";
+import {
   ticketAssignBodySchema,
   ticketChangeSchema,
   ticketCreateBodySchema,
@@ -163,6 +170,14 @@ const ticketNotFoundError = errorResponse(
   "Não existe, ou o `ref` não é um uuid nem um protocolo numérico (`not_found`)."
 );
 
+const idempotencyKeyParam = {
+  name: "Idempotency-Key",
+  in: "header",
+  required: true,
+  description: "8 a 200 caracteres entre letras, dígitos e `. _ : -`.",
+  schema: { type: "string" },
+};
+
 const ifMatchParam = {
   name: "If-Match",
   in: "header",
@@ -207,7 +222,10 @@ export function buildOpenApiDocument() {
         "informe-o ao suporte. 404 de recurso inexistente vem no envelope (`not_found`); 404 de caminho " +
         "inexistente e 405 vêm do servidor, sem ele. " +
         "POST de criação exige `Idempotency-Key`: repetir a mesma requisição devolve a mesma resposta " +
-        "(`Idempotent-Replayed: true`); a mesma chave com outra requisição é 422 `idempotency_key_reused`.",
+        "(`Idempotent-Replayed: true`); a mesma chave com outra requisição é 422 `idempotency_key_reused`. " +
+        "A chave vale para a URL exata: repita pelo MESMO caminho (o mesmo `ref`, id ou protocolo). " +
+        "Corpo acima de 1 MB (50 MB no anexo) é 413 `payload_too_large`; acima do limite do servidor (64 MB), " +
+        "o 413 vem dele, sem o envelope.",
     },
     servers: [{ url: "/api/v1" }],
     security: [{ bearer: [] }],
@@ -240,6 +258,11 @@ export function buildOpenApiDocument() {
         TicketPatch: z.toJSONSchema(ticketPatchBodySchema, { io: "input" }),
         TicketTransition: z.toJSONSchema(ticketTransitionBodySchema, { io: "input" }),
         TicketAssign: z.toJSONSchema(ticketAssignBodySchema, { io: "input" }),
+        Comment: z.toJSONSchema(itemOf(commentSchema)),
+        CommentCreate: z.toJSONSchema(commentBodySchema, { io: "input" }),
+        Attachment: z.toJSONSchema(itemOf(attachmentSchema)),
+        AttachmentLink: z.toJSONSchema(itemOf(attachmentLinkSchema)),
+        TimelinePage: z.toJSONSchema(pageOf(timelineItemSchema)),
       },
     },
     paths: {
@@ -339,15 +362,7 @@ export function buildOpenApiDocument() {
           summary:
             "Acha a pessoa pelo telefone ou a cria (`source: api`). Contato arquivado volta como está, sem " +
             "desarquivar; o `name` só preenche um nome vazio (renomear é pelo PATCH). Escopo: `contacts:write`.",
-          parameters: [
-            {
-              name: "Idempotency-Key",
-              in: "header",
-              required: true,
-              description: "8 a 200 caracteres entre letras, dígitos e `. _ : -`.",
-              schema: { type: "string" },
-            },
-          ],
+          parameters: [idempotencyKeyParam],
           requestBody: { required: true, content: json("ContactCreate") },
           responses: {
             "200": { description: "Já existia (o contato como está).", content: json("Contact") },
@@ -471,15 +486,7 @@ export function buildOpenApiDocument() {
             "vira o foco da conversa. Idempotente: a mesma `Idempotency-Key` (ou o mesmo `external_id`) deste token " +
             "devolve o ticket já aberto. Numa repetição (`Idempotent-Replayed: true`) o ETag não vem: a versão está " +
             "em `data.version`. Escopo: `tickets:write`.",
-          parameters: [
-            {
-              name: "Idempotency-Key",
-              in: "header",
-              required: true,
-              description: "8 a 200 caracteres entre letras, dígitos e `. _ : -`.",
-              schema: { type: "string" },
-            },
-          ],
+          parameters: [idempotencyKeyParam],
           requestBody: { required: true, content: json("TicketCreate") },
           responses: {
             "200": withEtag("Já existia (o ticket como está).", "Ticket"),
@@ -555,6 +562,126 @@ export function buildOpenApiDocument() {
             "200": withEtag("O ticket com o responsável novo.", "TicketChange"),
             "409": errorResponse("Ticket encerrado não muda (`ticket_terminal`)."),
             ...ticketWriteErrors,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/comments": {
+        post: {
+          summary:
+            "Comentário INTERNO no ticket, com o token como autor. Nunca vai ao cliente; vale também em ticket " +
+            "encerrado. A Idempotency-Key protege a repetição por 24 h; se o servidor cair entre gravar e " +
+            "responder, repetir depois de 5 min pode gravar de novo. Escopo: `comments:write`.",
+          parameters: [ticketRefParam, idempotencyKeyParam],
+          requestBody: { required: true, content: json("CommentCreate") },
+          responses: {
+            "201": { description: "O comentário.", content: json("Comment") },
+            "400": errorResponse(
+              "Corpo inválido (`validation_error`), JSON inválido (`invalid_json`) ou Idempotency-Key ausente/malformada."
+            ),
+            "404": ticketNotFoundError,
+            "409": errorResponse("A mesma Idempotency-Key ainda em andamento (`idempotency_in_progress`)."),
+            "413": errorResponse("Corpo acima de 1 MB (`payload_too_large`)."),
+            "415": errorResponse("Corpo fora de JSON, multipart inclusive (`unsupported_media_type`)."),
+            "422": errorResponse("Idempotency-Key já usada com outra requisição (`idempotency_key_reused`)."),
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/attachments": {
+        post: {
+          summary:
+            "Anexa um arquivo ao ticket, com o token como autor: multipart/form-data, só o campo `file`, até 50 MB. " +
+            'No Content-Disposition da parte, `name="file"` e `filename="..."` vão ENTRE ASPAS, em UTF-8, sem ' +
+            "`filename*` (o padrão do curl, do requests e do n8n; o HttpClient do .NET precisa ser ajustado). " +
+            "HTML, SVG e afins são guardados como application/octet-stream. Reenviar o MESMO arquivo (mesmos bytes, " +
+            "nome e tipo) com a mesma Idempotency-Key repete a resposta sem gravar de novo, por 24 h; se o servidor " +
+            "cair entre gravar e responder, repetir depois de 5 min pode gravar de novo. Escopo: `attachments:write`.",
+          parameters: [ticketRefParam, idempotencyKeyParam],
+          requestBody: {
+            required: true,
+            content: {
+              "multipart/form-data": {
+                schema: {
+                  type: "object",
+                  properties: { file: { type: "string", format: "binary" } },
+                  required: ["file"],
+                  additionalProperties: false,
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "O anexo (sem o arquivo: o link sai pelo GET do anexo).", content: json("Attachment") },
+            "400": errorResponse(
+              "Sem arquivo, mais de um, arquivo vazio ou campo a mais (`validation_error`), multipart que o " +
+                "servidor não leu (`invalid_multipart`: confira as aspas do Content-Disposition) ou Idempotency-Key " +
+                "ausente/malformada."
+            ),
+            "404": ticketNotFoundError,
+            "409": errorResponse("A mesma Idempotency-Key ainda em andamento (`idempotency_in_progress`)."),
+            "413": errorResponse(
+              "Acima de 50 MB (`payload_too_large`), recusado pelo Content-Length antes de ler o corpo."
+            ),
+            "415": errorResponse("Corpo fora de multipart/form-data, JSON inclusive (`unsupported_media_type`)."),
+            "422": errorResponse("Idempotency-Key já usada com outro arquivo (`idempotency_key_reused`)."),
+            "502": errorResponse("O armazenamento falhou (`storage_unavailable`, com `Retry-After`). Repetir é seguro."),
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/attachments/{attachment_id}": {
+        get: {
+          summary:
+            "O link do arquivo: uma URL assinada de 10 min, com nome, tipo e tamanho. Não guarde a URL: peça outra " +
+            "quando precisar. Escopo: `attachments:read`.",
+          parameters: [
+            ticketRefParam,
+            {
+              name: "attachment_id",
+              in: "path",
+              required: true,
+              description: "UUID do anexo (o `id` do POST ou do item `attachment` da timeline).",
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": { description: "O link.", content: json("AttachmentLink") },
+            "404": errorResponse("Ticket ou anexo inexistente, ou anexo de outro ticket (`not_found`)."),
+            "502": errorResponse("Não deu para assinar o link agora (`storage_unavailable`, com `Retry-After`)."),
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/timeline": {
+        get: {
+          summary:
+            "A timeline do ticket, do MAIS NOVO para o mais antigo (ao contrário das outras listas). Com " +
+            "`tickets:read` vêm a trilha (`status` e `event`) e os anexos (`attachment`). O resto é de outro recurso " +
+            "e só entra com o escopo dele: `message` (mensagens da conversa carimbadas com o ticket) exige " +
+            "`conversations:read`; `comment` (comentário interno) exige `comments:read`; e a nota interna no chat " +
+            "(`message` com `type: note`) exige os dois. Sem o escopo, esses itens não aparecem (não é erro). " +
+            "Comentário e nota são do time: nunca repita ao cliente. Escopo: `tickets:read`.",
+          parameters: [
+            ticketRefParam,
+            queryParam(
+              "cursor",
+              "O `meta.next_cursor` da resposta anterior: leva à página seguinte, com itens mais ANTIGOS. Opaco: não " +
+                "monte à mão. Não há `limit`: cada página traz cerca de 100 itens, sem dividir um mesmo instante. " +
+                "Para ver o que chegou depois, leia de novo sem cursor."
+            ),
+          ],
+          responses: {
+            "200": {
+              description: "Uma página, da mais nova para a mais antiga. `meta.next_cursor: null` = chegou ao início.",
+              content: json("TimelinePage"),
+            },
+            "400": validationError,
+            "404": ticketNotFoundError,
+            "503": unavailableError,
             ...authErrors,
           },
         },

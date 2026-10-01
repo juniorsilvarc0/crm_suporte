@@ -33,4 +33,12 @@ describe("escopos da API v1", () => {
     expect(AI_TRIAGE_PRESET).not.toContain("customers:write");
     expect(AI_TRIAGE_PRESET).not.toContain("notices:claim");
   });
+
+  it("a IA escreve comentário interno, mas não lê o que é só do time", () => {
+    expect(API_SCOPES).toContain("comments:read");
+    expect(hasScope(AI_TRIAGE_PRESET, "comments:write")).toBe(true);
+    expect(hasScope(AI_TRIAGE_PRESET, "comments:read")).toBe(false);
+    // As mensagens da conversa ela lê: é com o cliente que ela fala.
+    expect(hasScope(AI_TRIAGE_PRESET, "conversations:read")).toBe(true);
+  });
 });
