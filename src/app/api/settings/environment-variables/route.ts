@@ -95,8 +95,10 @@ export async function DELETE(request: Request) {
 
   const parsed = deleteEnvironmentVariableSchema.safeParse(body.data);
   if (!parsed.success) {
+    // O motivo importa: a chave de assinatura é recusada aqui, e sai por outra rota.
+    const reason = parsed.error.flatten().fieldErrors.name?.[0];
     return NextResponse.json(
-      { ok: false, message: "Variável inválida." },
+      { ok: false, message: reason ?? "Variável inválida." },
       { status: 400 }
     );
   }
