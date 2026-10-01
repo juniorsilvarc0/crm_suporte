@@ -1250,6 +1250,12 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - A lista ganha a coluna **Acesso** ("IA de triagem", "Sem escopo" ou "N escopos").
   - O status ganha **Vencido** ao lado de Ativo e Revogado, sempre com texto (§1.4). O mesmo status decide o filtro (que ganhou "Vencidos") e o esmaecimento da linha.
   - Editar escopos um a um fica para a aba API da Conexão (PR 13).
+- **Webhook do agente de IA (Fase 5, PR 11):** a linha de estado abaixo do campo diz o que o servidor conferiu, sempre com texto, em quatro casos:
+  - **Ativo** (verde): há URL e o envio a aceita;
+  - **Nenhuma URL configurada** (vermelho): o CRM não repassa. Campo vazio desliga o repasse; não existe mais reserva em variável de ambiente;
+  - **URL recusada** (vermelho): a URL salva não passa na guarda do envio. A linha diz que nada está sendo repassado e o motivo, e a URL fica no campo para ser corrigida. Nunca aparece como "Ativo";
+  - **Configuração ilegível** (âmbar): a leitura falhou. O campo fica desabilitado (e, sem digitar, o Salvar não habilita), para ninguém gravar por cima de uma URL que não viu. A tela não mostra "nenhuma URL" quando não sabe.
+  - A recusa ao salvar aparece no toast, com o motivo que o servidor devolveu.
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 

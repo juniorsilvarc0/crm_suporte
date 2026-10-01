@@ -178,6 +178,8 @@ Um teste Vitest varre `src/app/api/v1/**/route.ts` e falha se algum método resp
 
 Um teste falha se o filtro `status==='bot'` voltar ao relay. O contrato fica documentado em `docs/CONTRATO-RELAY.md`.
 
+> **Como ficou (PR 11 da Fase 5, 2026-10-01):** o envelope ganhou `message_id`, e `active_ticket` sai no formato inteiro do ticket da API v1 (com `product.id` e `assignee.id` no lugar de `product_id` e `assigned_to`). O filtro `bot` continua até o PR 11b. Detalhes em `docs/PLANO-FASE-5.md` e no próprio contrato.
+
 **Eventos de saída.**
 - Headers: `X-CRM-Event`, `X-CRM-Event-Id`, `X-CRM-Timestamp` e `X-CRM-Signature: v1=hmac_sha256(segredo, ts+"."+corpo)`. A assinatura usa `features/meta/signature.ts`, movido para `src/lib/security/hmac.ts`.
 - Entrega pelo menos uma vez: o consumidor deduplica pelo `id` do evento e usa `ticket_version`.

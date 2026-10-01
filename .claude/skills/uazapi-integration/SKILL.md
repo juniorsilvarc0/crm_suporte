@@ -16,7 +16,7 @@ INBOUND  (WhatsApp → nós)
   uazapi → POST /api/chat/webhook/uazapi?s=<secret>
     ├─ EventType "messages"        → normalizeUazapiWebhook → upsertMessage
     │                              → resolveContactIdentity (acha/cria o contato pelo telefone)
-    │                              → relay ao n8n (SÓ inbound e conversa.status='bot')
+    │                              → relay ao agente (SÓ inbound novo e conversa.status='bot')
     └─ EventType "messages_update" → event.Type:
          ├─ Delivered/Read/Played/Sent → atualiza delivery_status (ticks, MONÓTONO)
          └─ FileDownloaded            → re-hospeda FileURL no chat-media (PRIVADO) +
@@ -141,7 +141,7 @@ Envelope: `{ EventType, message?, event?, chat?, owner, instanceName, token }`.
 
 > O QR só vincula um **celular** à instância existente (mesmo `apiUrl`+`token`) — não troca de instância. Para conectar OUTRA instância uazapi, é preciso **excluir** a atual e informar URL+token novos.
 
-Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vault** e obtém o segredo do webhook por `ensure_chat_integration_secret` (atômico: devolve o existente ou grava o candidato de 32 bytes), registrando na uazapi o valor **devolvido** — duas conexões simultâneas nunca divergem. Envs que ainda existem: `APP_PUBLIC_URL` (base do webhook registrado) e `N8N_WEBHOOK_URL` (relay, sai na Fase 5). A chave da OpenAI fica no cofre (Configurações).
+Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vault** e obtém o segredo do webhook por `ensure_chat_integration_secret` (atômico: devolve o existente ou grava o candidato de 32 bytes), registrando na uazapi o valor **devolvido** — duas conexões simultâneas nunca divergem. Env que ainda existe: `APP_PUBLIC_URL` (base do webhook registrado). A URL do relay fica só na tela (Configurações → Agente de IA): `N8N_WEBHOOK_URL` saiu no relay v1. A chave da OpenAI e a de assinatura do relay ficam no cofre (Configurações).
 
 > **Dev local:** a uazapi é remota → precisa alcançar nosso webhook. `localhost` não serve — túnel (`ngrok`) em `APP_PUBLIC_URL`.
 
@@ -180,9 +180,16 @@ Os dois chamam `sendOutboundText`. O que muda é quem assina a linha e o que se 
 
 ## 6. Relay ao agente + contato automático
 
-- **Relay:** o webhook repassa o envelope da uazapi **sem o `token` da instância** à URL do agente (Configurações; fallback `N8N_WEBHOOK_URL`), fire-and-forget com timeout de 10 s, **só p/ inbound, só mensagem NOVA (um reenvio da uazapi não repassa de novo) e enquanto `conversation.status='bot'`**. A IA responde enviando **direto pela uazapi** (`/send/text`) com a credencial DELA, e o echo volta como fromMe. Ao **Assumir** (status `human`), o relay para.
+- **Relay v1** (`features/integrations/server/relay-message.ts` + `relay-envelope.ts`; contrato em `docs/CONTRATO-RELAY.md`): o webhook agenda o repasse para **depois da resposta** (`after(() => relayInboundMessage(...))`, que nunca rejeita; com `after()` o Next termina o repasse em curso antes de sair num deploy), **só p/ inbound, só mensagem NOVA (um reenvio da uazapi não repassa de novo) e enquanto `conversation.status='bot'`**. Ao **Assumir** (status `human`), o relay para.
+  - **Corpo:** o envelope da uazapi **sem o `token` da instância**, mais os campos do CRM na raiz (`relay_version`, `conversation_id`, `conversation_status`, `message_id`, `contact`, `customer`, `contract{status,alert}`, `active_ticket`, `media_url` assinada por 10 min). Do provedor não passa chave de raiz com nome de campo do CRM, nem em outra caixa (`Conversation_Status`), e os campos do CRM vão no fim do corpo. O status e o ticket em foco são lidos na hora do envelope, da mesma linha da conversa.
+  - **Tudo ou nada:** leitura de contexto que falha, cofre ilegível ou status desconhecido derruba o repasse (nunca um `bot` suposto). Só a URL da mídia pode faltar. Quando é uma LEITURA que falha (e nada saiu), há uma 2ª tentativa 1 s depois.
+  - **A credencial não sai:** além de tirar o `token` da raiz, o repasse procura o valor do token da instância no corpo inteiro e não envia se achar (tokens com menos de 16 caracteres não são procurados: dariam falso positivo).
+  - **Destino:** a URL da tela, sem reserva de env, conferida por `assertRelayUrl` ao salvar e a cada envio (HTTPS em produção, sem rede interna, sem credencial). `redirect: "manual"`: 3xx é erro. Prazo de 10 s.
+  - **Assinatura:** `X-CRM-Signature: v1=hmac_sha256(chave, timestamp + "." + corpo)` (`src/lib/security/hmac.ts`), com a chave `RELAY_SIGNING_SECRET` do cofre, lida a cada repasse SEM o cache de 60 s (`readRuntimeEnvironmentVariable`): trocar a chave vale já, nas duas réplicas. Sem chave, sai sem o cabeçalho. O cofre só aceita essa chave com 32+ caracteres, sem espaços.
+  - **Registro:** uma linha em `integration_logs` por tentativa (provider `relay`, `request_id` = id da mensagem = `X-CRM-Event-Id`), com status, HTTP e latência. Nunca o corpo nem a URL (o caminho dela costuma ser um segredo).
+  - **No máximo uma vez:** o que chegou a sair nunca é enviado de novo (500, timeout e queda de conexão não repetem). Agente fora do ar = mensagem não repassada (fica no registro). O outbox é da Fase 6.
+  - A IA responde **pela API do CRM** (`POST /api/v1/conversations/{id}/messages`), não direto na uazapi.
 - **Contato:** todo evento de mensagem chama `resolveContactIdentity` (sem reativar; quem reativa e toca `last_message_at` é o trigger do INSERT real da mensagem, uma vez só) — cria o contato (`source=whatsapp`) ou acha o existente pelo telefone normalizado. O nome do provedor **só preenche nome vazio**; nunca sobrescreve o editado. `cleanContactName` remove emojis, bandeiras e o `~` de auto-update do pushname.
-- O relay v1 (contato, empresa, contrato e ticket ativo na raiz; Fase 5) ainda não entrou: hoje o envelope é o da uazapi, só sem o `token`.
 
 ## 7. Realtime
 

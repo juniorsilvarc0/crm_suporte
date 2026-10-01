@@ -27,6 +27,92 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5, PR 11: relay v1 (envelope com dados do CRM, assinatura e registro)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Cada mensagem nova do cliente em conversa `bot` chega ao agente com os dados do CRM, assinada com a chave do Cofre, e cada repasse fica registrado com status e latência.
+**Arquivos alterados:**
+- novos: `src/lib/security/hmac.ts`, `src/features/integrations/server/relay-envelope.ts`, `src/features/integrations/server/relay-message.ts`, `docs/CONTRATO-RELAY.md`, e os testes (`hmac.test.ts`, `relay-envelope.test.ts`, `relay-message.test.ts`, `relay-contract.test.ts`, `get-relay-url.test.ts`, `automation/route.test.ts`, `automation-settings.test.tsx`);
+- alterados: `src/app/api/chat/webhook/uazapi/route.ts` (passo 5) e o teste, `src/features/chat/lib/upsert-message.ts`, `src/features/settings/lib/get-relay-url.ts`, `src/features/settings/lib/get-runtime-environment.ts` e o teste, `src/features/settings/types.ts`, `src/features/settings/schemas/environment-variable.ts`, `src/app/api/settings/automation/route.ts`, `src/app/api/settings/environment-variables/route.test.ts`, `src/features/settings/components/automation-settings.tsx`, `.env.example`, `.env.local.example`;
+- só comentário: `src/lib/api/v1/context.ts`, `src/features/integrations/server/triage-context.ts`;
+- docs: `PRD.md`, `UI.md`, `AGENTS.md` (mapa), `docs/PLANO-FASE-5.md`, `docs/PLANO-IMPLANTACAO.md`, `docs/GUIA-AGENTE-IA.md` (aviso), a skill `uazapi-integration` e este PROGRESS.
+
+**O que foi feito:**
+- **Envelope v1** (`relay-envelope.ts`): o evento `messages` da uazapi sem o `token`, mais `relay_version`, `conversation_id`, `conversation_status`, `message_id`, `contact`, `customer`, `contract{status,alert}`, `active_ticket` e `media_url` (URL assinada por 10 min).
+  - `contact`, `customer` e `active_ticket` saem pelos mapeadores da API v1: um formato só para quem integra.
+  - O status e o ticket em foco são lidos na hora do envelope, da mesma linha da conversa. Só o ticket em foco é lido.
+  - Do provedor não passa chave de raiz com nome de campo do CRM, nem em outra caixa, e os campos do CRM vão no fim do corpo.
+- **Envio** (`relay-message.ts`): URL lida de `app_settings` (sem a reserva de `N8N_WEBHOOK_URL`), conferida por `assertRelayUrl`, `POST` com prazo de 10 s e sem seguir redirecionamento. Cabeçalhos `User-Agent`, `X-CRM-Event`, `X-CRM-Event-Id`, `X-CRM-Timestamp` e, com chave, `X-CRM-Signature`.
+- **Assinatura** (`src/lib/security/hmac.ts`): `v1=` + HMAC-SHA256 em hex de `<timestamp>.<corpo>`. A chave é `RELAY_SIGNING_SECRET`, no Cofre, lida a cada repasse sem o cache de 60 s.
+- **Registro:** uma linha em `integration_logs` por repasse (provider `relay`, `request_id` = id da mensagem), com status, HTTP e latência. Sem corpo e sem a URL do agente.
+- **Webhook:** o passo 5 agenda o repasse com `after()`, e o `upsertMessage` devolve `messageId` (o id da mensagem nova) no lugar de `inserted`.
+- **Tela do agente:** a linha de estado passou a dizer quatro coisas (ativo, sem URL, URL recusada com o motivo, configuração ilegível com o campo travado). Os textos sobre o fallback de ambiente saíram.
+- **Cofre:** a chave de assinatura só é aceita com 32 caracteres ou mais, sem espaços.
+- **`docs/CONTRATO-RELAY.md`:** o contrato para quem constrói o agente, com exemplo, vetor de assinatura e a conferência em Node e em Python.
+
+**Decisões tomadas:**
+- **Tudo ou nada.** Leitura que falha derruba o repasse (o registro diz por quê). Um envelope sem os campos, ou com um `bot` suposto, pareceria verdade à IA. A única exceção é a URL da mídia.
+- **Uma 2ª tentativa, só de leitura.** O relay passou a depender de mais leituras que antes. Quando uma falha e nada saiu, ele espera 1 s e tenta de novo. O que chegou a sair nunca é enviado de novo.
+- **Sem a marca de repasse do plano.** Ela só é segura com trava atômica, e isso pede migration: sem a trava, duas entregas simultâneas da uazapi repassam em dobro, que é o que o PR 1 fechou. Fica para o outbox da Fase 6.
+- **`active_ticket` no formato inteiro da API** (com `version`), e não os seis campos do plano: o agente altera o ticket sem um GET antes, e aprende um formato só.
+- **`message_id` acrescentado** ao envelope: é o id para descartar repetição. O `X-CRM-Event-Id` repete o valor, mas a assinatura não cobre cabeçalho.
+- **Chave lida sem cache.** Com o cache de 60 s por processo, uma das duas réplicas assinaria com a chave antiga (ou sem chave) por até um minuto, e o agente recusaria esses pedidos.
+- **`after()` no lugar do `void`.** O Next termina os callbacks de `after()` antes de sair; uma promessa solta morre no `process.exit`. Medido (abaixo).
+- **A credencial é procurada no corpo.** Além de tirar o `token` da raiz, o repasse não envia se o valor do token da instância aparecer em qualquer lugar do corpo. Token com menos de 16 caracteres não é procurado (daria falso positivo).
+- **Gerar a chave pela tela ficou para os PRs 12 e 13.** Até lá ela entra por Configurações → Variáveis.
+- **A guarda de URL compartilhada não foi endurecida aqui.** Vai num PR próprio, em seguida.
+
+**Verificação:**
+- **Testes:** 217 casos novos (a suíte foi de 3439 para 3656): 192 em sete arquivos novos e 25 nos três que já existiam (o do webhook foi de 13 para 23).
+  - O teste de contrato (`relay-contract.test.ts`) lê o `docs/CONTRATO-RELAY.md`: falha se um campo ficar sem descrição, se o exemplo sair do schema ou se o vetor de assinatura não conferir. Ele também **roda** o trecho de Node.js do documento contra o que o CRM assina.
+  - A assinatura é conferida por conta independente (`openssl`, Python e `node:crypto` no próprio teste), nunca pela função do app.
+- **Mutação:** 236 trocas propositais no código (208 minhas e 28 do terceiro revisor, adaptadas). Todas derrubam algum teste, nenhuma por tempo esgotado.
+- **Revisão:** três revisores independentes (segurança, contrato e comportamento, qualidade dos testes), cada um numa cópia própria. Nenhum defeito de gravidade alta. O que mudou por causa deles:
+  - a chave passou a ser lida sem cache (com o cache, uma réplica mandava sem assinatura por até 60 s depois de a chave ser gravada);
+  - o status e o foco passaram a ser lidos na hora do envelope, e só o ticket em foco é lido (antes, até 21 tickets, e um vizinho com linha estranha derrubava o repasse);
+  - a 2ª tentativa de leitura, e o motivo fixo quando o contexto e o cofre falham juntos;
+  - `after()` no lugar do `void`;
+  - chave de raiz do provedor em outra caixa (`Conversation_Status`) deixou de passar, e a credencial passou a ser procurada no corpo inteiro;
+  - status HTTP fora de 100 a 599 não vai mais para a coluna (o banco recusava a linha, e a falha sumia);
+  - a tela ganhou os estados "URL recusada" e "configuração ilegível";
+  - o piso de 32 caracteres da chave no Cofre;
+  - o documento: deduplicar por `message_id` (a assinatura não cobre cabeçalho), o que de fato é repassado (reação, edição como mensagem nova), a trava do 409 só para token do tipo IA, `If-Match: W/"<version>"`, e os trechos de conferência (chave vazia era aceita; o de Python lançava com entrada estranha);
+  - os testes: 26 mutantes do terceiro revisor sobreviviam à 1ª versão. Os principais: o mapeador de contato e empresa podia sumir (a linha inteira do banco iria ao agente), a linha de erro do registro podia ganhar o payload, e a mídia podia não chegar ao envelope.
+- **Ponta a ponta contra o banco local** (`next dev` da worktree, provedor e agente de mentira em 127.0.0.1): 52 verificações.
+  - O envelope, os cabeçalhos e a assinatura, conferida também pela função de Python do documento.
+  - Reenvio não repassa; mensagem da empresa não repassa; conversa com analista não repassa; encerrada volta para `bot` e repassa.
+  - Empresa sem contrato, contrato suspenso e ticket em foco.
+  - Chave gravada, removida e trocada: vale no repasse seguinte.
+  - Agente com 500, com 307 (o destino não recebe nada), derrubando a conexão, lento (o webhook responde sem esperar; registro de tempo esgotado em ~10 s) e fora do ar.
+  - `N8N_WEBHOOK_URL` definida no ambiente apontando para uma armadilha: nada chegou lá.
+  - Nem o registro nem o console levaram o caminho da URL, o token, a chave ou o texto do cliente.
+  - Tudo o que o teste criou foi apagado, e a configuração local voltou ao que era.
+- **Repasse em curso no deploy** (build de produção, `node .next/standalone/server.js`, banco local): com a 1ª leitura do repasse presa numa trava do banco, o servidor recebeu SIGTERM logo depois de responder o webhook. Ele esperou 6,9 s, o repasse terminou e foi registrado, e só então o processo saiu.
+- **Produção, só leitura, antes de começar:** `app_settings` sem a linha `automation`, e `N8N_WEBHOOK_URL` vazia no ambiente. Não há agente configurado: tirar o fallback não desliga nada.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3656) · build ✓.
+- **Nenhuma mensagem saiu para o WhatsApp e nenhum agente de verdade foi chamado.**
+
+**Pendências / próximos passos:**
+- **PR da guarda de URL** (`assertSafeUrl`): hoje ela recusa por engano nome de host que começa por `fc`, `fd` ou `fe80` (`fcm.googleapis.com`, por exemplo), e ainda deixa passar alguns nomes e faixas de rede interna (o risco já listado em `docs/PLANO-FASE-5.md` §4). Só um administrador configura a URL, e em produção só vale HTTPS.
+- **Normalizador do webhook:** `chatid: status@broadcast` (status do WhatsApp), reação e tipo sem tratamento viram mensagem do cliente e são repassados. Já era assim antes deste PR. Medir o que a uazapi entrega e filtrar.
+- **PR 11b:** tirar o filtro `bot`, depois de o dono confirmar que a IA só responde com `conversation_status: bot`.
+- **PRs 12 e 13:** gerar a chave pela tela, "testar" o agente, a tela dos registros e o estado da assinatura.
+- **Dívida do "no máximo uma vez":** mensagem gravada cujo webhook respondeu 500 não é repassada no reenvio da uazapi. Fica só o `console.info`.
+- **Sem fila:** cada mensagem abre uma conexão ao agente, sem teto de repasses simultâneos. O teto vem com o worker da Fase 6.
+- **`.agents/skills/uazapi-integration/SKILL.md`** é uma cópia da skill parada na Fase 2: ainda descreve o relay cru com o token. Não é citada em nenhum documento normativo; decidir se some ou se passa a espelhar a de `.claude/skills`.
+
+**Armadilhas descobertas:**
+- **Cache por processo com duas réplicas muda o comportamento de quem lê segredo.** `getRuntimeEnvironmentVariable` guarda o catálogo por 60 s, e só a réplica que gravou zera o dela. Para o que não pode valer com atraso, use `readRuntimeEnvironmentVariable`.
+- **Espalhar o payload do provedor e os campos do CRM na mesma raiz não basta.** `{...provedor, ...crm}` faz o CRM vencer a chave de nome igual, mas não a variante em outra caixa, e a ordem das chaves fica a do provedor. Um leitor de JSON que ignora caixa fica com a última.
+- **A assinatura `ts.corpo` não cobre cabeçalho.** Id e tipo do evento, se forem para deduplicar ou decidir, têm de estar no corpo. Vale para os eventos da Fase 6.
+- **`fetch` devolve status que o `Response` do padrão não deixa construir** (um agente pode responder 999). Gravado sem conferir, o check `between 100 and 599` de `integration_logs` recusa a linha, e a falha some.
+- **`after()` em teste de rota:** chamado fora de um pedido do Next, ele lança. O teste troca o `after` de `next/server` por uma lista e roda os callbacks à mão. Isso também prova que a resposta não espera o repasse.
+- **Fixture com exatamente as colunas do DTO esconde o `select("*")`.** Só com uma coluna a mais na linha do banco (e a consulta comparada inteira) o teste percebe que o mapeador sumiu.
+- **`expect.objectContaining` numa linha de registro deixa entrar o que não devia** (o payload, por exemplo). Linha de erro se compara por igualdade.
+- **Teste de tela que digita uma URL tecla a tecla é lento.** Com a máquina saturada, estourou os 5 s. `user.paste` faz o mesmo em um evento.
+- **Parar um roteiro Python iniciado pelo pyenv:** `pgrep -f | head -1` devolve o atalho do pyenv, não o Python. Matar só ele deixa o roteiro rodando (e mutando arquivo). Mate todos os pids que casam, e confira com `pgrep` antes de mexer no código.
+- **O vitest grava cache em `node_modules/.vite`.** Um revisor numa cópia com `node_modules` por link simbólico escreve na árvore de verdade. Dê a ele uma config com `cacheDir` próprio.
+
 ## [2026-10-01] API v1: teto do corpo também nas escritas sem Idempotency-Key
 
 **Agente/Modelo:** Claude Opus 5.5.
