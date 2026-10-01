@@ -37,11 +37,14 @@ export type RelayDelivery = RelayMessage & {
   instanceToken: string;
 };
 
-/** O desfecho de uma tentativa: é o que vai para integration_logs. */
-type Outcome = {
+/** O desfecho de um envio ao agente: é o que vai para integration_logs. */
+export type RelayOutcome = {
   error: string | null;
   httpStatus?: number;
   latencyMs?: number;
+};
+
+type Outcome = RelayOutcome & {
   /** Só uma leitura falhou, e nada saiu: vale tentar de novo. */
   retry?: true;
 };
@@ -52,6 +55,51 @@ function sendFailure(error: unknown): string {
   const cause = error instanceof Error ? error.cause : null;
   const code = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
   return typeof code === "string" ? `Falha de rede (${code}).` : "Falha de rede.";
+}
+
+/**
+ * Um POST ao agente, do jeito do contrato: os cabeçalhos do evento, a assinatura
+ * quando há chave, prazo de 10 s e sem seguir redirecionamento (seguir levaria o
+ * corpo e a assinatura a um endereço que ninguém configurou). É o envio do
+ * repasse e do teste de conexão. Nunca rejeita: a falha vem no desfecho.
+ */
+export async function postRelayEvent(
+  target: URL,
+  secret: string | null,
+  event: { name: string; id: string; body: string }
+): Promise<RelayOutcome> {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const startedAt = performance.now();
+  const elapsed = () => Math.round(performance.now() - startedAt);
+  try {
+    const response = await fetch(target, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": RELAY_USER_AGENT,
+        "X-CRM-Event": event.name,
+        "X-CRM-Event-Id": event.id,
+        "X-CRM-Timestamp": timestamp,
+        ...(secret ? { "X-CRM-Signature": signEvent(secret, timestamp, event.body) } : {}),
+      },
+      body: event.body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+    });
+    const latencyMs = elapsed();
+    // Só o status interessa: o corpo é descartado, e a conexão liberada.
+    await response.body?.cancel().catch(() => undefined);
+    const { status } = response;
+    return {
+      error: response.ok ? null : `O agente respondeu HTTP ${status}.`,
+      // Fora da faixa do check do banco (um agente pode responder 999), o
+      // registro seria recusado e a falha sumiria: o número já está no motivo.
+      httpStatus: status >= 100 && status <= 599 ? status : undefined,
+      latencyMs,
+    };
+  } catch (error) {
+    return { error: sendFailure(error), latencyMs: elapsed() };
+  }
 }
 
 /** `null` = sem agente configurado: não há o que repassar nem o que registrar. */
@@ -100,40 +148,8 @@ async function attempt(supabase: Admin, message: RelayDelivery): Promise<Outcome
   }
 
   // 3) O envio. Sem chave no cofre, sai sem assinatura (um agente que a exige
-  //    recusa). Redirecionamento não é seguido: levaria o envelope e a
-  //    assinatura a um endereço que ninguém configurou.
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const startedAt = performance.now();
-  const elapsed = () => Math.round(performance.now() - startedAt);
-  try {
-    const response = await fetch(target, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": RELAY_USER_AGENT,
-        "X-CRM-Event": RELAY_EVENT,
-        "X-CRM-Event-Id": message.messageId,
-        "X-CRM-Timestamp": timestamp,
-        ...(secret ? { "X-CRM-Signature": signEvent(secret, timestamp, body) } : {}),
-      },
-      body,
-      redirect: "manual",
-      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
-    });
-    const latencyMs = elapsed();
-    // Só o status interessa: o corpo é descartado, e a conexão liberada.
-    await response.body?.cancel().catch(() => undefined);
-    const { status } = response;
-    return {
-      error: response.ok ? null : `O agente respondeu HTTP ${status}.`,
-      // Fora da faixa do check do banco (um agente pode responder 999), o
-      // registro seria recusado e a falha sumiria: o número já está no motivo.
-      httpStatus: status >= 100 && status <= 599 ? status : undefined,
-      latencyMs,
-    };
-  } catch (error) {
-    return { error: sendFailure(error), latencyMs: elapsed() };
-  }
+  //    recusa).
+  return postRelayEvent(target, secret, { name: RELAY_EVENT, id: message.messageId, body });
 }
 
 /**
