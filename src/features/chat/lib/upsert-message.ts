@@ -36,8 +36,8 @@ const CONVERSATION_COLUMNS = "id, contact_id, status, unread_count";
  * fica com a `media_url` do provedor (que expira).
  *
  * No inbound, a conversa devolvida é a de DEPOIS da mensagem (passo 4).
- * `inserted` diz se a mensagem é nova: `false` num reenvio da uazapi, que o
- * webhook não repassa de novo ao agente.
+ * `messageId` é o id da mensagem quando ela é NOVA: `null` num reenvio da
+ * uazapi, que o webhook não repassa de novo ao agente.
  */
 export async function upsertMessage(
   integrationId: string,
@@ -141,7 +141,7 @@ export async function upsertMessage(
   if (msgErr) {
     throw new Error(`Message upsert failed: ${msgErr.message}`);
   }
-  const inserted = (insertedRows?.length ?? 0) > 0;
+  const insertedId = insertedRows?.[0]?.id ?? null;
 
   // 4. Inbound em conversa `resolved`: o trigger do INSERT a devolve para `bot`
   //    no mesmo UPDATE do unread (migration _tickets, §10.1). O status do passo
@@ -159,11 +159,11 @@ export async function upsertMessage(
     if (currentErr) {
       console.warn("[upsertMessage] reler o status da conversa falhou:", currentErr.message);
     } else if (current) {
-      return { ...current, inserted };
+      return { ...current, messageId: insertedId };
     }
   }
 
-  return { ...conv, inserted };
+  return { ...conv, messageId: insertedId };
 }
 
 type JsonObject = { [key: string]: Json | undefined };

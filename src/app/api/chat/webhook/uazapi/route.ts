@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
@@ -23,7 +23,7 @@ import {
   storedMediaMetadata,
 } from "@/features/chat/lib/media/stored-media";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
-import { getRelayUrl } from "@/features/settings/lib/get-relay-url";
+import { relayInboundMessage } from "@/features/integrations/server/relay-message";
 import { safeEqual } from "@/lib/security/safe-equal";
 import type { Json } from "@/lib/supabase/types";
 
@@ -32,19 +32,6 @@ export const dynamic = "force-dynamic";
 
 /** Tipos cuja mídia chega separada da mensagem (ver passo 4). */
 const MEDIA_TYPES = ["image", "audio", "video", "document", "sticker"];
-
-/** Teto do repasse ao agente: sem ele, um agente que não responde deixa o fetch pendurado. */
-const RELAY_TIMEOUT_MS = 10_000;
-
-/**
- * O envelope que vai ao agente: o da uazapi SEM o `token` da instância. O
- * agente tem credencial própria da uazapi; o token é do CRM e não sai daqui.
- */
-function relayEnvelope(payload: UazapiEnvelope): Omit<UazapiEnvelope, "token"> {
-  const body = { ...payload };
-  delete body.token;
-  return body;
-}
 
 export async function POST(request: Request) {
   try {
@@ -291,19 +278,23 @@ export async function POST(request: Request) {
     // ⚠️ É "no máximo uma vez": se a mensagem foi gravada e a resposta do banco
     // se perdeu (500 aqui), o reenvio não repassa, e a IA não a recebe. O log
     // abaixo torna isso visível; o conserto é o outbox (Fase 6).
-    // URL configurável na UI (Configurações), com fallback para N8N_WEBHOOK_URL.
-    if (normalized.direction === "inbound" && conv?.status === "bot" && !conv.inserted) {
-      console.info("[webhook/uazapi] inbound repetido, sem relay:", { conversationId: conv.id });
-    }
-    if (normalized.direction === "inbound" && conv?.inserted && conv.status === "bot") {
-      const relayUrl = await getRelayUrl();
-      if (relayUrl) {
-        void fetch(relayUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(relayEnvelope(payload)),
-          signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
-        }).catch((e) => console.warn("[webhook/uazapi] relay falhou:", e));
+    if (normalized.direction === "inbound" && conv?.status === "bot") {
+      if (conv.messageId) {
+        const delivery = {
+          payload,
+          conversationId: conv.id,
+          contactId: identity.contactId,
+          messageId: conv.messageId,
+          media: stored,
+          instanceToken: integration.token,
+        };
+        // Depois da resposta: o agente tem até 10 s, e a uazapi espera este
+        // 200. Com after(), o Next termina o repasse em curso antes de sair
+        // num deploy (um `void` solto morreria ali). relayInboundMessage nunca
+        // rejeita: o desfecho de cada repasse vai para integration_logs.
+        after(() => relayInboundMessage(supabase, delivery));
+      } else {
+        console.info("[webhook/uazapi] inbound repetido, sem relay:", { conversationId: conv.id });
       }
     }
 

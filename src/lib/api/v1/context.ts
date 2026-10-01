@@ -6,8 +6,9 @@ import { conversationSchema, messageSchema } from "@/lib/api/v1/conversations";
 import { ticketSchema } from "@/lib/api/v1/tickets";
 
 // GET /api/v1/context?phone= (PR 7 do docs/PLANO-FASE-5.md, decisão D11): tudo
-// o que a IA precisa para triar numa ida só. O relay v1 (PR 11) manda o mesmo
-// objeto, montado pelo mesmo builder (features/integrations/server/triage-context.ts).
+// o que a IA precisa para triar numa ida só. O relay v1 (PR 11) manda um
+// recorte disto (contato, empresa, resumo do contrato e ticket em foco), nos
+// mesmos formatos, montado por features/integrations/server/relay-envelope.ts.
 
 export const CONTRACT_ALERTS = ["sem_empresa", "sem_contrato", "suspenso", "encerrado"] as const;
 export type ContractAlert = (typeof CONTRACT_ALERTS)[number];
