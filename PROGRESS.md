@@ -27,6 +27,31 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] API v1: teto do corpo também nas escritas sem Idempotency-Key
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Nenhuma rota da v1 lê um corpo maior que o teto dela, com ou sem Content-Length.
+**Arquivos alterados:** `src/lib/api/v1/with-api.ts`, `src/lib/api/v1/with-api.test.ts` e este PROGRESS.
+
+**O que foi feito:**
+- O `withApi` passa a ler o corpo com teto antes de chamar o handler também nas rotas sem Idempotency-Key (`PATCH` de ticket e de contato, `transitions`, `assign`, `PUT active-ticket`). Acima do teto, 413 `payload_too_large`, sem chamar o handler.
+- Antes, só o cabeçalho Content-Length era conferido nessas rotas. Um pedido sem ele (corpo em pedaços) era lido inteiro pelo handler, até o limite de 64 MB do servidor. Nas rotas com Idempotency-Key a leitura já tinha teto.
+
+**Decisões tomadas:**
+- **A leitura com teto é numa cópia do pedido,** como já era nas rotas idempotentes: o handler segue lendo o corpo dele, sem mudar nenhuma rota.
+- **Sem condição por método.** Pedido sem corpo (GET) passa direto pela mesma leitura, que devolve vazio.
+
+**Verificação:**
+- 8 casos novos no `with-api.test.ts`: os quatro métodos de escrita acima do teto, o teto exato, um byte acima, o teto próprio da rota, e pedido sem corpo.
+- **Mutação:** 6 trocas, todas derrubam algum teste.
+- **Contra o servidor de verdade** (`next dev` da worktree, token criado e apagado no fim): corpo de 1,2 MB sem Content-Length é 413; com Content-Length é 413; corpo de 0,9 MB em pedaços passa pelo teto e chega à validação (400); corpo pequeno em pedaços chega à rota (404 da conversa que não existe). As 41 verificações das rotas de conversa seguem passando.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3439) · build ✓.
+
+**Pendências / próximos passos:** nenhuma deste PR. Em produção o nginx já repassa com Content-Length e teto de 1 MB; isto fecha o caso de quem chega ao app por outro caminho.
+
+**Armadilhas descobertas:**
+- **Conferir o Content-Length não é limitar o corpo.** O cabeçalho é opcional (corpo em pedaços), e o `request.json()` lê o que vier. O teto de verdade é na leitura.
+
 ## [2026-10-01] Testes de tela instáveis: a causa era a pressa do teste, não o produto
 
 **Agente/Modelo:** Claude Opus 5.5.
