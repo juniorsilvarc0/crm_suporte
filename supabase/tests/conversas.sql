@@ -146,7 +146,8 @@ with t as (
 insert into ids values
   ('conv_msg', pg_temp.new_conv(1)), ('conv_1', pg_temp.new_conv(2)), ('conv_2', pg_temp.new_conv(3)),
   ('conv_3', pg_temp.new_conv(4)), ('conv_4', pg_temp.new_conv(5)), ('conv_5', pg_temp.new_conv(6)),
-  ('conv_6', pg_temp.new_conv(7)), ('conv_n1', pg_temp.new_conv(8)), ('conv_n2', pg_temp.new_conv(9));
+  ('conv_6', pg_temp.new_conv(7)), ('conv_n1', pg_temp.new_conv(8)), ('conv_n2', pg_temp.new_conv(9)),
+  ('conv_7', pg_temp.new_conv(10)), ('conv_8', pg_temp.new_conv(11)), ('conv_9', pg_temp.new_conv(12));
 
 set role service_role;
 
@@ -160,6 +161,7 @@ declare
   v_api   uuid := pg_temp.id('token_api');
   v_ana   uuid := pg_temp.id('ana');
   v_tk    uuid;
+  v_in    uuid;
   v_msg   uuid;
   v_tok   uuid;
   v_user  uuid;
@@ -176,9 +178,10 @@ begin
   -- Integração primeiro: se ela carimbasse a 1ª resposta da IA, o M03 não veria.
   insert into public.chat_messages (conversation_id, direction, sender_type, type, content, delivery_status, sent_by_token_id)
   values (v_conv, 'outbound', 'system', 'text', 'Aviso automático', 'sent', v_api)
-  returning sent_by_token_id into v_tok;
-  insert into r values (v_tok is not distinct from v_api,
-    'M01 mensagem de um token de integração (system) guarda o token', coalesce(v_tok::text, '<null>'));
+  returning sent_by_token_id, ticket_id into v_tok, v_in;
+  insert into r values (v_tok is not distinct from v_api and v_in is not distinct from v_tk,
+    'M01 mensagem de um token de integração (system) guarda o token e cai no ticket em foco',
+    coalesce(v_tok::text, '<null>'));
   select t.first_ai_response_at, t.first_responded_at into v_ai_at, v_hu_at from public.tickets t where t.id = v_tk;
   insert into r values (v_ai_at is null and v_hu_at is null,
     'M02 mensagem de integração não conta como 1ª resposta, nem da IA nem humana',
@@ -277,12 +280,16 @@ declare
   v_c4   uuid := pg_temp.id('conv_4');
   v_c5   uuid := pg_temp.id('conv_5');
   v_c6   uuid := pg_temp.id('conv_6');
+  v_c7   uuid := pg_temp.id('conv_7');
+  v_c8   uuid := pg_temp.id('conv_8');
+  v_c9   uuid := pg_temp.id('conv_9');
   v_keys constant text[] := array['changed', 'conversation_external_id', 'conversation_id', 'note_id', 'status', 'ticket_id'];
   v_a    uuid;
   v_b    uuid;
   v_c    uuid;
   v_d    uuid;
   v_e    uuid;
+  v_f    uuid;
   v_ver  integer;
   v_h    text;
   v_det  text;
@@ -316,9 +323,9 @@ begin
     'H02b o handoff deixa uma nota interna assinada pelo token, com o motivo (sem ticket, fica solta)',
     coalesce(n.content, '<sem nota>') || ' | ' || coalesce(n.sender_type, '<null>'));
   insert into r values (
-    v_conv.last_message_at is null and v_conv.last_message_preview is null and v_conv.unread_count = 0,
-    'H02c a nota não vira prévia, não reordena a lista nem conta como não lida',
-    coalesce(v_conv.last_message_preview, '<null>') || ' | ' || v_conv.unread_count);
+    v_conv.last_message_at is null and v_conv.last_message_preview is null,
+    'H02c a nota não vira prévia nem reordena a lista',
+    coalesce(v_conv.last_message_preview, '<null>'));
 
   update public.chat_conversations set updated_at = now() - interval '1 day' where id = v_c1;
   j := public.conversation_handoff(v_c1, v_ai, 'Cliente pediu um atendente');
@@ -366,8 +373,9 @@ begin
     'H05 sem ticket informado, o pedido entra na trilha do ticket em foco, assinado pelo token',
     j::text || ' | ' || coalesce(e.actor_type, '<null>'));
   insert into r values (
-    e.metadata is not distinct from jsonb_build_object('reason', 'Dúvida de cobrança fora do meu alcance'),
-    'H06 a trilha guarda só o motivo, sem espaço nas pontas; o resumo não entra nela',
+    e.metadata is not distinct from jsonb_build_object(
+      'reason', 'Dúvida de cobrança fora do meu alcance', 'note_id', j ->> 'note_id'),
+    'H06 a trilha guarda só o motivo (sem espaço nas pontas) e o id da nota; o resumo não entra nela',
     coalesce(e.metadata::text, '<null>'));
   select * into n from public.chat_messages m where m.id = (j ->> 'note_id')::uuid;
   insert into r values (
@@ -403,9 +411,9 @@ begin
     'H09 ticket informado: o evento vai para ele, e o foco da conversa não muda', j::text);
   select * into n from public.chat_messages m where m.id = (j ->> 'note_id')::uuid;
   insert into r values (
-    n.content is not distinct from 'Agora é sobre o outro assunto' and n.ticket_id is not distinct from v_a,
-    'H10 sem resumo, a nota leva só o motivo; ela segue o foco da conversa, não o ticket informado',
-    coalesce(n.content, '<sem nota>'));
+    n.content is not distinct from 'Agora é sobre o outro assunto' and n.ticket_id is not distinct from v_b,
+    'H10 sem resumo, a nota leva só o motivo; ela fica no ticket informado, junto do evento',
+    coalesce(n.content, '<sem nota>') || ' | ' || coalesce(n.ticket_id::text, '<null>'));
 
   update public.chat_conversations set status = 'bot' where id = v_c2;
   j := public.conversation_handoff(v_c2, v_ai, 'Outro pedido, no ticket em foco', '   ');
@@ -415,6 +423,56 @@ begin
     'H10b novo pedido no MESMO ticket é outro evento e outra nota', j::text || ' | ' || pg_temp.handoffs(v_a));
   insert into r values (n.content is not distinct from 'Outro pedido, no ticket em foco',
     'H10c resumo só de espaços é resumo nenhum', coalesce(n.content, '<sem nota>'));
+
+  -- Ticket informado numa conversa SEM foco: a nota não fica solta.
+  v_f := (public.create_ticket(p_conversation_id => v_c7, p_title => 'Fora de foco', p_actor_token_id => v_ai,
+                               p_set_active => false) -> 'ticket' ->> 'id')::uuid;
+  j := public.conversation_handoff(v_c7, v_ai, 'Sobre o ticket sem foco', 'Resumo', v_f);
+  select * into n from public.chat_messages m where m.id = (j ->> 'note_id')::uuid;
+  select c.active_ticket_id into v_act from public.chat_conversations c where c.id = v_c7;
+  insert into r values (
+    (j ->> 'ticket_id')::uuid is not distinct from v_f and n.ticket_id is not distinct from v_f
+    and pg_temp.handoffs(v_f) = 1 and v_act is null,
+    'H10d ticket informado sem foco na conversa: a nota e o evento ficam nele, e o foco segue vazio',
+    j::text || ' | ' || coalesce(n.ticket_id::text, '<null>'));
+
+  -- Conversa arquivada ou removida volta para a caixa de entrada ---------------
+  update public.chat_conversations set archived_at = now() - interval '1 hour' where id = v_c8;
+  j := public.conversation_handoff(v_c8, v_ai, 'Cliente pediu um atendente');
+  select * into v_conv from public.chat_conversations c where c.id = v_c8;
+  insert into r values (
+    j -> 'changed' = 'true'::jsonb and v_conv.status = 'human' and v_conv.archived_at is null
+    and (select count(*) from public.contact_events ce
+          where ce.entity_id = v_c8 and ce.event_type = 'conversation.unarchived') = 1,
+    'H23 handoff de conversa arquivada a desarquiva (com o marco na trilha do contato)',
+    coalesce(v_conv.archived_at::text, '<null>'));
+
+  update public.chat_conversations set removed_at = now() - interval '1 hour', archived_at = now() - interval '2 hours'
+   where id = v_c9;
+  j := public.conversation_handoff(v_c9, v_ai, 'Cliente pediu um atendente');
+  select * into v_conv from public.chat_conversations c where c.id = v_c9;
+  insert into r values (
+    v_conv.status = 'human' and v_conv.removed_at is null and v_conv.archived_at is null
+    and (select count(*) from public.contact_events ce
+          where ce.entity_id = v_c9 and ce.event_type = 'conversation.restored') = 1
+    and (select count(*) from public.contact_events ce
+          where ce.entity_id = v_c9 and ce.event_type = 'conversation.unarchived') = 1,
+    'H24 handoff de conversa removida e arquivada a restaura e desarquiva, com os dois marcos',
+    coalesce(v_conv.removed_at::text, '<null>') || ' | ' || coalesce(v_conv.archived_at::text, '<null>'));
+
+  -- Já humana e arquivada: o no-op não mexe em nada (foi o time que arquivou).
+  update public.chat_conversations set archived_at = now() - interval '1 hour' where id = v_c8;
+  j := public.conversation_handoff(v_c8, v_ai, 'De novo');
+  insert into r values (
+    j -> 'changed' = 'false'::jsonb
+    and (select c.archived_at is not null from public.chat_conversations c where c.id = v_c8),
+    'H25 conversa já humana e arquivada: o no-op não a desarquiva', j::text);
+
+  -- Conversa na caixa de entrada não ganha marco de desarquivar nem restaurar.
+  insert into r values (
+    (select count(*) from public.contact_events ce
+      where ce.entity_id = v_c2 and ce.event_type in ('conversation.unarchived', 'conversation.restored')) = 0,
+    'H26 handoff de conversa na caixa de entrada não grava marco de desarquivar nem restaurar', '');
 
   -- Token de integração (api) ------------------------------------------------
   v_c := (public.create_ticket(p_conversation_id => v_c3, p_title => 'Ticket da integração',

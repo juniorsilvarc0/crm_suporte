@@ -26,8 +26,11 @@
 --        apaga a da IA fica para a rota do PR 10;
 --      - registra ticket.handoff_requested no ticket informado ou, na falta
 --        dele, no ticket em foco, só com o motivo (curto, como o motivo de uma
---        mudança de status). O resumo NÃO entra na trilha: ela é append-only
---        e sai inteira para quem tem tickets:read.
+--        mudança de status) e o id da nota. O resumo NÃO entra na trilha: ela
+--        é append-only e sai inteira para quem tem tickets:read;
+--      - traz a conversa de volta para a caixa de entrada, se estava
+--        arquivada ou removida: o pedido de um humano não pode ficar onde
+--        ninguém olha.
 --
 -- Idempotente; depende de 20260929170000 (require_ticket_actor devolve o tipo
 -- do token, e é de lá o corpo de create_ticket).
@@ -369,7 +372,8 @@ $$;
 -- Devolve {conversation_id, status, changed, ticket_id, note_id,
 -- conversation_external_id}.
 --   changed = false: a conversa já era de um humano; nada é gravado.
---   ticket_id: o ticket em que o pedido entrou na trilha (nulo se não houve).
+--   ticket_id: o ticket do pedido, onde ficam o evento e a nota (nulo se não
+--     houve; aí a nota fica solta, e entra no próximo ticket aberto em 24 h).
 --   note_id: a nota interna deixada no chat.
 --   conversation_external_id: para o serviço avisar o agente (pushTakeoverToAgent);
 --     não sai na resposta da API.
@@ -379,8 +383,10 @@ $$;
 -- (conversa resolvida; HINT = status atual).
 -- Ordem das travas, a mesma das RPCs de ticket: gestão de usuários (dentro de
 -- require_ticket_actor) → conversa FOR UPDATE → ticket. O INSERT da nota não
--- toca em contacts (touch_contact_from_inserted_message ignora nota), então a
--- ordem contacts → conversa, de quem renomeia o contato, nunca se inverte aqui.
+-- toca em contacts (touch_contact_from_inserted_message ignora nota), e o marco
+-- de desarquivar ou restaurar só pega KEY SHARE no contato (FK de
+-- contact_events), como o arquivar da tela: a ordem contacts → conversa, de
+-- quem renomeia o contato, nunca se inverte aqui.
 create or replace function public.conversation_handoff(
   p_conversation_id uuid,
   p_actor_token_id  uuid,
@@ -400,6 +406,7 @@ declare
   v_conv    public.chat_conversations%rowtype;
   v_ticket  uuid;
   v_note    uuid;
+  v_stamped uuid;
   v_t       public.tickets%rowtype;
 begin
   -- Só token: o analista assume pela tela (ticket_take_over ou o PATCH da conversa).
@@ -451,9 +458,20 @@ begin
          updated_at = pg_catalog.now()
    where c.id = p_conversation_id;
 
-  -- Nota interna: não vai ao cliente, não vira prévia nem não-lida, não conta
-  -- no SLA (os triggers de mensagem ignoram type = 'note'), e o carimbo a põe
-  -- no ticket em foco. `handoff` no metadata a distingue das outras notas.
+  -- O pedido tem de aparecer na caixa de entrada. A mensagem do cliente já
+  -- restaura a conversa removida, mas não desarquiva; e a remoção pode ter
+  -- vindo depois dela. Um UPDATE por coluna: o trigger registra um marco por
+  -- vez na trilha do contato (conversation.restored, conversation.unarchived).
+  if v_conv.removed_at is not null then
+    update public.chat_conversations c set removed_at = null where c.id = p_conversation_id;
+  end if;
+  if v_conv.archived_at is not null then
+    update public.chat_conversations c set archived_at = null where c.id = p_conversation_id;
+  end if;
+
+  -- Nota interna: não vai ao cliente, não vira prévia nem não-lida, e não conta
+  -- no SLA (os triggers de mensagem ignoram type = 'note'). `handoff` no
+  -- metadata a distingue das outras notas.
   insert into public.chat_messages (
     conversation_id, direction, sender_type, type, content, delivery_status, sent_by_token_id, metadata
   ) values (
@@ -461,12 +479,17 @@ begin
     v_reason || coalesce(E'\n\n' || v_summary, ''), 'sent', p_actor_token_id,
     pg_catalog.jsonb_build_object('handoff', true)
   )
-  returning id into v_note;
+  returning id, ticket_id into v_note, v_stamped;
 
+  -- O carimbo pôs a nota no ticket em foco. Com um ticket informado que não é
+  -- o foco, ela vai para ele: a nota e o evento ficam no mesmo ticket.
   v_ticket := coalesce(p_ticket_id, v_conv.active_ticket_id);
   if v_ticket is not null then
+    if v_stamped is distinct from v_ticket then
+      update public.chat_messages m set ticket_id = v_ticket where m.id = v_note;
+    end if;
     perform public.ticket_record_event(v_ticket, 'ticket.handoff_requested', v_actor,
-      null, p_actor_token_id, pg_catalog.jsonb_build_object('reason', v_reason));
+      null, p_actor_token_id, pg_catalog.jsonb_build_object('reason', v_reason, 'note_id', v_note));
   end if;
 
   return pg_catalog.jsonb_build_object(
