@@ -47,7 +47,8 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
   - conversa `resolved` é `CONVERSATION_NOT_OWNED_BY_AI`, com o status no HINT;
   - o ticket informado tem de ser da conversa e não terminal; sem ele, vale o ticket em foco;
   - deixa uma nota interna no chat, assinada pelo token, com o motivo e o resumo;
-  - registra `ticket.handoff_requested` na trilha do ticket, só com o motivo.
+  - registra `ticket.handoff_requested` na trilha do ticket, só com o motivo e o id da nota. A nota e o evento ficam no mesmo ticket;
+  - traz a conversa de volta para a caixa de entrada, se estava arquivada ou removida.
 - **`create_ticket`** deixou de contar nota da IA como 1ª resposta da IA ao vincular as mensagens soltas. É a mesma função de `20260929170000`, com uma linha a mais.
 - **`set local lock_timeout = '5s'`** no topo da migration: se algo estiver segurando `chat_messages`, ela desiste sem mudar nada, em vez de deixar o chat na fila atrás do `ALTER TABLE`.
 - **Portão dos testes SQL:** `where not ok` virou `where ok is not true` nos seis arquivos (ver Armadilhas).
@@ -55,6 +56,9 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 **Decisões tomadas:**
 - **O resumo não vai para a trilha do ticket.** O plano dizia "grava `ticket_event`", e a 1ª versão guardava motivo e resumo no `metadata`. A revisão mostrou o problema: a trilha é append-only (nem o dono apaga) e sai inteira para quem tem `tickets:read`. Um resumo que cite um CPF colado pelo cliente ficaria para sempre, mesmo depois de a mensagem ser apagada. `ticket_update` já seguia essa regra: registra a troca de descrição só como `{"changed": true}`. O motivo curto fica na trilha, como o motivo de uma mudança de status.
 - **Nota interna como lugar do motivo e do resumo.** É onde o analista lê ao assumir, vale com ou sem ticket, não vai ao cliente, não vira prévia nem não-lida, e o banco permite apagá-la (`is_deleted` zera o texto). A nota também é o registro de quem pediu o handoff numa conversa sem ticket (o `integration_logs` guarda só o molde da rota, sem o id da conversa).
+- **O handoff desarquiva e restaura a conversa.** A lista da tela só mostra arquivada na caixa "Arquivadas", e mensagem do cliente não desarquiva. Sem isso, a IA parava de responder e o pedido ficava onde ninguém olha. O no-op (conversa já humana) não mexe: se está arquivada, foi o time que arquivou.
+- **Com ticket informado, a nota vai para ele,** e não para o ticket em foco: quem abre o ticket vê o pedido e o resumo juntos. É a única mensagem que não nasce no foco.
+- **O motivo fica também na trilha, apesar de ser texto livre.** É curto (500), da mesma classe do motivo de uma mudança de status, e é o que a própria IA relê depois: o preset dela não lê notas.
 - **Handoff em conversa já humana é sucesso sem efeito, não erro.** O que a IA queria já aconteceu. Em conversa resolvida é erro: quem a devolve à IA é uma mensagem nova do cliente.
 - **Entrada errada é erro em qualquer estado:** ticket de outra conversa ou encerrado falha mesmo com a conversa já humana.
 - **`'ai'` sem token continua aceito.** Exigir o token barraria um dia classificar como `ai` o eco de uma IA que ainda envia direto pela uazapi (D2). O envio pela API (PR 10) tem um caminho só, e ele grava o token.
@@ -62,10 +66,10 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 - **O portão dos outros cinco arquivos de teste entrou neste PR,** fora do escopo original: é uma linha por arquivo, e os cinco seguem verdes com o portão estrito.
 
 **Verificação:**
-- **SQL:** 65 casos novos em `conversas.sql`. Com o portão estrito: `tickets.sql` 164, `api.sql` 44, `cadastros.sql` 63, `baseline.sql` 52 e `segredo_integracao.sql` 7. Os dois últimos exigem banco sem integração: no banco local rodaram com a integração de dev apagada dentro da própria transação, que termina em ROLLBACK.
+- **SQL:** 70 casos novos em `conversas.sql`. Com o portão estrito: `tickets.sql` 164, `api.sql` 44, `cadastros.sql` 63, `baseline.sql` 52 e `segredo_integracao.sql` 7. Os dois últimos exigem banco sem integração: no banco local rodaram com a integração de dev apagada dentro da própria transação, que termina em ROLLBACK.
 - **Migration:** aplicada no banco local; o arquivo rodado uma 2ª vez inteiro não muda nada; o script reaplicado dá "0 migration(s)"; `lock_timeout` não vaza da transação.
 - **`create_ticket`:** diff programático contra o corpo de `20260929170000`: uma linha. O corpo daquele arquivo é igual ao que estava no banco.
-- **Mutação:** 72 mutantes da migration (entrada, ordem das checagens, ticket, estado, evento, nota, resposta, privilégios, trigger, constraints, `create_ticket`). Nenhum sobreviveu, todos pegos pelo código de saída do arquivo, como o CI vê. Na 1ª versão, um sobrevivente (`updated_at`) virou teste.
+- **Mutação:** 79 mutantes da migration (entrada, ordem das checagens, ticket, estado, caixa de entrada, evento, nota, resposta, privilégios, trigger, constraints, `create_ticket`). Nenhum sobreviveu, todos pegos pelo código de saída do arquivo, como o CI vê. Na 1ª versão, um sobrevivente (`updated_at`) virou teste.
 - **Corrida, com duas sessões psql** (A segura a transação 3 s; B entra 1 s depois):
 
   | Corrida | Resultado |
@@ -77,10 +81,18 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
   | Assumir (A) × handoff (B) | `changed=false`, sem nota nem evento |
   | ticket em foco cancelado (A) × handoff sem ticket (B) | `changed=true`, `ticket_id` nulo |
   | ticket cancelado (A) × handoff com esse ticket (B) | `TICKET_TERMINAL`; a conversa segue `bot` |
-  | contato renomeado × handoff, nos dois sentidos | o segundo espera; sem deadlock |
+  | contato renomeado × handoff de conversa arquivada, nos dois sentidos | o segundo espera; a conversa sai do arquivo; sem deadlock |
 
   Tudo o que a prova criou foi apagado no fim (0 conversas, contatos, tokens e usuários de sobra).
-- **Revisão adversarial** (3 revisores independentes, e um 4º só para o que mudou depois deles): nenhum defeito grave na função. Corrigidos: o resumo na trilha; o remetente solto do tipo do token; a nota da IA contando como 1ª resposta na abertura do ticket; o portão que ignorava asserção nula; a falta de `lock_timeout`; e 15 lacunas de teste.
+- **Revisão adversarial** (3 revisores independentes, e um 4º só para o que mudou depois deles): nenhum defeito grave na função. Corrigidos:
+  - o resumo na trilha;
+  - o remetente solto do tipo do token;
+  - a nota da IA contando como 1ª resposta na abertura do ticket;
+  - o portão que ignorava asserção nula;
+  - a falta de `lock_timeout`;
+  - handoff de conversa arquivada, que ficava fora da caixa de entrada;
+  - a nota num ticket e o evento em outro;
+  - as lacunas de teste apontadas.
 - typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (2972) · build ✓. Os tipos regenerados batem com o arquivo.
 
 **Pendências / próximos passos:**
@@ -90,7 +102,8 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
   - a rota deriva o `sender_type` do tipo do token;
   - rótulo de `ticket.handoff_requested` na timeline e assinatura na nota sem autor usuário. Hoje aparecem "Atividade registrada" e "Nota interna" sem nome;
   - `sent_by_token_id` nos DTOs de mensagem; nota em `GET /messages` só com `comments:read`, como na timeline;
-  - a nota da IA não tem quem a edite ou apague pela tela (a regra é "só o autor", e o autor é um token);
+  - **quem apaga a nota da IA.** Hoje ninguém, pela tela: a regra é "só o autor", e o autor é um token. Proposta: admin apaga nota de token; ninguém edita. Até lá, o resumo só sai por SQL;
+  - guia da IA: despedir-se do cliente ANTES do handoff (depois dele, o envio responde 409); `changed: false` não traz o ticket; ticket errado é erro mesmo com a conversa já humana;
   - atualizar a skill `uazapi-integration` (modelo de dados) quando a IA passar a enviar pela API.
 - **Aplicar em produção** só com "pode subir", junto dos PRs 3 a 8b. Se a migration falhar com `lock timeout` (55P03), nada mudou: basta rodar de novo, fora do horário do backup (03:30 UTC).
 - O `btrim` do banco só tira espaço: motivo feito só de tab ou quebra de linha passa como não vazio. A rota do PR 10 precisa do `trim()` do zod.
