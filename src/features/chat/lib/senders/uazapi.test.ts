@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import {
   checkUazapiNumber,
   sendUazapiText,

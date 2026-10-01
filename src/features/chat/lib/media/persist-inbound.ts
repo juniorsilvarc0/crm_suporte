@@ -4,7 +4,7 @@
 // para o bucket privado `chat-media` via `putMedia` — este arquivo só cuida de
 // baixar com segurança.
 
-import { assertSafeUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import { assertSafeUrl } from "@/lib/security/ssrf-guard";
 import { putMedia, type StoredMedia } from "@/lib/storage/put-media";
 import type { createSupabaseAdminClient } from "@/lib/supabase/admin";
 

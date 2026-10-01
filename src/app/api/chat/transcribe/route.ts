@@ -5,7 +5,7 @@ import {
 } from "@/features/settings/lib/get-runtime-environment";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
-import { assertSafeUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import { assertSafeUrl } from "@/lib/security/ssrf-guard";
 import { CHAT_MEDIA_BUCKET } from "@/lib/storage/chat-media";
 
 type Body = { messageId: string };

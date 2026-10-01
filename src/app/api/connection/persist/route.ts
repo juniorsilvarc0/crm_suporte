@@ -9,7 +9,7 @@ import {
   getUazapiStatus,
   registerUazapiWebhook,
 } from "@/features/chat/lib/connection/uazapi";
-import { safeBaseUrl } from "@/features/chat/lib/connection/ssrf-guard";
+import { safeBaseUrl } from "@/lib/security/ssrf-guard";
 import {
   ensureChatIntegrationSecret,
   setChatIntegrationSecret,

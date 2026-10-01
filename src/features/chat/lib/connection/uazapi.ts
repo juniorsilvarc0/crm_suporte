@@ -10,7 +10,7 @@
 // então a leitura é DEFENSIVA (tenta vários caminhos) — confirmar contra a
 // instância real logando o payload cru quando necessário.
 
-import { assertSafeUrl, safeBaseUrl } from "./ssrf-guard";
+import { assertSafeUrl, safeBaseUrl } from "@/lib/security/ssrf-guard";
 
 export type ConnectionState = "open" | "connecting" | "close" | "unknown";
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import { assertRelayUrl, getRelayConfig } from "@/features/settings/lib/get-relay-url";
 import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
 import { readJsonBody } from "@/lib/http/read-json-body";

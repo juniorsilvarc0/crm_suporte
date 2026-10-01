@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { assertSafeUrl, safeBaseUrl, UnsafeUrlError } from "./ssrf-guard";
+import { assertSafeUrl, safeBaseUrl, UnsafeUrlError } from "@/lib/security/ssrf-guard";
 
 afterEach(() => {
   vi.unstubAllEnvs();
