@@ -150,7 +150,19 @@ export async function buildRelayFields(
   };
 }
 
-const CRM_KEYS: ReadonlySet<string> = new Set(Object.keys(relayFieldsSchema.shape));
+/**
+ * As chaves de raiz do corpo do teste de conexão (relay-ping.ts), além de
+ * `relay_version`. O agente separa o teste da mensagem pelo campo `event`:
+ * nenhuma delas pode chegar na mensagem vinda do provedor.
+ */
+export const PING_ONLY_KEYS = ["event", "event_id", "sent_at"] as const;
+
+/** O que o provedor não põe na raiz: os campos do CRM, os do teste e a credencial. */
+const RESERVED_KEYS: ReadonlySet<string> = new Set([
+  ...Object.keys(relayFieldsSchema.shape),
+  ...PING_ONLY_KEYS,
+  "token",
+]);
 
 /** A chave como um leitor de JSON que ignora caixa e espaço a enxergaria. */
 const looseKey = (key: string) => key.trim().toLowerCase();
@@ -160,13 +172,11 @@ const looseKey = (key: string) => key.trim().toLowerCase();
  * não usa a credencial do CRM), mais os campos do CRM na raiz.
  *
  * Do provedor não passa nenhuma chave de raiz que se confunda com um campo do
- * CRM, nem em outra caixa (`Conversation_Status`): há leitor de JSON que ignora
- * a caixa e fica com a última que vier. Os campos do CRM vão sempre no fim.
+ * CRM ou do teste de conexão, nem em outra caixa (`Conversation_Status`): há
+ * leitor de JSON que ignora a caixa e fica com a última que vier. Os campos do
+ * CRM vão sempre no fim.
  */
 export function relayEnvelope(payload: UazapiEnvelope, fields: RelayFields): Record<string, unknown> & RelayFields {
-  const fromProvider = Object.entries(payload).filter(([key]) => {
-    const loose = looseKey(key);
-    return loose !== "token" && !CRM_KEYS.has(loose);
-  });
+  const fromProvider = Object.entries(payload).filter(([key]) => !RESERVED_KEYS.has(looseKey(key)));
   return { ...Object.fromEntries(fromProvider), ...fields };
 }

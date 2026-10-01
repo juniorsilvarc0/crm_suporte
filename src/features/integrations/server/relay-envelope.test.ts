@@ -10,6 +10,7 @@ vi.mock("@/lib/storage/chat-media", async (importOriginal) => ({
 import { createHarness, where } from "@/app/api/v1/test-harness";
 import {
   buildRelayFields,
+  PING_ONLY_KEYS,
   relayEnvelope,
   relayFieldsSchema,
   type RelayMessage,
@@ -486,6 +487,34 @@ describe("relayEnvelope", () => {
     expect(body).toEqual({ ...withoutToken, ...crm });
     expect(JSON.stringify(body)).not.toContain("token-da-instancia");
     expect(JSON.stringify(body).toLowerCase().match(/conversation_status/g)).toHaveLength(1);
+  });
+
+  it("as chaves do teste de conexão não passam: é por `event` que o agente separa o teste da mensagem", async () => {
+    const crm = await build();
+    const forged = {
+      ...payload,
+      // O provedor (ou quem tiver o segredo do webhook) faria a mensagem parecer um ping.
+      event: "webhook.ping",
+      event_id: "7c1d0c5e-2f4b-4a6d-9e8f-0a1b2c3d4e5f",
+      sent_at: "2026-10-01T12:00:00.000Z",
+      Event: "webhook.ping",
+      " EVENT_ID ": "x",
+      Sent_At: "x",
+    };
+
+    const body = relayEnvelope(forged as typeof payload, crm);
+
+    expect(body).toEqual({ ...withoutToken, ...crm });
+    for (const key of Object.keys(body)) {
+      expect(["event", "event_id", "sent_at"], key).not.toContain(key.trim().toLowerCase());
+    }
+    expect(JSON.stringify(body)).not.toContain("webhook.ping");
+  });
+
+  it("as chaves reservadas ao teste são as do corpo do ping, fora a versão", () => {
+    expect([...PING_ONLY_KEYS]).toEqual(["event", "event_id", "sent_at"]);
+    // Nenhuma delas é um campo do CRM: a mensagem do cliente nunca as leva.
+    for (const key of PING_ONLY_KEYS) expect(crmKeys).not.toContain(key);
   });
 
   it("os campos do CRM vão no fim do corpo, depois de tudo o que veio do provedor", async () => {
