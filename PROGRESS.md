@@ -27,6 +27,78 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5 · PR 8b: comentário, anexo e timeline do ticket na API v1
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e os integradores comentam, anexam arquivo e leem o histórico de um ticket pela v1.
+**Arquivos alterados:**
+- `src/app/api/v1/tickets/[ref]/comments/route.ts`, `attachments/route.ts`, `attachments/[attachment_id]/route.ts` e `timeline/route.ts` (novos), com `ticket-activity.test.ts`;
+- `src/lib/api/v1/ticket-activity.ts` (novo), `with-api.ts` e `idempotency.ts` (com testes), `scopes.ts`, `conversations.ts` e `openapi.ts`;
+- `src/features/tickets/server/ticket-comment.ts` e `ticket-attachment.ts` (novos), extraídos de `src/app/api/tickets/[id]/comments/route.ts` e `attachments/route.ts`;
+- `src/features/tickets/queries/get-ticket-timeline.ts` (fontes por opção), `get-api-ticket.ts`, `lib/ticket-timeline.ts`, `types.ts`;
+- `src/lib/storage/ticket-attachments.ts` (comentário);
+- `supabase/tests/tickets.sql`;
+- `PRD.md`, `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **`POST /tickets/{ref}/comments`** (`comments:write`): comentário interno com o token como autor.
+- **`POST /tickets/{ref}/attachments`** (`attachments:write`): multipart, só o campo `file`, até 50 MB.
+- **`GET /tickets/{ref}/attachments/{attachment_id}`** (`attachments:read`): URL assinada de 10 min, com nome, tipo e tamanho, sem cache.
+- **`GET /tickets/{ref}/timeline`** (`tickets:read`): do mais novo para o mais antigo, com cursor opaco.
+- **Idempotência com multipart:** o hash é das partes (nome; do arquivo, nome, tipo, tamanho e sha256 lido em pedaços), não do corpo cru.
+- **`withApi`:**
+  - tipo de corpo por rota (`body: "json" | "multipart"`): o outro tipo é 415 sem ler o corpo nem reservar a chave;
+  - teto pelo Content-Length antes de ler: 1 MB por padrão, 50 MB + 64 KiB no anexo. Sem Content-Length, a leitura do JSON para no teto;
+  - o multipart é lido uma vez só e chega ao handler em `ctx.form`;
+  - caminho acima de 512 caracteres é 404 antes da idempotência.
+- **A escrita de comentário e de anexo virou serviço**, com o ator vindo de fora (usuário ou token). As rotas de sessão passaram a chamá-los, sem mudar de comportamento.
+
+**Decisões tomadas:**
+- **Escopo novo `comments:read`, fora do preset da IA.** A timeline junta dados de recursos diferentes, e cada um só entra com o escopo dele:
+  - `tickets:read`: trilha (status e eventos) e anexos;
+  - `conversations:read`: mensagens da conversa;
+  - `comments:read`: comentários internos;
+  - os dois últimos juntos: nota interna no chat.
+  Sem isso, a IA (que tem `tickets:read`) leria o comentário e a nota do time, o que o `/context` já evitava. O corte é na consulta, para não furar a paginação.
+- **O link do anexo vem no corpo (JSON), não como redirect:** o integrador vê nome, tipo, tamanho e vencimento.
+- **`{attachment_id}` em snake_case**, como o resto do contrato.
+- **Tolerância ao multipart do .NET ficou para decisão do dono** (ver Pendências).
+
+**Verificação:**
+- **Rotas de sessão:** um revisor comparou `origin/main` e a worktree em 47 cenários (status, corpo byte a byte, logs e sequência de consultas): idênticas. A única diferença, a cópia do arquivo antes de conferir o ticket, foi corrigida.
+- **Contra o banco e o storage locais:**
+  - comentário e anexo gravados uma vez só mesmo com a repetição;
+  - multipart reenviado com outro boundary reconhecido como o mesmo pedido, e outro arquivo com a mesma chave dando 422;
+  - arquivo de 51 MB recusado com 413 em 30 ms, sem reservar a chave;
+  - o arquivo baixado pelo link idêntico ao enviado, e o anexo de outro ticket dando 404;
+  - a timeline só com `tickets:read` trouxe trilha e anexo; com `conversations:read`, as mensagens; com `comments:read`, os comentários.
+  Depois, tudo removido (linhas e objeto do storage) e o token revogado.
+- **SQL:** 4 casos novos em `supabase/tests/tickets.sql` (comentário e anexo com token como autor; dois autores recusados). 164 casos ok.
+- **Mutação:** 19 garantias na 1ª rodada e 21 nas correções da revisão. Todas pegas; a única sobrevivente da 1ª rodada virou teste.
+- **Revisão adversarial** (3 revisores independentes; o modo de orquestração em massa estava desligado): nenhum achado grave. Corrigidos:
+  - o hash de multipart valia para toda rota idempotente, e as rotas JSON tinham perdido o 415;
+  - o 413 só saía depois de ler e hashear o corpo, que era lido duas vezes;
+  - a timeline entregava mensagens, comentários e notas só com `tickets:read`;
+  - falha de leitura no comentário era 500 pelo uuid e 503 pelo protocolo;
+  - cursor com o ano 0000 e `ref` muito longo viravam erro do servidor;
+  - `expires_at` do link era calculado depois de assinar;
+  - vocabulário duplicado e textos do OpenAPI.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (2972) · build ✓.
+
+**Pendências / próximos passos:**
+- **Decisão do dono: clientes .NET no upload.** O parser de multipart do Node 22 só aceita `name="file"` e `filename="..."` entre aspas, sem `filename*`. O `HttpClient` do .NET manda sem aspas e com `filename*`, e recebe 400 `invalid_multipart` (a mensagem diz o motivo, e o OpenAPI documenta). curl, requests e n8n funcionam. Tolerar exige normalizar o cabeçalho antes do parse, ou aceitar o arquivo cru no corpo.
+- **Comentário e anexo têm só a 1ª camada de idempotência.** Se o servidor cair entre gravar e responder, a repetição depois de 5 min grava de novo. Uma chave de dedupe na linha pede migration.
+- PR 9 (banco das conversas da IA). **O `metadata` dos eventos sai inteiro na timeline:** o que o handoff gravar ali aparece para quem tem `tickets:read`.
+- Deploy dos PRs 3 a 8b só com "pode subir", com a reinstalação do vhost do 6b.
+
+**Armadilhas descobertas:**
+- **`await reader.cancel()` numa metade de `request.clone()` nunca resolve** enquanto a outra metade não for cancelada. Num corpo acima do teto, a requisição ficaria pendurada. Cancele sem esperar.
+- **O `formData()` do Node recusa `Content-Disposition` sem aspas ou com `filename*`** (TypeError "Failed to parse body as FormData"). Não é o cliente "mandando errado": é o parser.
+- **Ler o corpo na camada de idempotência tem de vir depois do teto e do tipo.** Hashear antes de conferir o Content-Length é ler 64 MB para responder 413.
+- **`isTimelineInstant` aceitava o ano 0000**, que o Postgres recusa: virava "tente de novo" para uma entrada que nunca passa. Vale para qualquer cursor com data.
+- **Rota que junta dados de vários recursos precisa do escopo de cada um.** A timeline e o `q` de `/tickets` são o mesmo caso.
+- **`git mv -k` num diretório não rastreado não faz nada e sai com sucesso.** Use `mv`.
+
 ## [2026-09-30] Fase 5 · PR 8a: tickets na API v1 (ler, abrir, editar, status, responsável)
 
 **Agente/Modelo:** Claude Opus 5.5.
