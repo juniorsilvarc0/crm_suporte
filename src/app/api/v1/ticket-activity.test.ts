@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const { adminClientMock, putMock, removeMock, signMock, timelineMock } = vi.hoisted(() => ({
   adminClientMock: vi.fn(),
@@ -27,9 +28,11 @@ import { POST as postAttachment } from "@/app/api/v1/tickets/[ref]/attachments/r
 import { POST as postComment } from "@/app/api/v1/tickets/[ref]/comments/route";
 import { GET as getTimeline } from "@/app/api/v1/tickets/[ref]/timeline/route";
 import { itemOf, pageOf } from "@/lib/api/v1/cadastros";
+import { buildOpenApiDocument } from "@/lib/api/v1/openapi";
 import {
   attachmentLinkSchema,
   attachmentSchema,
+  commentBodySchema,
   commentSchema,
   decodeTimelineCursor,
   encodeTimelineCursor,
@@ -547,6 +550,7 @@ describe("GET /api/v1/tickets/{ref}/timeline", () => {
       file_name: null,
       delivery_status: "sent",
       sent_by_user_id: "u1",
+      sent_by_token_id: null,
       is_deleted: false,
     },
     { kind: "attachment", id: "a1", at: PAST, file_name: "nota.pdf", mime: "application/pdf", size_bytes: 6, uploaded_by_user_id: "u1", uploaded_by_token_id: null },
@@ -563,6 +567,34 @@ describe("GET /api/v1/tickets/{ref}/timeline", () => {
     expect(payload.data.map((item: { kind: string }) => item.kind)).toEqual(["comment", "status", "event", "message", "attachment"]);
     expect(JSON.stringify(payload)).not.toContain('"seq"');
     expect(decodeTimelineCursor(payload.meta.next_cursor)).toBe("2026-09-29T11:00:00.5+00:00");
+  });
+
+  it("a mensagem de um token traz o token que a enviou", async () => {
+    timelineMock.mockResolvedValue({
+      items: [
+        {
+          kind: "message",
+          id: "m9",
+          at: PAST,
+          direction: "outbound",
+          sender_type: "ai",
+          type: "text",
+          content: "Olá, sou a assistente.",
+          file_name: null,
+          delivery_status: "sent",
+          sent_by_user_id: null,
+          sent_by_token_id: "tok-9",
+          is_deleted: false,
+        },
+      ],
+      hasMore: false,
+      nextBefore: null,
+    });
+
+    const payload = await json(await timeline());
+
+    expect(pageOf(timelineItemSchema).safeParse(payload).error?.issues ?? []).toEqual([]);
+    expect(payload.data[0]).toMatchObject({ sender_type: "ai", sent_by_user_id: null, sent_by_token_id: "tok-9" });
   });
 
   it.each([
@@ -642,5 +674,35 @@ describe("GET /api/v1/tickets/{ref}/timeline", () => {
 
     expect((await timeline()).status).toBe(403);
     expect(timelineMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Contrato publicado ──────────────────────────────────────────────────────
+
+describe("OpenAPI do ticket: comentário, anexo e timeline", () => {
+  it("os componentes publicados são os schemas com que as rotas respondem e validam", () => {
+    const { schemas } = buildOpenApiDocument().components;
+
+    expect(schemas.Comment).toEqual(z.toJSONSchema(itemOf(commentSchema)));
+    expect(schemas.CommentCreate).toEqual(z.toJSONSchema(commentBodySchema, { io: "input" }));
+    expect(schemas.Attachment).toEqual(z.toJSONSchema(itemOf(attachmentSchema)));
+    expect(schemas.AttachmentLink).toEqual(z.toJSONSchema(itemOf(attachmentLinkSchema)));
+    expect(schemas.TimelinePage).toEqual(z.toJSONSchema(pageOf(timelineItemSchema)));
+  });
+
+  // O teste da rota valida a resposta CONTRA o schema: afrouxar o schema
+  // (`.optional()`, `z.unknown()`) nunca o derruba. Aqui o que se confere é o
+  // que o integrador lê em /openapi.json.
+  it("o item message publica quem enviou, usuário e token: obrigatórios, texto ou null", () => {
+    type Branch = { properties: Record<string, Record<string, unknown>>; required: string[]; additionalProperties: boolean };
+    const page = buildOpenApiDocument().components.schemas.TimelinePage as unknown as {
+      properties: { data: { items: { oneOf: Branch[] } } };
+    };
+    const message = page.properties.data.items.oneOf.find((branch) => branch.properties.kind.const === "message");
+    const textOrNull = { anyOf: [{ type: "string" }, { type: "null" }] };
+
+    expect(message?.required).toEqual(expect.arrayContaining(["sender_type", "sent_by_user_id", "sent_by_token_id"]));
+    expect(message?.properties.sent_by_user_id).toEqual(textOrNull);
+    expect(message?.properties.sent_by_token_id).toEqual({ ...textOrNull, description: expect.any(String) });
   });
 });
