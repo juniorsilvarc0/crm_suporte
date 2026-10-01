@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { MessageCursor } from "@/features/chat/lib/messages-page";
 import { isUuid } from "@/lib/validation/uuid";
 
 // Paginação das listas da API v1 (docs/PLANO-FASE-5.md, PR 6b): cursor opaco
@@ -58,18 +59,44 @@ function isDbTimestamp(value: string): boolean {
 export type Cursor = { updatedAt: string; id: string };
 export type Keyed = { updated_at: string; id: string };
 
+// O par (instante, id) com a versão na frente: cada lista tem a sua, e o
+// cursor de uma não vale na outra.
+function encodeKey(version: string, timestamp: string, id: string): string {
+  return Buffer.from(`${version}|${timestamp}|${id}`, "utf8").toString("base64url");
+}
+
+function decodeKey(version: string, value: string): { timestamp: string; id: string } | null {
+  if (value.length === 0 || value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  const parts = Buffer.from(value, "base64url").toString("utf8").split("|");
+  if (parts.length !== 3) return null;
+  const [found, timestamp, id] = parts;
+  if (found !== version || !isDbTimestamp(timestamp) || !isUuid(id)) return null;
+  return { timestamp, id };
+}
+
 export function encodeCursor(row: Keyed): string {
-  return Buffer.from(`${CURSOR_VERSION}|${row.updated_at}|${row.id}`, "utf8").toString("base64url");
+  return encodeKey(CURSOR_VERSION, row.updated_at, row.id);
 }
 
 /** `null` quando o cursor não saiu de `encodeCursor` (ou foi adulterado). */
 export function decodeCursor(value: string): Cursor | null {
-  if (value.length === 0 || value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
-  const parts = Buffer.from(value, "base64url").toString("utf8").split("|");
-  if (parts.length !== 3) return null;
-  const [version, updatedAt, id] = parts;
-  if (version !== CURSOR_VERSION || !isDbTimestamp(updatedAt) || !isUuid(id)) return null;
-  return { updatedAt, id };
+  const key = decodeKey(CURSOR_VERSION, value);
+  return key ? { updatedAt: key.timestamp, id: key.id } : null;
+}
+
+// Mensagens de uma conversa: `(created_at, id)`, da mais NOVA para a mais
+// antiga (a mensagem não tem updated_at). O cursor é a última linha devolvida;
+// a página seguinte traz as anteriores a ela.
+const MESSAGE_CURSOR_VERSION = "m1";
+
+export function encodeMessageCursor(row: { created_at: string; id: string }): string {
+  return encodeKey(MESSAGE_CURSOR_VERSION, row.created_at, row.id);
+}
+
+/** `null` quando o cursor não saiu de `encodeMessageCursor` (ou é o de outra lista). */
+export function decodeMessageCursor(value: string): MessageCursor | null {
+  const key = decodeKey(MESSAGE_CURSOR_VERSION, value);
+  return key ? { createdAt: key.timestamp, id: key.id } : null;
 }
 
 /**
@@ -101,18 +128,25 @@ export function searchParamsOf(request: Request): Record<string, string> {
  * com o campo, nunca "ignorado" (um `limit=abc` que virasse 50 esconderia o
  * erro do integrador).
  */
-export const listQueryShape = {
-  cursor: z
+const INVALID_CURSOR = "Cursor inválido. Use o next_cursor da página anterior.";
+
+/** O parâmetro `cursor`, já decodificado pela lista a que pertence. */
+function cursorParam<T>(decode: (value: string) => T | null) {
+  return z
     .string()
     .transform((value, ctx) => {
-      const cursor = decodeCursor(value);
+      const cursor = decode(value);
       if (!cursor) {
-        ctx.addIssue({ code: "custom", message: "Cursor inválido. Use o next_cursor da página anterior." });
+        ctx.addIssue({ code: "custom", message: INVALID_CURSOR });
         return z.NEVER;
       }
       return cursor;
     })
-    .optional(),
+    .optional();
+}
+
+export const listQueryShape = {
+  cursor: cursorParam(decodeCursor),
   limit: z
     .string()
     .regex(/^\d{1,3}$/, { error: `Use um número de 1 a ${MAX_PAGE_LIMIT}.` })
@@ -135,3 +169,9 @@ export const listQueryShape = {
     .transform((value) => value === "true")
     .default(false),
 };
+
+/** Query de GET /conversations/{id}/messages: só o cursor (das mensagens) e o limite. */
+export const messageListQuerySchema = z.strictObject({
+  cursor: cursorParam(decodeMessageCursor),
+  limit: listQueryShape.limit,
+});

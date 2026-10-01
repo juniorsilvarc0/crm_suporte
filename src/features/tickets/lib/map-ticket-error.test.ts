@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,9 @@ import type { TicketError } from "@/features/tickets/types";
 const MIGRATIONS = path.join(process.cwd(), "supabase/migrations");
 const TICKETS_SQL = readFileSync(path.join(MIGRATIONS, "20260925120900_tickets.sql"), "utf8");
 const CADASTROS_SQL = readFileSync(path.join(MIGRATIONS, "20260925120700_cadastros.sql"), "utf8");
+// O handoff da conversa e o trigger de autoria da mensagem (Fase 5, PR 9). A
+// migration repete o corpo de create_ticket: as TAGs dele já estão em _tickets.
+const CONVERSAS_SQL = readFileSync(path.join(MIGRATIONS, "20261001120000_conversas_ia.sql"), "utf8");
 
 const USER_ID = "34f544d9-b6ee-4119-9905-23d4e63e7611";
 const INTERNAL = { status: 500, code: "internal", message: "Não foi possível concluir a operação." };
@@ -41,21 +44,55 @@ const check = (table: string, name: string) => ({
 });
 
 // As TAGs de tempo de execução: 'TAG' sozinha, maiúscula. Ficam de fora as
-// 'TICKETS: …' (asserções da própria migration) e 'conversation_not_found'
-// (clear_chat_conversation, traduzida pela rota do chat).
+// 'TICKETS: …' e 'CONVERSAS DA IA: …' (asserções das próprias migrations) e
+// 'conversation_not_found' (clear_chat_conversation, traduzida pela rota do chat).
+function tagsOf(sql: string): string[] {
+  return [...sql.matchAll(/raise exception '([A-Z][A-Z0-9_]*)'/g)].map((match) => match[1] ?? "");
+}
+
+// Toda migration de _tickets em diante: uma que redefina uma RPC de ticket (como
+// 20260929170000 fez com create_ticket) ou traga uma nova entra aqui sozinha, e
+// uma TAG sem entrada no mapa reprova o teste em vez de virar 500 em produção.
+const FIRST_TICKET_MIGRATION = "20260925120900";
+// As que não passam por este mapa: idempotência e retenção da API v1
+// (20260929170000), tratadas em lib/api/v1/idempotency.ts.
+const NOT_TICKET_TAGS = new Set(["IDEMPOTENCY_NOT_IN_PROGRESS", "INVALID_LEASE", "INVALID_RETENTION"]);
+
+function ticketMigrations(): string[] {
+  return readdirSync(MIGRATIONS)
+    .filter((name) => name.endsWith(".sql") && name >= FIRST_TICKET_MIGRATION)
+    .sort();
+}
+
 function migrationTags(): Set<string> {
-  return new Set(
-    [...TICKETS_SQL.matchAll(/raise exception '([A-Z][A-Z0-9_]*)'/g)].map((match) => match[1] ?? "")
-  );
+  const tags = ticketMigrations().flatMap((name) => tagsOf(readFileSync(path.join(MIGRATIONS, name), "utf8")));
+  return new Set(tags.filter((name) => !NOT_TICKET_TAGS.has(name)));
 }
 
 describe("mapTicketError — as TAGs da migration", () => {
-  it("cobre exatamente as TAGs levantadas em 20260925120900_tickets.sql", () => {
+  it("lê as migrations de _tickets em diante (o teste não passa com a lista vazia)", () => {
+    const files = ticketMigrations();
+
+    expect(files[0]).toBe("20260925120900_tickets.sql");
+    expect(files).toContain("20260929170000_api_v1_fundacao.sql");
+    expect(files).toContain("20261001120000_conversas_ia.sql");
+  });
+
+  it("cobre exatamente as TAGs levantadas de _tickets em diante", () => {
     const fromSql = migrationTags();
 
     expect(fromSql.size).toBeGreaterThan(30);
     expect(new Set(TICKET_ERROR_TAGS)).toEqual(fromSql);
     expect(TICKET_ERROR_TAGS).toHaveLength(fromSql.size);
+  });
+
+  it("a migration das conversas traz as três TAGs dela (o teste não passa lendo o arquivo errado)", () => {
+    const fromSql = new Set(tagsOf(CONVERSAS_SQL));
+
+    for (const name of ["CONVERSATION_NOT_OWNED_BY_AI", "INVALID_HANDOFF", "INVALID_SENDER"]) {
+      expect(fromSql.has(name), name).toBe(true);
+      expect(tagsOf(TICKETS_SQL)).not.toContain(name);
+    }
   });
 
   it("nenhuma TAG é trecho de outra (a leitura é por includes)", () => {
@@ -76,6 +113,7 @@ const TAG_CASES: ReadonlyArray<readonly [string, number, string, string | undefi
   ["CONVERSATION_HAS_TICKETS", 409, "conversation_has_tickets", undefined],
   ["IDEMPOTENCY_KEY_REUSED", 409, "idempotency_key_reused", undefined],
   ["COMMENT_DELETED", 409, "comment_deleted", undefined],
+  ["CONVERSATION_NOT_OWNED_BY_AI", 409, "conversation_not_owned_by_ai", undefined],
   ["TICKET_NOT_FOUND", 404, "not_found", undefined],
   ["CONVERSATION_NOT_FOUND", 404, "not_found", undefined],
   ["PRODUCT_NOT_FOUND", 422, "product_not_found", "product_id"],
@@ -96,8 +134,10 @@ const TAG_CASES: ReadonlyArray<readonly [string, number, string, string | undefi
   ["INVALID_PRIORITY", 400, "validation", "priority"],
   ["INVALID_SOURCE", 400, "validation", undefined],
   ["INVALID_ASSIGNEE", 400, "validation", undefined],
+  ["INVALID_HANDOFF", 400, "validation", undefined],
   ["FORBIDDEN", 403, "forbidden", undefined],
   ["INVALID_ACTOR", 500, "internal", undefined],
+  ["INVALID_SENDER", 500, "internal", undefined],
   ["ACTIVE_TICKET_READ_ONLY", 500, "internal", undefined],
   ["TICKET_IMMUTABLE", 500, "internal", undefined],
   ["TICKET_LOG_APPEND_ONLY", 500, "internal", undefined],
@@ -210,6 +250,32 @@ describe("mapTicketError — extras do DETAIL e do HINT", () => {
       expect(mapTicketError(tag("ALREADY_ASSIGNED", { details }))).not.toHaveProperty(
         "assignedToUserId"
       );
+    }
+  );
+
+  it("CONVERSATION_NOT_OWNED_BY_AI: o dono atual da conversa, do HINT", () => {
+    expect(
+      mapTicketError(
+        tag("CONVERSATION_NOT_OWNED_BY_AI", {
+          details: "Só uma conversa com a IA (bot) pode ser passada para um humano.",
+          hint: "resolved",
+        })
+      )
+    ).toEqual({
+      status: 409,
+      code: "conversation_not_owned_by_ai",
+      message: "A conversa não está com a IA.",
+      conversationStatus: "resolved",
+    });
+  });
+
+  it.each([null, "", "Resolved", "fechado", "resolved "])(
+    "CONVERSATION_NOT_OWNED_BY_AI com HINT fora dos status de conversa (%j): sem conversationStatus",
+    (hint) => {
+      const mapped = mapTicketError(tag("CONVERSATION_NOT_OWNED_BY_AI", { hint }));
+
+      expect(mapped.code).toBe("conversation_not_owned_by_ai");
+      expect(mapped).not.toHaveProperty("conversationStatus");
     }
   );
 

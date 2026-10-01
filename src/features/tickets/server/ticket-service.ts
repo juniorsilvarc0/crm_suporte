@@ -13,6 +13,7 @@ import {
 import type {
   ActiveTicketData,
   CreateTicketData,
+  HandoffData,
   TakeOverTicketData,
   TicketChangeData,
   TicketError,
@@ -23,8 +24,9 @@ import type {
 import type { Database, Json } from "@/lib/supabase/types";
 import { UUID_RE } from "@/lib/validation/uuid";
 
-// ESCRITA de tickets: a porta única para as RPCs da migration _tickets (a tela
-// agora, a API v1 na Fase 5). Nunca escreve em tickets nem na trilha direto.
+// ESCRITA de tickets: a porta única para as RPCs da migration _tickets e para o
+// handoff da conversa (_conversas_ia), usada pela tela e pela API v1. Nunca
+// escreve em tickets nem na trilha direto.
 //
 // - O `db` é injetado: a rota cria o client (service role) DEPOIS do guard, e o
 //   teste passa um `rpc` falso.
@@ -102,11 +104,26 @@ const takeOverResultSchema = z.object({
   conversation_external_id: externalIdSchema,
 });
 
+const handoffResultSchema = z.object({
+  conversation_id: uuidSchema,
+  status: z.literal("human"),
+  changed: z.boolean(),
+  ticket_id: uuidSchema.nullable(),
+  note_id: uuidSchema.nullable(),
+  conversation_external_id: externalIdSchema,
+});
+
 // Só o sinal do push, lido ANTES do envelope inteiro: a RPC já fez commit, e se
 // o resto do jsonb vier fora do formato (500 para a tela) a conversa continua
 // `human` no banco. Sem o aviso, o bot seguiria respondendo ao cliente.
 const takeoverSignalSchema = z.object({
   conversation_changed: z.literal(true),
+  conversation_external_id: externalIdSchema,
+});
+
+// O mesmo sinal no handoff, onde a conversa é o objeto da RPC (`changed`).
+const handoffSignalSchema = z.object({
+  changed: z.literal(true),
   conversation_external_id: externalIdSchema,
 });
 
@@ -331,4 +348,41 @@ export async function takeOverTicket(
     ok: true,
     data: { ticket, conversation: { id: conversation_id, status: conversation_status } },
   };
+}
+
+/**
+ * Handoff: o token (a IA ou uma integração) passa a conversa de `bot` para
+ * `human` (conversation_handoff). A RPC deixa uma nota interna no chat com o
+ * motivo e o resumo, e registra o pedido na trilha do ticket informado ou do
+ * que está em foco. Conversa já humana é no-op (`changed: false`); resolvida é
+ * `conversation_not_owned_by_ai`. Só token: o analista assume pela tela. Se a
+ * conversa passou a `human` agora, avisa o agente, como no "Assumir".
+ */
+export async function handoffConversation(
+  db: TicketDb,
+  tokenId: string,
+  conversationId: string,
+  input: { reason: string; summary?: string | null; ticket_id?: string | null }
+): Promise<TicketResult<HandoffData>> {
+  const context = "[ticket-service] handoffConversation";
+  const { data, error } = await db.rpc("conversation_handoff", {
+    p_conversation_id: conversationId,
+    p_actor_token_id: tokenId,
+    p_reason: input.reason,
+    // Ausente, nulo ou vazio = sem resumo (o default null da RPC).
+    p_summary: input.summary || undefined,
+    p_ticket_id: input.ticket_id ?? undefined,
+  });
+  if (error) return rpcFailure(context, error);
+
+  const signal = handoffSignalSchema.safeParse(data);
+  if (signal.success) {
+    void pushTakeoverToAgent(signal.data.conversation_external_id, true);
+  }
+
+  const parsed = handoffResultSchema.safeParse(data);
+  if (!parsed.success) return unexpectedResult(context, parsed.error);
+
+  const { conversation_id, status, changed, ticket_id, note_id } = parsed.data;
+  return { ok: true, data: { conversation: { id: conversation_id, status }, changed, ticket_id, note_id } };
 }

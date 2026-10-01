@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isConversationStatus } from "@/features/chat/lib/conversation-status";
 import { TICKET_STATUS_KEYS, isTicketStatus } from "@/features/tickets/lib/ticket-status";
 import type {
   TicketCatalogError,
@@ -9,7 +10,8 @@ import type {
 } from "@/features/tickets/types";
 import { isUuid } from "@/lib/validation/uuid";
 
-// Traduz os erros do banco nas RPCs e tabelas de ticket (migration _tickets) em
+// Traduz os erros do banco nas RPCs e tabelas de ticket (migration _tickets) e
+// no handoff da conversa (migration _conversas_ia) em
 // status HTTP + `code` estável + mensagem amigável, marcando o campo quando o
 // erro é de um input específico. É o 3º mapa do tipo (map-user-rpc-error,
 // map-cadastro-error): duplicado de propósito, a generalização é um PR à parte
@@ -26,6 +28,7 @@ import { isUuid } from "@/lib/validation/uuid";
 //     O guard de tickets levanta a mesma TAG só com o HINT: `allowed` fica ausente.
 //   VERSION_CONFLICT → DETAIL = versão atual ('3').
 //   ALREADY_ASSIGNED → DETAIL = uuid de quem está com o ticket.
+//   CONVERSATION_NOT_OWNED_BY_AI → HINT = status atual da conversa.
 // DETAIL que não confere é descartado: o erro continua o mesmo, só sem o extra.
 //
 // status 500 = bug ou falha do banco: ticketErrorResponse loga antes de
@@ -39,7 +42,10 @@ type DatabaseErrorLike = {
 };
 
 // O que a tabela guarda: os extras dependem do DETAIL/HINT de cada erro.
-type TicketErrorEntry = Omit<TicketError, "allowed" | "current" | "currentVersion" | "assignedToUserId">;
+type TicketErrorEntry = Omit<
+  TicketError,
+  "allowed" | "current" | "currentVersion" | "assignedToUserId" | "conversationStatus"
+>;
 
 const INTERNAL_ERROR: TicketErrorEntry = {
   status: 500,
@@ -49,9 +55,10 @@ const INTERNAL_ERROR: TicketErrorEntry = {
 
 const VALIDATION_MESSAGE = "Revise os campos destacados.";
 
-// Levantada da migration (grep "raise exception"); o teste confere que a lista
-// e a migration batem e que nenhuma TAG é trecho de outra (INVALID_STATUS ≠
-// INVALID_INITIAL_STATUS), então a ordem da lista não decide empate.
+// Levantada das migrations _tickets e _conversas_ia (grep "raise exception"); o
+// teste confere que a lista e as migrations batem e que nenhuma TAG é trecho de
+// outra (INVALID_STATUS ≠ INVALID_INITIAL_STATUS), então a ordem da lista não
+// decide empate.
 // Fora daqui: 'conversation_not_found', minúscula, de clear_chat_conversation
 // (a rota do chat traduz), e as 'TICKETS: …' da própria aplicação da migration.
 const TAG_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
@@ -99,6 +106,16 @@ const TAG_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
   [
     "COMMENT_DELETED",
     { status: 409, code: "comment_deleted", message: "Comentário apagado não pode ser alterado." },
+  ],
+  // Handoff numa conversa resolvida (conversation_handoff): só a que está com a
+  // IA (bot) passa para um humano.
+  [
+    "CONVERSATION_NOT_OWNED_BY_AI",
+    {
+      status: 409,
+      code: "conversation_not_owned_by_ai",
+      message: "A conversa não está com a IA.",
+    },
   ],
 
   // 404
@@ -219,6 +236,14 @@ const TAG_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
     "INVALID_ASSIGNEE",
     { status: 400, code: "validation", message: "Ao assumir, o ticket fica com quem o abre." },
   ],
+  [
+    "INVALID_HANDOFF",
+    {
+      status: 400,
+      code: "validation",
+      message: "Use um motivo de 1 a 500 caracteres e um resumo de até 4.000.",
+    },
+  ],
 
   // 403 — ator inativo ou revogado entre o guard e a RPC, ou token querendo assumir.
   [
@@ -227,8 +252,10 @@ const TAG_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
   ],
 
   // 500 — o app nunca deveria chegar aqui: ator mal passado, escrita direta no
-  // foco, na trilha ou em coluna imutável. É bug; loga.
+  // foco, na trilha ou em coluna imutável, mensagem de token com o remetente
+  // errado. É bug; loga.
   ["INVALID_ACTOR", INTERNAL_ERROR],
+  ["INVALID_SENDER", INTERNAL_ERROR],
   ["ACTIVE_TICKET_READ_ONLY", INTERNAL_ERROR],
   ["TICKET_IMMUTABLE", INTERNAL_ERROR],
   ["TICKET_LOG_APPEND_ONLY", INTERNAL_ERROR],
@@ -388,6 +415,8 @@ function withExtras(tag: string, entry: TicketErrorEntry, error: DatabaseErrorLi
     if (currentVersion !== undefined) mapped.currentVersion = currentVersion;
   } else if (tag === "ALREADY_ASSIGNED") {
     if (isUuid(error.details)) mapped.assignedToUserId = error.details;
+  } else if (tag === "CONVERSATION_NOT_OWNED_BY_AI") {
+    if (isConversationStatus(error.hint)) mapped.conversationStatus = error.hint;
   }
   return mapped;
 }
