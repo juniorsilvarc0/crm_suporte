@@ -27,6 +27,55 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Guarda de URL: recusa o que escapava, e deixa de barrar host público por engano
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A guarda que impede o CRM de buscar ou postar em rede interna vale para toda grafia de endereço interno, e não recusa endereço público.
+**Arquivos alterados:**
+- `src/lib/security/ssrf-guard.ts` e o teste (vieram de `src/features/chat/lib/connection/`);
+- só o import: `connection/uazapi.ts`, `senders/uazapi.ts`, `media/persist-inbound.ts`, `get-relay-url.ts`, `relay-message.ts`, as rotas `connection/persist`, `chat/transcribe` e `settings/automation`, e quatro testes;
+- `src/features/chat/lib/media/persist-inbound.test.ts` (novo: o download de mídia não tinha teste);
+- docs: `PRD.md`, `AGENTS.md` (mapa), `docs/PLANO-FASE-5.md`, `docs/CONTRATO-RELAY.md`, a skill `uazapi-integration` e este PROGRESS.
+
+**O que foi feito:**
+- **Mudou de lugar:** a guarda já era usada pela conexão da uazapi, pela mídia, pela transcrição e pelo relay. Foi para `src/lib/security`, como o plano da Fase 5 pedia. Commit à parte, sem mudança de regra.
+- **Passou a recusar:**
+  - nome com ponto final (`localhost.` é `localhost`);
+  - os sufixos `.internal` e `.home.arpa`, e `local`, `internal` e `home.arpa` sozinhos;
+  - em produção, nome de um rótulo só (`db`, `gateway`): só resolve na rede do Docker;
+  - IPv4: CGNAT (`100.64.0.0/10`), `192.0.0.0/24`, `198.18.0.0/15`, multicast e a faixa reservada;
+  - IPv6: link-local inteira (`fe80::/10`, antes só o prefixo `fe80`), site-local, multicast, e as formas que embutem um IPv4 (compatível, traduzido, NAT64, 6to4, Teredo).
+- **Deixou de recusar por engano:** nome de host que começa por `fc`, `fd` ou `fe80` (`fcm.googleapis.com`, por exemplo). A regra antiga comparava o começo do texto, pensando em IPv6, e pegava nome.
+- **O que não mudou:** as mensagens de erro, a assinatura das funções, o HTTPS obrigatório em produção, e a liberação de `localhost` e `127.0.0.1` fora de produção.
+
+**Decisões tomadas:**
+- **As faixas vêm do `BlockList` do Node** (`node:net`), no lugar da conta de octetos feita à mão. O `new URL` já entrega o host normalizado (IPv4 em decimal, hex, octal, forma curta ou largura total vira `a.b.c.d`), e o `BlockList` confere o IPv4 mapeado em IPv6 contra as regras de IPv4. Sobrou menos código para errar.
+- **Nome de um rótulo só é recusado só em produção.** Em dev ele continua valendo (um serviço de mentira na rede local).
+- **A guarda segue sem resolver DNS.** Ela confere o host literal. Basta para URL que só um administrador configura; não basta para URL vinda de um token (`source_url`).
+
+**Verificação:**
+- **Tabela de hosts:** 162 casos no teste da guarda (eram 18), em dev e em produção: os hosts que o app usa de verdade, os vizinhos de fora de cada faixa, as duas metades de cada faixa, e as grafias que confundem (usuário no lugar do host, barra invertida, dígito de largura total, letra circulada, percent-encoding).
+- **Mutação:** 96 trocas na guarda (cada faixa removida, alargada e estreitada) e 17 no download de mídia. Todas derrubam algum teste.
+- **Guarda antiga × nova:** 16 mil hosts gerados, nos dois ambientes. Toda diferença cai numa das categorias acima, e nenhum host público passou a ser recusado. O veredito da nova confere, caso a caso, com uma conta independente feita com o `ipaddress` do Python.
+- **Servidor de produção local** (`node .next/standalone/server.js`, banco local): 15 URLs de agente pelo caminho real. As internas foram recusadas sem nada sair; as públicas que começam por `fc` e `fd`, e a com ponto final, passaram pela guarda.
+- **Ponta a ponta do relay em dev:** as 52 verificações seguem passando.
+- **Produção, só leitura:** a URL da instância do WhatsApp é HTTPS, com nome público com ponto, sem sufixo interno; as 6 URLs externas de mídia guardadas também. Nenhuma regra nova as alcança.
+- **Node 22 (imagem de produção) e Node 25 (local):** o `BlockList` e a normalização do `new URL` dão o mesmo resultado nos dois.
+- **Revisão:** um revisor de segurança independente tentou furar a guarda por grafia (IPv4 e IPv6 ofuscados, zona, IDNA, usuário, barra invertida, porta, esquema) e não achou desvio. Os testes que ele sugeriu entraram.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3823) · build ✓.
+
+**Pendências / próximos passos:**
+- **As chamadas à uazapi seguem redirecionamento** (envio e conexão). Já estava na lista do plano. O download de mídia, a transcrição e o relay não seguem. Fechar mexe no caminho de envio do WhatsApp: proposta ao dono, não feita.
+- **Nome público que resolve para endereço interno passa pela guarda** (ela não resolve DNS). Fechar pede resolver o nome e conferir o endereço antes de conectar.
+- `transcribe/route.ts` não tem teste do caminho que baixa a mídia pelo endereço do provedor.
+
+**Armadilhas descobertas:**
+- **Comparar o começo do TEXTO do host com um prefixo de IPv6 pega nome.** `host.startsWith("fc")` recusava `fcm.googleapis.com`. Primeiro saber se é IP (`isIP`), depois conferir a faixa.
+- **Não reimplemente a leitura de IP.** O `new URL` já normaliza as grafias, e o `BlockList` já sabe de faixa e de IPv4 mapeado em IPv6. Medido no Node 22 e no 25.
+- **O host da URL guarda o ponto final.** `new URL("https://localhost./").hostname` é `localhost.`: quem compara nome tem de tirá-lo.
+- **Mutante de prefixo equivalente:** alargar `224.0.0.0/4` para `/3`, ou `fe80::/10` para `/9`, dá a mesma união de endereços por causa da faixa vizinha. Não é buraco de teste.
+- **Parâmetro com valor padrão em helper de teste:** passar `undefined` aciona o padrão. O caso "sem a origem" estava, sem querer, testando "com a origem".
+
 ## [2026-10-01] Fase 5, PR 11: relay v1 (envelope com dados do CRM, assinatura e registro)
 
 **Agente/Modelo:** Claude Opus 5.5.

@@ -243,7 +243,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 |---|---|---|
 | Configuração do agente ainda lida de env (`TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`) | Contraria "nenhuma credencial no código". O token e o segredo do webhook da uazapi e a chave da OpenAI já estão no Vault (Fase 2); a URL do relay saiu do env no relay v1 | Fase 6 do plano |
 | Relay é "no máximo uma vez", sem nova tentativa | Agente fora do ar, ou falha do CRM ao montar o envelope, e a IA não recebe aquela mensagem. Ela fica no CRM e a tentativa fica em `integration_logs` | Fase 6 (outbox) |
-| A guarda de URL (`assertSafeUrl`) confere só o host literal: não resolve DNS e deixa passar nome de rótulo único da rede Docker e a faixa CGNAT | Um administrador pode apontar o relay para um serviço interno. Em produção o HTTPS obrigatório reduz o alcance | Endurecer antes de `source_url` (`docs/PLANO-FASE-5.md` §4) |
+| A guarda de URL (`assertSafeUrl`) confere só o host literal e não resolve DNS | Um nome público que aponte para um endereço interno passa pela guarda. Só um administrador configura essas URLs, e em produção o HTTPS obrigatório ainda pede um certificado válido para o nome | Resolver e fixar o endereço antes do `fetch`, se um dia a URL vier de quem não é administrador (`source_url`, por exemplo) |
 | Dependência de um único provedor de WhatsApp (uazapi) | Sessão WhatsApp Web cai e o atendimento para | `SKILLS.md` §Armadilhas |
 
 ## 15. Glossário de domínio
