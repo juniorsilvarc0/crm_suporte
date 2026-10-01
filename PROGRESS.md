@@ -27,6 +27,50 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] O pedido do QR deixa de ser GET
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Pedir o QR age no provedor do WhatsApp, e por isso passa a ser POST: assim a trava de origem do proxy o cobre, e nenhum link de fora o dispara.
+**Arquivos alterados:** `src/app/api/connection/qr/route.ts` (o handler virou `POST`), `src/features/connection/components/connection-panel.tsx` (a chamada), os testes novos `src/app/api/connection/qr/route.test.ts` e `src/features/connection/components/connection-panel.test.tsx`, o teste estrutural no fim de `src/app/api/api-guards.test.ts`, e os docs `docs/API.md`, `AGENTS.md` §3.2, `docs/PLANO-FASE-5.md`, a skill `uazapi-integration` e este PROGRESS.
+
+**O que foi feito:**
+- **`POST /api/connection/qr`** no lugar de `GET`. O corpo do handler não mudou: confere o administrador, lê a integração e chama `connectUazapi`. Por GET e por HEAD a rota responde 405.
+- **A tela** pede o QR com `fetch("/api/connection/qr", { method: "POST" })`. No painel mudou só isso e o tratamento do pedido sem resposta (abaixo).
+- **Teste estrutural** ("leitura não muda estado", em `api-guards.test.ts`): nenhum GET de rota de sessão grava em tabela (`.insert(`, `.update(`, `.upsert(`, `.delete(`), chama RPC nem age na uazapi (`connect`, `disconnect`, `register`, `send`, `edit`, `delete`), no handler ou em função local do arquivo. Há uma lista de exceções com o porquê de cada uma, e o teste falha também se uma exceção deixar de ser necessária.
+- **Regra nova no mesmo arquivo:** rota de sessão exporta handler como `export function`. Os dois contratos de `api-guards.test.ts` só leem essa forma; `export const GET = POST` escaparia deles.
+- **Primeiros testes do painel de Conexão**, só sobre o pedido do QR: é POST; a tela não o faz sozinha com a instância desconectada nem conectada; renova quando o QR vence; para quando vê a instância conectada; e salvar as credenciais não manda dois pedidos ao mesmo tempo.
+- **Pedido de QR sem resposta legível** (rede, ou o 405 de uma aba aberta antes do deploy): o painel tira da tela também o código de pareamento antigo, e não só o QR.
+
+**Decisões tomadas:**
+- **Por que POST:** a trava de origem (`isCrossOriginWrite`) só cobre escrita. Um GET, qualquer site faz o navegador de um administrador logado abrir, e o cookie `SameSite=Lax` acompanha a navegação. Cada pedido de QR chama `/instance/connect`, que reinicia o pareamento.
+- **As outras leituras com efeito ficam como estão,** na lista de exceções do teste: `GET /api/connection/state` grava o telefone do dono quando o provedor diz que conectou, e `GET /api/chat/conversations/[id]` zera as não lidas da conversa aberta. Em nenhum dos dois o valor gravado é escolhido por quem pede: um contador zerado, e o telefone que o provedor informa. `GET /api/auth/logout` apaga o cookie de propósito: é o destino do `redirect` do layout quando o usuário do cookie já não vale, e por isso precisa ser GET.
+- **Sem mexer no fluxo de conexão.** Só o método mudou. Quando o painel pede QR segue igual, agora com teste. O que a revisão achou de errado nesse "quando" é antigo e vai em PR próprio (ver Pendências).
+- **O teste estrutural é uma rede, e não uma prova.** Ele não segue import: um GET que grave por uma função de outro arquivo passa. E `.rpc(` conta como gravação mesmo podendo ser leitura, porque daqui não dá para saber: o GET que precisar de uma RPC de leitura entra na lista de exceções, com o porquê.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4198 em 220 arquivos; eram 4173 em 218) · `build` ✓.
+- **Mutação:** 39 alterações propositais, na rota, na chamada da tela e em outras rotas de sessão (um GET passando a gravar, a chamar RPC, a enviar pelo WhatsApp, um handler exportado por `const`). Todas derrubam algum teste. Na primeira rodada sobreviveram 3, todas sobre QUANDO a tela pede QR; cada uma virou teste.
+- **Revisão:** um revisor independente, numa cópia privada. Confirmou que nada mais pede o QR por GET (código, service worker, docs, scripts) e que, pela configuração do nginx, o POST da própria tela passa na trava em produção. O que mudou por causa dele: `.rpc(` e handler por `const` entraram na rede; função local deixou de casar por sufixo do nome (`log(` em `console.log(`); três títulos de teste diziam mais do que o teste prova; o código de pareamento antigo ficava na tela depois de uma falha.
+- **Por HTTP, contra o stack local** (a integração local aponta para `https://demo.invalid`, e o roteiro confere isso antes): 13 verificações no servidor de desenvolvimento e 14 no build de produção. GET e HEAD em `/api/connection/qr` dão 405 mesmo com sessão de administrador; POST da própria tela chega à rota; POST de outro subdomínio, de outro site e com `Origin` de outro host dá 403; sem sessão, 401. Os roteiros da trava de origem seguem passando (45 no build de produção).
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. No lugar: a revisão adversarial e os quatro comandos acima.
+
+**Pendências / próximos passos:**
+- **O painel pede QR quando não deveria (antigo, achado na revisão; próximo PR):**
+  - "Atualizar" e "Tentar de novo" pedem QR em qualquer estado, inclusive com a instância conectada (`onManualRefresh` não olha estado nem fluxo);
+  - o fluxo fica em `"qr"` depois de parear: se a aba continua aberta e o estado deixa de ser `open` (ou a leitura do estado falha), a tela volta a pedir QR sozinha, a cada 25 s. O intervalo do QR também não pausa com a aba oculta, e a leitura do estado pausa;
+  - salvar as credenciais tem dois gatilhos de QR, fundidos só enquanto o primeiro está em curso; e os 25 s contam da montagem, e não do último QR.
+  - Ideia de correção: a rota não chamar o provedor quando ele diz que a instância está conectada; "Atualizar" pedir QR só no fluxo de QR; o fluxo voltar a `"auto"` ao conectar. Mexe no fluxo de conexão: PR próprio, para o dono decidir.
+- **Pedido de QR recusado ou com erro é mudo (antigo):** `loadQr` não olha `res.ok` nem `ok`/`message`, e a tela fica em "Gerando QR Code…" sem dizer por quê.
+- **Não medido:** o que a uazapi faz num `/instance/connect` com a instância já conectada. O OpenAPI só diz 409 para "fluxo de conexão em andamento". Medir com instância de teste, nunca com a de produção.
+- **Abrir a conversa zera as não lidas por GET.** O `PATCH { action: "mark-read" }` da mesma rota já existe; trocar a chamada tira essa exceção da lista.
+- **No deploy:** uma aba da tela de Conexão aberta antes dele segue pedindo por GET, leva 405 e fica em "Gerando QR Code…" até ser recarregada.
+
+**Armadilhas descobertas:**
+- **Dentro de um `act` só, o React não aplica estado entre um temporizador e outro.** Avançar 60 s de relógio de mentira de uma vez deixa as refs (`stateRef`) com o valor antigo durante todo o intervalo, e o painel parece pedir QR depois de conectado. Avançar em passos (1 s por `act`) reproduz o que o navegador faz.
+- **`userEvent` trava com o relógio de mentira do vitest** (o clique espera um temporizador que não anda). No teste com relógio controlado, o clique é `fireEvent.click`.
+- **O 405 do Next não traz o cabeçalho `Allow`.**
+- **O painel de Conexão usa o `Dialog`,** que lê `window.matchMedia`: o teste precisa do mesmo stub dos outros testes de diálogo.
+
 ## [2026-10-01] Escrita só é aceita da própria origem
 
 **Agente/Modelo:** Claude Opus 5.5.

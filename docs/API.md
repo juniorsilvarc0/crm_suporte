@@ -399,7 +399,7 @@ A IA no n8n gera a resposta e **envia direto pela uazapi** (`POST {apiUrl}/send/
 ### Conexão (sessão)
 
 - `POST /api/connection/persist` (`{ apiUrl, token }`, só admin) — valida as credenciais na uazapi, grava a `apiUrl` na integração e o `token` no **Vault**, obtém o segredo do webhook de forma atômica (`ensure_chat_integration_secret`: o existente, ou um novo na primeira conexão) e registra o webhook com esse valor.
-- `GET /api/connection/qr` — QR / código de pareamento. · `GET /api/connection/state` — estado da conexão.
+- `POST /api/connection/qr` (só admin) — QR / código de pareamento. É POST porque cada pedido age no provedor (`/instance/connect` reinicia o pareamento); por GET responde 405. · `GET /api/connection/state` — estado da conexão.
 - `POST /api/connection/disconnect` (`{ wipe?: boolean, deleteIntegration?: boolean }`) — logout da instância. Com `wipe: true`, **apaga todo o chat** (conversas + mensagens), mantendo a instância. Com `deleteIntegration: true`, **exclui a instância do CRM** (apaga o chat **e** remove as credenciais) para conectar outra. Após desconectar, a tela oferece **reconectar** (mesma instância, conversas preservadas) ou **excluir**. Leads sempre intactos.
 
 ### Chat (sessão)

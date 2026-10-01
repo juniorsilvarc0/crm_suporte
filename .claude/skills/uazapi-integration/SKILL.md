@@ -49,7 +49,7 @@ OUTBOUND (nós → WhatsApp)
 | Contato | `features/contacts/queries/resolve-contact-identity.ts` + `lib/formatters/clean-name.ts` | contato no inbound (RPC com lock por telefone); `cleanContactName` tira emoji/`~` |
 | Status | `delivery-status.ts` | `overridableFrom` — ticks monótonos (nunca regridem) |
 | Mídia | `media/persist-inbound.ts` · `media/stored-media.ts` · `lib/storage/{put-media,chat-media}.ts` · `media/compress-video.ts` | baixa (SSRF) e re-hospeda no bucket privado · colunas/metadata da mídia · URL assinada · comprime vídeo (ffmpeg) |
-| Rotas conexão | `api/connection/{persist,qr,state,disconnect}/route.ts` | onboarding / status / logout+wipe+excluir instância |
+| Rotas conexão | `api/connection/{persist,qr,state,disconnect}/route.ts` | onboarding / status / logout+wipe+excluir instância. Só `state` é GET: `qr` é **POST**, porque pedir o QR chama `/instance/connect` no provedor |
 | Rota webhook | `api/chat/webhook/uazapi/route.ts` | recebe eventos (secret do Vault, status, mídia, **apagada**, echo, inbound, contato, relay) |
 | Rotas de mídia | `api/chat/media/[id]` · `api/contacts/[id]/avatar` | sessão + 302 para URL assinada de 10 min |
 | Rotas envio | `api/chat/conversations/[id]/{send,send-audio,send-file}/route.ts` | texto / áudio / anexo |
