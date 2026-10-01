@@ -4,6 +4,7 @@ import { ApiTokensManager } from "@/features/settings/components/api-tokens-mana
 import { AutomationSettings } from "@/features/settings/components/automation-settings";
 import { BotSignatureSettings } from "@/features/settings/components/bot-signature-settings";
 import { EnvironmentVariablesManager } from "@/features/settings/components/environment-variables-manager";
+import { RelaySigningSettings } from "@/features/settings/components/relay-signing-settings";
 import { getBotSignatureConfig } from "@/features/settings/lib/get-bot-signature";
 import { getRelayConfig } from "@/features/settings/lib/get-relay-url";
 import { getApiTokens } from "@/features/settings/queries/get-api-tokens";
@@ -11,6 +12,7 @@ import {
   getEnvironmentVariables,
   getTranscriptionModelConfig,
 } from "@/features/settings/queries/get-environment-variables";
+import { getRelaySigning } from "@/features/settings/queries/get-relay-signing";
 import { requireAdminPage } from "@/lib/auth/require-dashboard-session";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +26,14 @@ export default async function ConfiguracoesPage() {
   const [
     apiTokens,
     relayConfig,
+    relaySigning,
     botSignature,
     environmentVariables,
     transcriptionModel,
   ] = await Promise.all([
     getApiTokens(),
     getRelayConfig(),
+    getRelaySigning(),
     getBotSignatureConfig(),
     getEnvironmentVariables(),
     getTranscriptionModelConfig(),
@@ -65,7 +69,9 @@ export default async function ConfiguracoesPage() {
             <ApiTokensManager tokens={apiTokens} />
           </TabsContent>
 
-          <TabsContent value="agent">
+          {/* Não desmonta ao trocar de aba: a chave gerada só aparece uma vez, e o
+              pedido pode voltar depois de o administrador ter ido a outra aba. */}
+          <TabsContent value="agent" keepMounted>
             <section className="grid gap-5">
               <div>
                 <h2 className="text-sm font-semibold">Integração do agente</h2>
@@ -74,6 +80,16 @@ export default async function ConfiguracoesPage() {
                 </p>
               </div>
               <AutomationSettings config={relayConfig} />
+
+              <div className="border-t border-border/70 pt-5">
+                <h3 className="text-sm font-medium">Chave de assinatura do webhook</h3>
+                <p className="text-sm text-muted-foreground">
+                  Com ela, o agente confere que o pedido veio do CRM.
+                </p>
+                <div className="mt-3">
+                  <RelaySigningSettings signing={relaySigning} />
+                </div>
+              </div>
 
               <div className="border-t border-border/70 pt-5">
                 <h3 className="text-sm font-medium">Assinatura das mensagens da IA</h3>
