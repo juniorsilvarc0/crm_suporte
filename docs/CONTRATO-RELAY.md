@@ -19,6 +19,8 @@ O CRM repassa tudo o que o provedor entrega como mensagem nova do cliente. Isso 
 
 Mensagens enviadas em sequência chegam ao agente em paralelo, sem ordem garantida. Para ordenar, use `message.messageTimestamp`.
 
+Fora disso, o CRM só chama este endereço no **teste de conexão**, quando um administrador o dispara pela tela. É um pedido sem mensagem de cliente, descrito na seção 10.
+
 > **O agente decide pelo campo `conversation_status`, e não por "se chegou, é minha".** Hoje o CRM só repassa conversa em `bot`. Numa próxima versão ele vai repassar também as que estão com um analista, para a IA acompanhar sem responder. Um agente que responde a tudo o que recebe vai falar por cima do analista.
 
 Dois efeitos do status que convém conhecer:
@@ -33,8 +35,8 @@ Dois efeitos do status que convém conhecer:
 | Cabeçalho | Conteúdo |
 |---|---|
 | `User-Agent` | `crm-suporte-relay/1`. |
-| `X-CRM-Event` | Sempre `conversation.message_received`. |
-| `X-CRM-Event-Id` | Identificador do evento. Repete o `message_id` do corpo. |
+| `X-CRM-Event` | `conversation.message_received` na mensagem do cliente. No teste de conexão, `webhook.ping` (seção 10). |
+| `X-CRM-Event-Id` | Identificador do evento. Na mensagem do cliente, repete o `message_id` do corpo. |
 | `X-CRM-Timestamp` | Instante do envio, em segundos (Unix). |
 | `X-CRM-Signature` | `v1=` seguido da assinatura (seção 4). Só vem quando o CRM tem uma chave de assinatura configurada. |
 
@@ -152,7 +154,7 @@ Para o resto do contexto (as últimas mensagens, os outros tickets abertos, os �
 Com uma chave de assinatura configurada no CRM, todo pedido traz `X-CRM-Signature`. Confira antes de processar:
 
 1. Recuse se `X-CRM-Timestamp` estiver a mais de **5 minutos** do relógio do agente. Sem isso, um pedido capturado poderia ser reenviado depois.
-2. Calcule o HMAC-SHA256, em hexadecimal, de `<timestamp>.<corpo>`, usando a chave como segredo. A chave é usada como texto (UTF-8), exatamente como foi gravada no CRM.
+2. Calcule o HMAC-SHA256, em hexadecimal, de `<timestamp>.<corpo>`, usando a chave como segredo. A chave é usada como texto (UTF-8), exatamente como o CRM a mostrou: são 64 caracteres, e não 32 bytes a decodificar do hexadecimal.
 3. Compare `v1=<resultado>` com o cabeçalho, em tempo constante.
 
 Três cuidados:
@@ -249,12 +251,55 @@ Um registro `ok` quer dizer que o endereço respondeu `2xx`, e não que o agente
 
 - **Campos novos podem aparecer** na raiz e dentro dos objetos do CRM sem mudar `relay_version`. Ignore o que não conhecer.
 - Remover um campo, mudar o tipo ou o significado dele só acontece com um `relay_version` novo.
-- O conteúdo de `message` e `chat` é da uazapi e segue a documentação dela. Uma chave de raiz do provedor com o nome de um campo do CRM (em qualquer combinação de maiúsculas) não é repassada.
+- O conteúdo de `message` e `chat` é da uazapi e segue a documentação dela. Uma chave de raiz do provedor com o nome de um campo do CRM, ou com `event`, `event_id` ou `sent_at` (os do teste de conexão, seção 10), não é repassada, em qualquer combinação de maiúsculas.
 
 ## 9. Configuração no CRM
 
-- **Endereço do agente:** Configurações → Agente de IA → *Webhook do agente de IA*. Vazio desliga o repasse. Não existe mais endereço por variável de ambiente.
-- **Chave de assinatura:** Configurações → Variáveis → *Adicionar variável*, com a chave `RELAY_SIGNING_SECRET`.
-  - Precisa de 32 caracteres ou mais, sem espaços. Para gerar: `openssl rand -hex 32`.
-  - Gravar, trocar ou remover a chave vale a partir da mensagem seguinte.
-  - Na troca, o CRM passa a assinar com a chave nova na hora. Configure o agente para aceitar a nova e a anterior por alguns minutos, ou troque num horário sem movimento: um pedido que o agente recusa não é enviado de novo.
+Tudo em Configurações → Agente de IA.
+
+- **Endereço do agente:** *Webhook do agente de IA*. Vazio desliga o repasse. Não existe mais endereço por variável de ambiente.
+- **Chave de assinatura:** *Chave de assinatura do webhook* → **Gerar chave**.
+  - Quem gera é o CRM: 64 caracteres hexadecimais, mostrados **uma única vez**. Copie e configure no agente. A chave não pode ser digitada nem consultada depois: se ela se perder, gere outra.
+  - Sem chave, os pedidos saem sem `X-CRM-Signature`.
+  - Gerar, trocar ou remover a chave vale a partir do pedido seguinte.
+  - Na troca (**Gerar nova chave**), o CRM passa a assinar com a chave nova na hora, e ela só existe a partir daí: não dá para configurar o agente antes. Até a chave nova estar no agente, ele recusa os pedidos, e um pedido recusado não é enviado de novo. Troque num horário sem movimento, configure o agente em seguida e confira com **Testar conexão**.
+  - No cofre do CRM ela fica com o nome `RELAY_SIGNING_SECRET`, fora da lista de variáveis.
+- **Testar conexão:** o botão ao lado do endereço (seção 10). Ele testa o endereço **salvo**.
+
+## 10. Teste de conexão (`webhook.ping`)
+
+O botão **Testar conexão** envia um evento `webhook.ping` ao endereço salvo, pelo mesmo caminho do repasse: os mesmos cabeçalhos, a mesma assinatura, o mesmo prazo de 10 segundos, e sem seguir redirecionamento.
+
+| Cabeçalho | No teste |
+|---|---|
+| `X-CRM-Event` | `webhook.ping`. |
+| `X-CRM-Event-Id` | Um identificador novo a cada teste. Repete o `event_id` do corpo. |
+
+O corpo não leva dado de cliente:
+
+| Campo | O que é |
+|---|---|
+| `event` | Sempre `webhook.ping`. É por ele que o agente reconhece o teste. |
+| `event_id` | O identificador deste teste. É o mesmo do cabeçalho `X-CRM-Event-Id`. |
+| `relay_version` | Versão deste contrato. Hoje `1`. |
+| `sent_at` | Instante em que o CRM montou o pedido (ISO 8601, UTC). |
+
+<!-- exemplo:ping -->
+```json
+{
+  "event": "webhook.ping",
+  "event_id": "7c1d0c5e-2f4b-4a6d-9e8f-0a1b2c3d4e5f",
+  "relay_version": 1,
+  "sent_at": "2026-10-01T12:00:00.000Z"
+}
+```
+
+O que o agente faz com o teste:
+
+1. **Confere a assinatura**, como em qualquer pedido (seção 4).
+2. **Reconhece o teste pelo corpo: `event` igual a `webhook.ping`.** A mensagem do cliente (seção 3) nunca tem o campo `event`: o CRM não repassa uma chave de raiz com esse nome, venha de onde vier. O cabeçalho `X-CRM-Event` diz o mesmo, mas a assinatura não o cobre.
+3. **Responde `2xx` e não faz mais nada.** O teste não tem `message`, `conversation_id` nem `conversation_status`: não há conversa, e não há a quem responder.
+
+A tela mostra para qual endereço o teste foi (só o host), o status que voltou e se o pedido foi enviado com assinatura; quando o agente confirma, também o tempo. O teste que chegou a sair também fica no registro do CRM (integração `relay`, ação `webhook.ping`), com o `X-CRM-Event-Id`. Quando nada sai (sem endereço, endereço recusado, falha do CRM ao ler o endereço ou a chave, ou mais de 10 testes por minuto), o motivo aparece só na tela.
+
+O teste confere o caminho até o agente e a resposta dele. Ele não prova que o agente confere a assinatura: um agente que responde `2xx` a qualquer pedido passa no teste.

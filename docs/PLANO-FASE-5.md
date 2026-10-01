@@ -213,11 +213,11 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 > - **Destino:** `assertRelayUrl` ao salvar e a cada envio, sem seguir redirecionamento, e `after()` no lugar do `void` (o Next termina o repasse antes de sair num deploy).
 > - **Não feito, de propósito:**
 >   - **a marca de repasse.** Ela só é segura com trava atômica: sem isso, duas entregas simultâneas da uazapi repassam em dobro, que é o que o PR 1 fechou. A trava pede migration, e o outbox da Fase 6 a torna desnecessária. **Dívida que fica:** a mensagem gravada cujo webhook respondeu 500 não é repassada quando a uazapi reenvia (segue só o `console.info`).
->   - **gerar a chave pela tela:** vai no PR 12 (rota) e no PR 13 (botão). Até lá a chave entra por Configurações → Variáveis.
+>   - **gerar a chave pela tela:** vai no PR 12 (rota) e no PR 13 (botão). Até lá a chave entra por Configurações → Variáveis. **Feito no PR 12a** (rota e botão): a chave não entra mais por Variáveis.
 >   - **endurecer a guarda de URL** (seção 4): PR próprio, logo depois deste. **Feito em 2026-10-01:** a guarda foi para `src/lib/security/ssrf-guard.ts` e passou a recusar ponto final, nome de um rótulo só (em produção), `.internal`, CGNAT e as demais faixas reservadas, e as formas de IPv6 que embutem IPv4; e deixou de recusar por engano nome de host que começa por `fc`, `fd` ou `fe80`.
 > - **Achado da revisão, fora deste PR:**
 >   - o webhook grava como mensagem do cliente o que chega com `chatid: status@broadcast` (status do WhatsApp), reação e tipo sem tratamento, e isso é repassado. Corrigir no normalizador, em PR próprio, medindo o que a uazapi entrega de fato;
->   - a tela não diz se há chave de assinatura, e os registros ainda não têm tela (PRs 12 e 13);
+>   - a tela não diz se há chave de assinatura (**feito no PR 12a**), e os registros ainda não têm tela (PRs 12b e 13);
 >   - na Fase 6, o id e o tipo do evento têm de ir no corpo assinado: hoje a assinatura não cobre os cabeçalhos.
 
 **PR 12: `feat(conexao)`, back das abas** · back · M · depende dos PRs 4 e 11
@@ -229,6 +229,22 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
   - a chave de assinatura do relay (D3): rota que gera, grava no Cofre e devolve uma vez, e o nome `RELAY_SIGNING_SECRET` deixa de ser gravável à mão;
   - rotação do segredo do webhook conforme D13, testada só no ambiente local;
   - `revalidatePath` passa a apontar para `/app/conexao`.
+
+> **Dividido em dois (2026-10-01).**
+> - **12a, feito:** a chave de assinatura gerada pelo CRM, o teste de conexão e o Cofre restrito ao catálogo. Como ficou, e onde difere do texto acima:
+>   - **Chave:** `POST /api/connection/agent/signing-secret` gera 32 bytes em hex, grava no Cofre e devolve o valor uma vez (`Cache-Control: no-store`). `DELETE` remove. A rota genérica do Cofre recusa gravar e apagar esse nome, a lista não o mostra, e a chave não entra no cache de 60 s.
+>   - **Tela desatualizada não mexe na chave de outro administrador:** gerar com a chave já existente é 409; trocar e remover levam o `updated_at` que a tela mostrava, e a rota recusa (409) se a chave guardada já não é essa. Depois de gravar, a rota relê a chave e só a devolve se for a guardada. Quando o cofre devolve erro ao gravar ou ao remover, ela confere o que ficou guardado antes de dizer que falhou (a resposta do banco pode se perder depois do commit), e marca com `applied: false` o erro em que nada mudou. A conferência e a gravação não são um passo só no banco (isso pediria migration): sobra uma janela de milissegundos.
+>   - **Quem gerou, trocou ou removeu** fica em `integration_logs` (`signing_secret.generated|rotated|removed`, com `payload.by`).
+>   - **Teste:** `POST /api/connection/agent/test` chama `pingAgent` (`relay-ping.ts`), que usa o `postRelayEvent` extraído do relay: mesma guarda de URL, mesma chave, mesmos cabeçalhos, 10 s, sem seguir redirecionamento. A rota não recebe URL: testa a que está SALVA. O corpo do ping leva `event` e `event_id`, que é o que a revisão do PR 11 pediu para a Fase 6 (tipo e id dentro do corpo assinado). Responde 200 com o desfecho (e o host testado), registra em `integration_logs` (ação `webhook.ping`) só quando o pedido saiu, e tem teto de 10 testes por minuto por administrador.
+>   - **Envelope da mensagem:** `event`, `event_id` e `sent_at` na raiz, vindos do provedor, não são repassados. É por `event` que o agente separa o teste da mensagem.
+>   - **Cofre:** só grava os nomes do catálogo. A lista (`RUNTIME_ENVIRONMENT_NAMES`) foi para `settings/types.ts`, para o schema e o leitor usarem a mesma. Apagar continua aceitando qualquer nome bem formado: é como se limpa uma variável antiga. O piso de 32 caracteres do PR 11 saiu, porque a chave não se digita mais.
+>   - **`Dialog` com `dismissible={false}`** (`src/components/ui/dialog.tsx`): o modal que só quem abriu fecha. Na gaveta do celular, recusar um fechamento sem isso deixava a folha deslocada. Só o bloco da chave usa por ora; os outros modais que recusam durante o envio ficam no backlog do `UI.md`.
+>   - **Veio junto o front mínimo**, que o plano punha no PR 13: o bloco da chave e o botão "Testar conexão", na aba Agente de IA de Configurações. Sem ele a chave ficaria sem ter por onde entrar entre o PR 12 e o 13, já que o nome deixou de ser gravável à mão. O PR 13 só muda esses blocos de lugar.
+>   - **Não feito aqui:** `revalidatePath` para `/app/conexao` (as telas ainda estão em Configurações; muda no PR 13); o `FormSelect` do catálogo no Cofre, e a limpeza da coluna Origem e de "Substituir" em variável antiga (PR 13).
+>   - **A troca da chave tem uma janela**, e não é este PR que a fecha: a chave nova só existe depois de o CRM já assinar com ela, e um pedido que o agente recusa não é reenviado. Quem fecha é o reenvio do outbox (Fase 6).
+>   - **Fica para a Fase 6 ou para decisão do dono:** testar uma URL antes de salvá-la (hoje o teste só vai à URL salva, e salvar já manda o repasse para ela).
+> - **12b, a fazer:** a leitura real de `get-integration-logs.ts` com filtros, e a Saúde. A taxa de erro do relay tem de filtrar pela ação `conversation.message_received`: o teste (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider `relay`.
+> - **Rotação do segredo do webhook (D13): proposta de adiar, aguardando o dono.** A opção recomendada pede migration (o segredo anterior valendo por N minutos), e a alternativa abre uma janela de 401 na entrada do WhatsApp. Ninguém pediu a rotação até aqui, e ela não pode ser testada em produção.
 
 **PR 13: `feat(conexao)`, front das abas** · front · G · depende dos PRs 5 e 12
 - **Abas com a aba na URL:** é o 3º uso, então `service-settings-tabs.tsx` vira um componente em `src/components/layout`.
