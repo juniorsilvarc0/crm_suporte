@@ -1,7 +1,7 @@
 @AGENTS.md
 
 Contexto obrigatório a cada sessão, além do arquivo importado acima:
-`PRD.md` · `UI.md` · `PROGRESS.md` · `SKILLS.md` · `CONTRIBUTING.md`
+`PRD.md` · `UI.md` · `PROGRESS.md` · `SKILLS.md` · `CONTRIBUTING.md` · `docs/PROXIMOS-PASSOS.md`
 
 Se algum não existir, crie conforme o §9 do `AGENTS.md` antes de codificar.
 
