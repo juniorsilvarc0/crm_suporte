@@ -1242,7 +1242,26 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 
 > Até o PR 13a (2026-10-02) Variáveis, API do CRM e Agente de IA moravam em `/app/configuracoes`, numa tela própria. Hoje esse endereço só redireciona (307) para `/app/conexao?aba=variaveis`, e o menu não tem mais o item Configurações.
 
-- **Um lugar só para o que liga o CRM a outro sistema.** Quatro abas, com a aba na URL (`UrlTabs`, `src/components/layout/url-tabs.tsx`): **WhatsApp** (a padrão, fora da URL), **API do CRM** (`?aba=api`), **Agente de IA** (`?aba=agente`) e **Variáveis** (`?aba=variaveis`). Recarregar ou mandar o link abre a mesma aba; valor desconhecido cai em WhatsApp. **Registros** e **Saúde** entram no PR 13b.
+- **Um lugar só para o que liga o CRM a outro sistema.** Seis abas, com a aba na URL (`UrlTabs`, `src/components/layout/url-tabs.tsx`): **WhatsApp** (a padrão, fora da URL), **API do CRM** (`?aba=api`), **Agente de IA** (`?aba=agente`), **Variáveis** (`?aba=variaveis`), **Registros** (`?aba=registros`) e **Saúde** (`?aba=saude`). Recarregar ou mandar o link abre a mesma aba; valor desconhecido cai em WhatsApp.
+- **Registros (PR 13b)** segue a tela de dados (§5.1), com duas diferenças: não há contagem total, e a paginação é "Carregar mais".
+  - **Filtros na URL**, lidos no servidor: integração, ação (a lista muda com a integração), status, token (só fora do Agente de IA), período (padrão 7 dias) e, na busca, o id do pedido (`request_id`), com debounce de 300 ms. A busca por id vale para todo o registro, fora do período, e a tela diz isso. Texto que não tem a forma de um id avisa em âmbar e não navega.
+  - **A página só lê os registros com a aba aberta.** Ao trocar para ela, um esqueleto fica até a 1ª página chegar.
+  - **"Carregar mais"** pede a página seguinte a `GET /api/connection/logs` com o cursor, que nunca vai para a URL da página. Filtro novo zera o que foi carregado, e a resposta que chega depois da troca é descartada. A falha avisa num toast e mantém o botão.
+  - **Contagem sem total:** "N registros, e há mais · últimos 7 dias".
+  - **Linha:** quando, integração, ação (com a rota da API e o erro, em vermelho, logo abaixo), status com o HTTP ("Erro · 502"), quem (o token com o prefixo, ou o usuário da trilha da chave), o id do pedido e o tempo. Ação ou integração que a tela não conhece aparece como veio.
+  - **Três estados distintos:** a falha de leitura ("Não foi possível carregar os registros." com **Tentar de novo**), a lista vazia sem filtro ("Nenhum registro de integração no período.") e a lista vazia com filtro ("Nenhum registro com esses filtros.").
+- **Saúde (PR 13b):** uma superfície com divisores, com uma linha de rótulo e o estado de cada parte em texto colorido (verde, âmbar, vermelho), como as linhas de estado do Agente de IA.
+  - **Leitura:** pede `GET /api/connection/health` ao abrir a aba e no **Atualizar**, e nunca no render da página, porque o provedor pode levar segundos. A aba desmonta ao sair, então cada abertura lê de novo. "Lido às HH:MM" diz de quando é a leitura, que o servidor guarda por alguns segundos.
+  - **Partes:**
+    - **WhatsApp:** o estado e o número da instância;
+    - **última mensagem recebida;**
+    - **Agente de IA:** a configuração, com o motivo da recusa;
+    - **repasse ao agente:** "3 de 40 com erro nas últimas 24 h", o último entregue e o último com erro;
+    - **API do CRM:** o total e os erros, com o 4xx (de quem chamou) separado do 5xx (do CRM).
+  - **`unavailable` diz "Não foi possível ler…"** e nunca vira zero ou "nenhum".
+  - **WhatsApp indisponível diz de quem foi a falha** (`cause`): "A uazapi não respondeu agora" ou "Não foi possível ler a integração no CRM".
+  - **A última mensagem com `exact: false` é um piso** e diz "ou mais recente (só as 50 conversas mais recentes foram olhadas)".
+  - **Falha da rota inteira:** o motivo em âmbar, e o Atualizar continua disponível.
 - **Abas na URL são o padrão das telas de ajustes.** Integrações e Atendimento usam o mesmo `UrlTabs`: mesma pílula, mesmo trilho e mesma troca otimista. Tela nova com abas usa ele, e não um `Tabs` com `defaultValue`.
 - Só a aba aberta fica montada, salvo a marcada com `keepMounted` na lista de abas (`src/features/connection/lib/connection-tabs.ts`). Hoje só a do Agente de IA. Ao sair da aba WhatsApp, o painel desmonta e para de consultar o estado.
 - Variáveis são uma lista operacional única, não um card por chave. Desktop usa tabela; mobile usa linhas empilhadas. A página nunca mostra o valor já salvo.
