@@ -27,6 +27,54 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 14 (documentos): API e guia do agente reescritos
+
+**Agente/Modelo:** Claude Opus 5.5. O rascunho foi feito por um subagente, a partir do código, e revisado por amostragem.
+**Objetivo:** Quem integra o CRM, ou implementa o agente de triagem, lê o que a API faz hoje. Os dois documentos ainda descreviam o CRM da clínica (webhooks do n8n, leads, funil, `/api/integracao/*`), removido na Fase 1.
+**Arquivos alterados:** `docs/API.md` e `docs/GUIA-AGENTE-IA.md` (reescritos), `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` e este PROGRESS. Nenhum código.
+
+**O que foi feito:**
+- **`docs/API.md`:**
+  - as três famílias de autenticação;
+  - as regras da API v1: escopos e preset, limites, envelope de erro, idempotência, If-Match, cursor, corpo e rotas públicas;
+  - o que o contrato garante;
+  - a tabela das 31 rotas v1, com o escopo de cada uma;
+  - as rotas da tela, por área;
+  - o webhook do WhatsApp.
+  - **O OpenAPI (`/api/v1/openapi.json`) segue como a referência de cada campo.**
+- **`docs/GUIA-AGENTE-IA.md`:**
+  - o ciclo do agente: receber o repasse assinado, ignorar o `webhook.ping`, responder só em conversa `bot`, `/context`, abrir e atualizar ticket, escolher o ticket em foco, responder e passar para um humano;
+  - as regras que pegam quem começa;
+  - boas práticas;
+  - os dois avisos antigos que ainda saem por variável de ambiente;
+  - o roteiro curl de verificação local, em 8 passos.
+
+**Decisões tomadas:**
+- **O contrato é aditivo.** O OpenAPI publica `additionalProperties: false` em todo schema e uuid só em minúsculas. A API aceita maiúsculas e pode ganhar campos, então o guia manda o cliente ignorar o que não conhece e não validar a resposta de forma estrita.
+- **O código manda, e não o plano.** Os pontos em que os dois divergiam ficaram como o código faz:
+  - `changed: false` só vem sem `ticket_id` e `note_id` no handoff;
+  - `customers:write` e `notices:claim` estão no catálogo, mas nenhuma rota os exige;
+  - o 415 só existe nas rotas com Idempotency-Key.
+- **Ordem do roteiro:**
+  - o handoff vem antes do envio recusado (409), o que dispensa uma sessão de analista;
+  - resolver leva duas transições, porque a matriz não deixa ir de `novo` a `resolvido`.
+
+**Verificação:**
+- Revisão por amostragem contra o código:
+  - o limite por IP (1200/min) e o por conversa (100/h);
+  - as seis rotas com `Idempotency-Key` obrigatória;
+  - o `changed` do handoff;
+  - nenhum domínio, IP, e-mail ou segredo nos dois documentos.
+- Nenhum teste lê esses arquivos.
+- **Não feito:** rodar o roteiro (não há Docker aqui). Pontos que só a execução confirma: a ordem do array `allowed`, a versão do ticket logo depois de criado, e o que o envio chama no WhatsApp de mentira.
+
+**Pendências / próximos passos:**
+- **Rodar o roteiro** (`GUIA-AGENTE-IA.md` §6) com Docker e anotar a saída aqui. É o "pronto quando" da Fase 5.
+- **`CONTRATO-ASSINATURA-BOT.md` está em parte desatualizado.** Os avisos por variável de ambiente (`TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`) saem na Fase 6.
+
+**Armadilhas descobertas:**
+- **O servidor de WhatsApp de mentira em `127.0.0.1` só funciona com `pnpm dev` no host.** A guarda de URL só aceita loopback em desenvolvimento, e dentro do container `127.0.0.1` é o próprio container.
+
 ## [2026-10-02] Fase 5, PR 13d: o catálogo na aba Variáveis
 
 **Agente/Modelo:** Claude Opus 5.5.
