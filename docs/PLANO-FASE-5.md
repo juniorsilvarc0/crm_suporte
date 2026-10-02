@@ -1,6 +1,8 @@
 # Plano de execução: Fase 5 (API v1 + relay)
 
 > Escrito em 2026-09-29 a partir da leitura do código em `origin/main` (191806f), com as decisões do dono na seção 3. Complementa as seções C, D e E do [`PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md). As referências `arquivo:linha` são da `main` daquele dia e envelhecem: confira antes de editar.
+>
+> **Onde a fase está hoje e o que falta:** [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md).
 
 ## 1. Estado atual
 
