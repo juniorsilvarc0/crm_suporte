@@ -261,7 +261,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 > - **13a, feito:** a estrutura. `/app/conexao` vira **Integrações**, com as abas na URL (`?aba=`) pelo `UrlTabs` (`src/components/layout/url-tabs.tsx`; o Atendimento passou a usar o mesmo). WhatsApp (a padrão), API do CRM, Agente de IA (`keepMounted`) e Variáveis, com os blocos de antes, sem mudança. `/app/configuracoes` só redireciona (307) para `/app/conexao?aba=variaveis`, e o item Configurações saiu do menu; o Atendimento segue em `/app/configuracoes/atendimento`. O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
 > - **13b, feito (2026-10-02):** as abas Registros (`IntegrationLogsTable` refeita, os filtros na URL e "carregar mais", sobre `GET /api/connection/logs`) e Saúde (sobre `GET /api/connection/health`, pedida só com a aba aberta). A página lê a 1ª página dos registros só com a aba Registros aberta, e a Saúde nunca. Detalhe em `UI.md` §5.19.
 > - **13c, feito (2026-10-02):** a edição de token na aba API do CRM: nome, escopos um a um, preset, tipo, limite e validade, sobre o `PATCH /api/api-tokens/[id]` que já existia. Detalhe em `UI.md` §5.19.
-> - **13d, a fazer:** o `FormSelect` do catálogo em Variáveis e a limpeza da coluna Origem e de "Substituir" em variável antiga.
+> - **13d, feito (2026-10-02):** o `FormSelect` do catálogo em Variáveis (só as chaves sem valor), sem a coluna Origem e sem os rótulos "Servidor" e "Sobrescrever"; variável fora do catálogo só se remove. O PR 13 fica completo.
 
 **PR 14: `docs`, API e guia do agente** · docs · M · depende dos PRs 6 a 11
 - **Arquivos:** reescrita de `docs/API.md` e `docs/GUIA-AGENTE-IA.md`; roteiro curl do PLANO:357-365 executado contra o app local.
