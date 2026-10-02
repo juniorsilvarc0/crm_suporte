@@ -1315,7 +1315,11 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - **A aba Agente de IA fica montada ao trocar de aba** (`keepMounted`): o teste de conexão em curso e a URL digitada não se perdem.
 - **Cofre restrito ao catálogo (Fase 5, PR 12a):** o servidor só grava os nomes que o app lê, e a chave de assinatura não aparece na lista nem se grava ou apaga por ali.
   - Os textos da aba dizem o que vale desde a Fase 2: o CRM lê estas chaves só do cofre, **sem reserva no ambiente do servidor**. Remover uma chave para o que depende dela.
-  - Ficou para a aba Variáveis de Integrações (PR 13c): o campo de nome ainda é livre (o servidor recusa com o motivo; falta o `FormSelect` do catálogo), a coluna **Origem** e os rótulos "Servidor"/"Sobrescrever" ainda existem no código sem caso que os mostre, e "Substituir" numa variável antiga, de fora do catálogo, leva a uma recusa.
+  - **Catálogo na tela (PR 13d):**
+    - **Adicionar variável** abre um `FormSelect` só com as chaves do catálogo que ainda não têm valor. A chave de assinatura e o modelo de transcrição ficam de fora, porque cada um tem o seu bloco. Quando só falta uma chave, ela já vem escolhida, com a frase do que ela faz.
+    - **Sem chave faltando**, o botão fica desabilitado e a tela diz por quê ("Todas as chaves do catálogo já têm valor.").
+    - **A coluna Origem e os rótulos "Servidor" e "Sobrescrever" saíram.** O CRM só lê do cofre, e o selo do modelo de transcrição diz "Cofre" ou "Padrão".
+    - **Variável antiga, fora do catálogo,** diz "Fora do catálogo: o CRM não lê esta chave." e só oferece **Remover**. Substituir só levava a uma recusa do servidor.
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 

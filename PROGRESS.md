@@ -27,6 +27,34 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 13d: o catálogo na aba Variáveis
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A aba Variáveis só oferece o que o CRM lê. A chave se escolhe do catálogo, e somem a origem "Servidor" (que não existe desde a Fase 2) e o "Substituir" que levava a uma recusa.
+**Arquivos alterados:** `src/features/settings/components/environment-variables-manager.tsx`, `src/features/settings/schemas/environment-variable.ts` (exporta `VAULT_EDITABLE_NAMES`), o teste novo `environment-variables-manager.test.tsx`; docs `UI.md` §5.19, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` e este PROGRESS.
+
+**O que foi feito:**
+- **Adicionar variável:**
+  - um `FormSelect` só com as chaves do catálogo sem valor. Ficam de fora a chave de assinatura (o CRM gera) e o modelo de transcrição (tem seletor próprio);
+  - com uma chave só faltando, ela já vem escolhida, com a frase do que faz;
+  - sem chave faltando, o botão desabilita e diz por quê.
+- **Saíram a coluna Origem e os rótulos "Servidor" e "Sobrescrever".** O selo do modelo de transcrição diz "Cofre" ou "Padrão".
+- **Variável fora do catálogo** (gravada antes dele): "Fora do catálogo: o CRM não lê esta chave.", só com "Remover".
+- **Primeiros testes do gerenciador** (7).
+
+**Decisões tomadas:**
+- **O tipo `EnvironmentVariableSource` continua com `"environment"`,** e a consulta continua sem produzi-lo. Tirar o membro do tipo é limpeza fora do escopo (AGENTS §3.7), e a tela não depende mais dele.
+- **A lista do seletor sai do mesmo catálogo que a rota usa** (`VAULT_EDITABLE_NAMES`, no arquivo do schema): uma chave nova no catálogo aparece na tela sem outra mudança. A frase que descreve a chave fica na tela; chave sem frase mostra a frase genérica.
+
+**Verificação:** `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4417 em 234 arquivos) · `build` ✓. Não houve conferência no app contra um banco local, porque não há Docker aqui.
+
+**Pendências / próximos passos:**
+- **PR 14:** a documentação da API e o guia do agente, e o roteiro curl que é o "pronto quando" da Fase 5 (pede o stack local).
+- **Publicar:** fica com o dono (`PROXIMOS-PASSOS.md` §8).
+
+**Armadilhas descobertas:**
+- **Com uma opção só no `FormSelect`, deixar o campo vazio só obriga um clique a mais.** O formulário já abre com a chave escolhida.
+
 ## [2026-10-02] Fase 5, PR 13c: editar token na aba API do CRM
 
 **Agente/Modelo:** Claude Opus 5.5.

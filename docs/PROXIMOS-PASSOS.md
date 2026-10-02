@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #42 (o 13b, §5.1). Aberto: o PR do 13c (§5.1). |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4386 testes em 231 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 13c da Fase 5 **pronto**, à espera do merge. Depois, o 13d (§5.1). |
+| `main` | até o PR #43 (o 13c, §5.1). Aberto: o PR do 13d (§5.1). |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4410 testes em 233 arquivos) e `build` verdes. |
+| Trabalho em curso | PR 13d da Fase 5 **pronto**, à espera do merge: com ele o PR 13 fecha. Depois, o PR 14 (§5.2). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -31,7 +31,7 @@
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
 | 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 · Registros e Saúde #42 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 · Registros e Saúde #42 · editar token #43 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
@@ -92,9 +92,9 @@ Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". O PR foi dividido
 - **Saúde:** `IntegrationHealthPanel` pede `GET /api/connection/health` ao abrir a aba e no "Atualizar". A página nunca a lê.
 - **Não feito:** o roteiro por HTTP contra o stack local (§4), de novo por falta de Docker.
 
-**13c, feito (no PR aberto, à espera do merge): editar token na API do CRM.** Nome, escopos um a um (com "Aplicar IA de triagem" e "Limpar"), quem usa, limite por minuto e validade, sobre o `PATCH /api/api-tokens/[id]` que já existia. Como ficou está em `UI.md` §5.19.
+**13c, feito (#43): editar token na API do CRM.** Nome, escopos um a um (com "Aplicar IA de triagem" e "Limpar"), quem usa, limite por minuto e validade, sobre o `PATCH /api/api-tokens/[id]` que já existia. Como ficou está em `UI.md` §5.19.
 
-**13d, a fazer: Variáveis.** O campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
+**13d, feito (no PR aberto, à espera do merge): Variáveis.** "Adicionar" escolhe num `FormSelect` só as chaves do catálogo sem valor. Saíram a coluna Origem e os rótulos "Servidor" e "Sobrescrever", e variável fora do catálogo só tem "Remover". Com ele, o PR 13 fecha.
 
 ### 5.2 PR 14 da Fase 5: documentação da API e guia do agente
 
