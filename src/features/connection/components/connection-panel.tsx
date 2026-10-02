@@ -136,12 +136,15 @@ export function ConnectionPanel() {
     qrInFlight.current = true;
     if (manual) setRefreshing(true);
     try {
-      const res = await fetch("/api/connection/qr", { cache: "no-store" });
+      const res = await fetch("/api/connection/qr", { method: "POST" });
       const json = await res.json();
       setQrcode((json?.qrcode as string) ?? null);
       setPairingCode((json?.pairingCode as string) ?? null);
     } catch {
+      // Sem resposta legível (rede, ou 405 numa aba aberta antes de um deploy): o
+      // QR e o código que estavam na tela já não valem.
       setQrcode(null);
+      setPairingCode(null);
     } finally {
       if (manual) setRefreshing(false);
       qrInFlight.current = false;

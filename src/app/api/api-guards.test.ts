@@ -200,3 +200,166 @@ describe("rotas /api de sessão", () => {
     }
   );
 });
+
+/**
+ * Leitura não muda estado.
+ *
+ * O proxy confere a origem do pedido só em escrita (`isCrossOriginWrite`): GET
+ * fica de fora, porque link, imagem e navegação vindos de outro lugar são
+ * legítimos. Um GET que grava é, então, uma escrita que qualquer site dispara
+ * no navegador de quem está logado. E o Next responde HEAD chamando o GET.
+ *
+ * É uma rede, não uma prova. O teste vê, dentro do handler GET ou de função
+ * local do arquivo: gravação em tabela, chamada de RPC e ação na uazapi. Não
+ * segue import: um GET que grave por função de outro arquivo passa.
+ *
+ * `/api/auth/*` fica de fora (é rota pública na lista do guard). O logout por
+ * GET apaga o cookie de propósito: é o destino do `redirect` do layout quando o
+ * usuário do cookie já não vale.
+ */
+// `.rpc(` entra porque uma RPC pode gravar, e daqui não dá para saber. O GET que
+// precisar de uma RPC de leitura entra na lista de exceções, com o porquê.
+const GET_WRITE_CALLS = [".insert(", ".update(", ".upsert(", ".delete(", ".rpc("];
+// `getUazapiStatus` e `getUazapiIntegration` só leem; estas agem no provedor.
+const PROVIDER_ACTION_RE = /\b(?:connect|disconnect|register|send|edit|delete)Uazapi\w*\(/;
+
+// Exceções conhecidas e aceitas. Em nenhuma o valor gravado é escolhido por
+// quem faz o pedido.
+const GET_WRITES_ALLOWED: Record<string, string> = {
+  "/api/chat/conversations/[id]/": "abrir a conversa zera o contador de não lidas dela",
+  "/api/connection/state/": "grava o telefone que o provedor informa quando a instância conecta",
+};
+
+/** O que o handler GET do arquivo grava: direto, ou por função local. */
+function writesInGet(source: string): string[] {
+  const bodies = functionBodies(source);
+  const get = bodies.get("GET");
+  if (!get) return [];
+  const code = bodyAfterSignature(get);
+  // `log(` não é chamada de uma função local `log` quando vem de `console.log(`.
+  const calls = (name: string) => new RegExp(`(?<![\\w.])${name}\\(`).test(code);
+  const locals = [...bodies]
+    .filter(([name]) => name !== "GET" && calls(name))
+    .map(([, body]) => bodyAfterSignature(body));
+
+  return [code, ...locals].flatMap((body) => [
+    ...GET_WRITE_CALLS.filter((needle) => body.includes(needle)),
+    ...(PROVIDER_ACTION_RE.exec(body)?.slice(0, 1) ?? []),
+  ]);
+}
+
+// Os dois contratos deste arquivo leem `export function`. Handler exportado por
+// `const` ou por reexport (`export const GET = POST`) escaparia dos dois.
+const HANDLER_BY_CONST_RE =
+  /export\s+(?:const|let|var)\s+(?:GET|HEAD|OPTIONS|POST|PUT|PATCH|DELETE)\b|export\s*\{[^}]*\b(?:GET|HEAD|OPTIONS|POST|PUT|PATCH|DELETE)\b/;
+
+describe("regra: leitura não muda estado", () => {
+  it("acusa GET que grava em tabela", () => {
+    const source = `export async function GET() {
+      const supabase = createSupabaseAdminClient();
+      await supabase.from("chat_conversations").update({ unread_count: 0 }).eq("id", id);
+    }`;
+    expect(writesInGet(source)).toEqual([".update("]);
+  });
+
+  it("acusa GET que chama RPC: ela pode gravar", () => {
+    const source = `export async function GET() {
+      await supabase.rpc("reset_app_user_password", { p_id: id });
+    }`;
+    expect(writesInGet(source)).toEqual([".rpc("]);
+  });
+
+  it("acusa GET que grava por função local", () => {
+    const source = `async function remember(supabase, phone) {
+      await supabase.from("chat_integrations").upsert({ phone_number: phone });
+    }
+    export async function GET() {
+      await remember(supabase, "5511999990000");
+    }`;
+    expect(writesInGet(source)).toEqual([".upsert("]);
+  });
+
+  it("acusa GET que age no provedor do WhatsApp, direto ou repassando para outro método", () => {
+    const direct = `export async function GET() {
+      const conn = await connectUazapi(integration.apiUrl, integration.token);
+    }`;
+    const viaPost = `export async function GET() {
+      return POST();
+    }
+    export async function POST() {
+      const conn = await connectUazapi(integration.apiUrl, integration.token);
+    }`;
+
+    expect(writesInGet(direct)).toEqual(["connectUazapi("]);
+    expect(writesInGet(viaPost)).toEqual(["connectUazapi("]);
+  });
+
+  it("aceita GET que só lê, do banco e do provedor", () => {
+    const source = `async function load(supabase) {
+      return supabase.from("contacts").select("id").limit(1);
+    }
+    export async function GET() {
+      const integration = await getUazapiIntegration(supabase);
+      const status = await getUazapiStatus(integration.apiUrl, integration.token);
+      return NextResponse.json(await load(supabase));
+    }`;
+    expect(writesInGet(source)).toEqual([]);
+  });
+
+  it("não olha o que os outros métodos do arquivo gravam", () => {
+    const source = `export async function GET() {
+      return NextResponse.json(await supabase.from("tags").select("*"));
+    }
+    export async function POST() {
+      await supabase.from("tags").insert(row);
+      await sendUazapiText(base, token, payload);
+    }`;
+    expect(writesInGet(source)).toEqual([]);
+  });
+
+  it("função local só conta quando é ela a chamada, e não um nome que termina igual", () => {
+    const source = `async function log(supabase) {
+      await supabase.from("integration_logs").insert({});
+    }
+    export async function GET() {
+      console.log("lendo");
+      return NextResponse.json(await catalog(supabase));
+    }`;
+    expect(writesInGet(source)).toEqual([]);
+  });
+
+  it("reconhece handler exportado por `const` ou por reexport, que os contratos não leem", () => {
+    expect(HANDLER_BY_CONST_RE.test("export const GET = POST;")).toBe(true);
+    expect(HANDLER_BY_CONST_RE.test("export const POST = withApi({}, handler);")).toBe(true);
+    expect(HANDLER_BY_CONST_RE.test("export { handler as GET };")).toBe(true);
+    expect(HANDLER_BY_CONST_RE.test("export { GET } from './outra';")).toBe(true);
+    expect(HANDLER_BY_CONST_RE.test('export const runtime = "nodejs";\nexport async function GET() {}')).toBe(false);
+  });
+});
+
+describe("rotas /api de sessão: leitura não muda estado", () => {
+  const sources = routeFiles(API_DIR)
+    .filter((file) => !isPublicApiRoute(routePath(file)))
+    .map((file) => ({ route: routePath(file), source: readFileSync(file, "utf8") }));
+  const routes = sources.map(({ route, source }) => ({ route, writes: writesInGet(source) }));
+
+  it("todo handler é exportado como `export function` (os contratos deste arquivo só leem essa forma)", () => {
+    const byConst = sources.filter(({ source }) => HANDLER_BY_CONST_RE.test(source)).map(({ route }) => route);
+
+    expect(byConst).toEqual([]);
+  });
+
+  it("nenhum GET grava em tabela, chama RPC nem age no provedor, fora das exceções conhecidas", () => {
+    const offenders = routes
+      .filter(({ route, writes }) => writes.length > 0 && !(route in GET_WRITES_ALLOWED))
+      .map(({ route, writes }) => `${route} → ${writes.join(", ")}`);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("toda exceção ainda existe e ainda grava (a lista não guarda rota que já foi corrigida)", () => {
+    const stillWriting = routes.filter(({ writes }) => writes.length > 0).map(({ route }) => route);
+
+    expect(Object.keys(GET_WRITES_ALLOWED).sort()).toEqual(stillWriting.sort());
+  });
+});
