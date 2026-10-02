@@ -142,7 +142,7 @@ Envelope: `{ EventType, message?, event?, chat?, owner, instanceName, token }`.
 
 > O QR só vincula um **celular** à instância existente (mesmo `apiUrl`+`token`) — não troca de instância. Para conectar OUTRA instância uazapi, é preciso **excluir** a atual e informar URL+token novos.
 
-Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vault** e obtém o segredo do webhook por `ensure_chat_integration_secret` (atômico: devolve o existente ou grava o candidato de 32 bytes), registrando na uazapi o valor **devolvido** — duas conexões simultâneas nunca divergem. Env que ainda existe: `APP_PUBLIC_URL` (base do webhook registrado). A URL do relay fica só na tela (Configurações → Agente de IA): `N8N_WEBHOOK_URL` saiu no relay v1. A chave da OpenAI e a de assinatura do relay ficam no cofre: a da OpenAI entra por Configurações → Variáveis (o cofre só aceita os nomes que o app lê); a de assinatura é **gerada pelo CRM** em Configurações → Agente de IA e não se grava à mão.
+Credenciais NÃO ficam em env nem em tabela: o `persist` grava o token no **Vault** e obtém o segredo do webhook por `ensure_chat_integration_secret` (atômico: devolve o existente ou grava o candidato de 32 bytes), registrando na uazapi o valor **devolvido** — duas conexões simultâneas nunca divergem. Env que ainda existe: `APP_PUBLIC_URL` (base do webhook registrado). A URL do relay fica só na tela (Integrações → Agente de IA, `/app/conexao?aba=agente`): `N8N_WEBHOOK_URL` saiu no relay v1. A chave da OpenAI e a de assinatura do relay ficam no cofre: a da OpenAI entra por Integrações → Variáveis (o cofre só aceita os nomes que o app lê); a de assinatura é **gerada pelo CRM** em Integrações → Agente de IA e não se grava à mão.
 
 > **Dev local:** a uazapi é remota → precisa alcançar nosso webhook. `localhost` não serve — túnel (`ngrok`) em `APP_PUBLIC_URL`.
 
@@ -204,7 +204,7 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 
 ## 8. Playbook de depuração
 
-**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[webhook/uazapi] não reconhecido: {eventType, messageType}` (nunca o envelope: ele traz o `token` e o texto). 401 = segredo: a integração existe, tem token **e** segredo no Vault, e o `?s=` registrado na uazapi é o de agora? Reconectar pelo menu Conexão re-registra. Confira também: integração ativa? webhook registrado (`GET {base}/webhook`)? O `message.chatid`/`messageType` batem com o normalizer?
+**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[webhook/uazapi] não reconhecido: {eventType, messageType}` (nunca o envelope: ele traz o `token` e o texto). 401 = segredo: a integração existe, tem token **e** segredo no Vault, e o `?s=` registrado na uazapi é o de agora? Reconectar por Integrações → WhatsApp re-registra. Confira também: integração ativa? webhook registrado (`GET {base}/webhook`)? O `message.chatid`/`messageType` batem com o normalizer?
 
 **"Áudio/imagem não aparece"** → a mídia vem no `messages_update` **FileDownloaded** (separado da msg). Cheque: (a) o FileDownloaded chegou? (b) `extractUazapiMedia` casou por `MessageIDs`? (c) a UI assina **UPDATE** em chat_messages? (d) num reload aparece? (se sim, é realtime UPDATE).
 

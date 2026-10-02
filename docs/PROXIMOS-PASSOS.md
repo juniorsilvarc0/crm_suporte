@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #39. Aberto: PR #40 (o 12b, §4). |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4198 testes em 220 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 12b da Fase 5 **pronto**, no PR #40, à espera do merge. Depois, o PR 13 (§5.1). |
+| `main` | até o PR #40 (o 12b, §4). Aberto: o PR do 13a (§5.1). |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4334 testes em 226 arquivos) e `build` verdes. |
+| Trabalho em curso | PR 13a da Fase 5 **pronto**, à espera do merge. Depois, o 13b e o 13c (§5.1). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -31,7 +31,7 @@
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
 | 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
@@ -42,7 +42,7 @@ Correções fora do plano que já entraram: testes de tela instáveis (#16, #32)
 
 O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e na descrição do próprio PR no GitHub, na seção "Decisões que tomei e você deveria revisar".
 
-## 4. PR 12b: pronto, no PR #40
+## 4. PR 12b: feito (#40)
 
 **O que é:** o back das abas Registros e Saúde da tela de Conexão ([plano da Fase 5](PLANO-FASE-5.md), PR 12): `GET /api/connection/logs` e `GET /api/connection/health`. Só leitura, só administrador, sem migration. A tela vem no PR 13.
 
@@ -77,19 +77,25 @@ O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e n
 
 ## 5. Depois, nesta ordem
 
-### 5.1 PR 13 da Fase 5: a tela de Conexão em abas (front)
+### 5.1 PR 13 da Fase 5: a tela de Integrações em abas (front)
 
-Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". Abas: WhatsApp, API, Agente, Cofre, Registros e Saúde. O que os PRs anteriores deixaram para ele:
+Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". O PR foi dividido em três.
 
-- **Abas com a aba na URL.** É o 3º uso de `service-settings-tabs.tsx`: vira componente em `src/components/layout`.
-- **Agente:** o bloco "Chave de assinatura do webhook" e o botão "Testar conexão" saem de Configurações e vêm para cá. A aba precisa de `keepMounted`: o diálogo guarda a chave, que só aparece uma vez.
-- **`revalidatePath`** das rotas de conexão passa a apontar para `/app/conexao`.
-- **Cofre:** o campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
-- **Registros:** filtros no servidor e "carregar mais", com `parseIntegrationLogFilters` e `integrationLogSearch`. O cursor não vai para a URL da página.
-- **Saúde:** não aguardar `getIntegrationHealth()` no render da página. A consulta ao provedor pode levar 12 s: carregar só na aba, pela rota ou sob `Suspense`. Mostrar contagens ("3 de 40"), sem inventar índice.
+**13a, feito (no PR aberto, à espera do merge):**
+- `/app/conexao` virou **Integrações**, com as abas na URL pelo `UrlTabs` (`src/components/layout/url-tabs.tsx`, que o Atendimento também usa): WhatsApp (a padrão), API do CRM, Agente de IA (`keepMounted`) e Variáveis.
+- `/app/configuracoes` só redireciona (307) para `/app/conexao?aba=variaveis`. O item Configurações saiu do menu, e o Atendimento segue em `/app/configuracoes/atendimento` (D14, decidido em 2026-10-02).
+- O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
+- O pedido do QR continua POST (#38).
+
+**13b, a fazer: as abas Registros e Saúde,** sobre as rotas do #40.
+- **Registros:** `IntegrationLogsTable` refeita, com filtros no servidor e "carregar mais", usando `parseIntegrationLogFilters` e `integrationLogSearch`. Os filtros vão para a URL da página; o cursor, não.
+- **Saúde:** pedir `GET /api/connection/health` só com a aba aberta, e nunca aguardar no render da página: o provedor pode levar 12 s. Mostrar contagens ("3 de 40"), sem inventar índice.
 - **Estados novos no `UI.md`:** `unavailable`, `cause`, `invalid_cursor`, `exact: false`.
-- **O pedido do QR continua POST** (#38).
-- **Antes de começar:** o dono decide o que sobra em `/app/configuracoes` (D14 do plano).
+- A lista das abas está em `src/features/connection/lib/connection-tabs.ts`, neutra: a página lê dali qual aba está aberta.
+
+**13c, a fazer: API do CRM e Variáveis.**
+- **API do CRM:** edição de token (escopos um a um, preset, validade, limite). A rota `PATCH /api/api-tokens/[id]` já aceita esses campos.
+- **Variáveis:** o campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
 
 ### 5.2 PR 14 da Fase 5: documentação da API e guia do agente
 
@@ -179,7 +185,7 @@ O padrão descrito é o que está no código hoje. Cada uma está explicada no P
 | Decisão | PR | Padrão hoje |
 |---|---|---|
 | Corrigir a tela de Conexão (§6.1) | #38 | não corrigido |
-| O que sobra em `/app/configuracoes` (D14) | plano | a decidir antes do PR 13 |
+| O que sobra em `/app/configuracoes` (D14) | 13a | **decidido** (o dono delegou): só o Atendimento; o resto foi para Integrações |
 | A IA só responde em conversa `bot`? Libera o PR 11b | #34 | o filtro `bot` continua |
 | Rotação do segredo do webhook (D13) | #36 | proposta: adiar |
 | Testar a URL do agente antes de salvar | #36 | o teste vai à URL salva |

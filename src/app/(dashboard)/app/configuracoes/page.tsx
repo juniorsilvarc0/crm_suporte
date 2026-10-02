@@ -1,109 +1,18 @@
-import { PageHeader } from "@/components/layout/page-header";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiTokensManager } from "@/features/settings/components/api-tokens-manager";
-import { AutomationSettings } from "@/features/settings/components/automation-settings";
-import { BotSignatureSettings } from "@/features/settings/components/bot-signature-settings";
-import { EnvironmentVariablesManager } from "@/features/settings/components/environment-variables-manager";
-import { RelaySigningSettings } from "@/features/settings/components/relay-signing-settings";
-import { getBotSignatureConfig } from "@/features/settings/lib/get-bot-signature";
-import { getRelayConfig } from "@/features/settings/lib/get-relay-url";
-import { getApiTokens } from "@/features/settings/queries/get-api-tokens";
-import {
-  getEnvironmentVariables,
-  getTranscriptionModelConfig,
-} from "@/features/settings/queries/get-environment-variables";
-import { getRelaySigning } from "@/features/settings/queries/get-relay-signing";
-import { requireAdminPage } from "@/lib/auth/require-dashboard-session";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+import { urlTabHref } from "@/components/layout/url-tab-state";
+import { CONNECTION_TABS } from "@/features/connection/lib/connection-tabs";
 
-export const metadata = {
-  title: "Configurações",
-};
-
-export default async function ConfiguracoesPage() {
-  await requireAdminPage();
-  const [
-    apiTokens,
-    relayConfig,
-    relaySigning,
-    botSignature,
-    environmentVariables,
-    transcriptionModel,
-  ] = await Promise.all([
-    getApiTokens(),
-    getRelayConfig(),
-    getRelaySigning(),
-    getBotSignatureConfig(),
-    getEnvironmentVariables(),
-    getTranscriptionModelConfig(),
-  ]);
-
-  return (
-    <>
-      <PageHeader title="Configurações" />
-      <main className="min-w-0 p-4 sm:p-6 lg:p-8">
-        <Tabs defaultValue="variables" className="min-w-0 gap-5">
-          <div className="overflow-x-auto overscroll-x-contain">
-            <TabsList className="h-auto min-w-max gap-1 rounded-full bg-muted/60 p-1">
-              <TabsTrigger value="variables" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
-                Variáveis
-              </TabsTrigger>
-              <TabsTrigger value="api" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
-                API do CRM
-              </TabsTrigger>
-              <TabsTrigger value="agent" className="h-11 rounded-full px-4 font-display data-active:bg-brand-gradient data-active:text-primary-foreground! data-active:shadow-sm sm:h-9">
-                Agente de IA
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="variables">
-            <EnvironmentVariablesManager
-              variables={environmentVariables}
-              transcriptionModel={transcriptionModel}
-            />
-          </TabsContent>
-
-          <TabsContent value="api">
-            <ApiTokensManager tokens={apiTokens} />
-          </TabsContent>
-
-          {/* Não desmonta ao trocar de aba: a chave gerada só aparece uma vez, e o
-              pedido pode voltar depois de o administrador ter ido a outra aba. */}
-          <TabsContent value="agent" keepMounted>
-            <section className="grid gap-5">
-              <div>
-                <h2 className="text-sm font-semibold">Integração do agente</h2>
-                <p className="text-sm text-muted-foreground">
-                  Entrega mensagens ao agente externo enquanto a conversa está no modo IA.
-                </p>
-              </div>
-              <AutomationSettings config={relayConfig} />
-
-              <div className="border-t border-border/70 pt-5">
-                <h3 className="text-sm font-medium">Chave de assinatura do webhook</h3>
-                <p className="text-sm text-muted-foreground">
-                  Com ela, o agente confere que o pedido veio do CRM.
-                </p>
-                <div className="mt-3">
-                  <RelaySigningSettings signing={relaySigning} />
-                </div>
-              </div>
-
-              <div className="border-t border-border/70 pt-5">
-                <h3 className="text-sm font-medium">Assinatura das mensagens da IA</h3>
-                <p className="text-sm text-muted-foreground">
-                  Define como as respostas automáticas aparecem para o contato.
-                </p>
-                <div className="mt-3">
-                  <BotSignatureSettings config={botSignature} />
-                </div>
-              </div>
-            </section>
-          </TabsContent>
-        </Tabs>
-      </main>
-    </>
-  );
+/**
+ * Endereço antigo. Variáveis, API do CRM e Agente de IA foram para as abas de
+ * /app/conexao (Integrações); aqui fica só o Atendimento, em
+ * /app/configuracoes/atendimento. Quem tem o link salvo cai na aba que esta
+ * página abria por padrão (Variáveis). Não lê nada: a página de destino confere
+ * o administrador.
+ *
+ * `redirect` (307), e não `permanentRedirect`: o navegador guardaria o 308 para
+ * sempre, e o endereço ficaria preso se um dia voltar a ter página.
+ */
+export default function ConfiguracoesPage(): never {
+  redirect(urlTabHref(CONNECTION_TABS, "/app/conexao", "variaveis"));
 }

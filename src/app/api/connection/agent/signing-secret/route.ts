@@ -146,7 +146,7 @@ export async function POST(request: Request) {
   }
 
   await audit(supabase, replace ? "rotated" : "generated", auth.viewer.id);
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   // A chave em texto puro sai só aqui: a tela a mostra para cópia e não tem
   // como lê-la de novo.
   return NextResponse.json(
@@ -195,7 +195,7 @@ export async function DELETE(request: Request) {
   }
 
   await audit(supabase, "removed", auth.viewer.id);
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   return NextResponse.json({
     ok: true,
     message: "Chave removida: os pedidos ao agente passam a sair sem assinatura.",

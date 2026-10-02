@@ -27,6 +27,52 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 13a: Integrações em /app/conexao, com a aba na URL
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Tudo que liga o CRM a outro sistema fica num lugar só, `/app/conexao` (Integrações), com a aba na URL. `/app/configuracoes` deixa de ser tela e só redireciona, e o Atendimento continua onde estava.
+**Arquivos alterados:**
+- novos: `src/components/layout/url-tabs.tsx` (o componente), `src/components/layout/url-tab-state.ts` (as funções puras, sem "use client") e o teste `url-tabs.test.tsx`; `src/features/connection/lib/connection-tabs.ts` (a lista das abas);
+- alterados: `src/app/(dashboard)/app/conexao/page.tsx` (as quatro abas), `src/app/(dashboard)/app/configuracoes/page.tsx` (só o redirect), `src/features/tickets/components/service-settings-tabs.tsx` (passa a usar o `UrlTabs`), `src/config/navigation.ts`, o `revalidatePath` de `api/api-tokens`, `api/api-tokens/[id]`, `api/settings/environment-variables` e `api/connection/agent/signing-secret`;
+- testes: o da página antiga foi movido para `conexao/page.test.tsx` (com as abas novas), `configuracoes/page.test.tsx` passou a testar o redirect, mais `navigation.test.ts` e os dois testes de rota que conferem o `revalidatePath`;
+- docs: `PRD.md`, `UI.md` §5.19, `AGENTS.md` §4.1, `README.md`, `SETUP.md`, a skill `uazapi-integration`, `docs/CONTRATO-RELAY.md`, `docs/CONTRATO-ASSINATURA-BOT.md`, `docs/GUIA-AGENTE-IA.md`, `docs/API.md` (só o caminho das telas), `docs/PLANO-FASE-5.md` e este PROGRESS.
+
+**O que foi feito:**
+- **`UrlTabs`, o terceiro uso das abas de ajustes,** virou componente de layout. As abas recebem a lista e os painéis, e a primeira é a padrão, fora da URL. A troca é otimista, `router.replace` acontece sem rolar a página, e o `keepMounted` é escolhido por aba. Ele saiu do `ServiceSettingsTabs`, que hoje só o usa: as funções e os testes do Atendimento seguem como estavam, e passam sem mudança.
+- **`/app/conexao` (Integrações):** quatro abas.
+  - **WhatsApp:** o `ConnectionPanel`, intacto. É a aba padrão.
+  - **API do CRM** (`?aba=api`), **Agente de IA** (`?aba=agente`, com `keepMounted`) e **Variáveis** (`?aba=variaveis`): os mesmos blocos e as mesmas leituras que estavam em Configurações.
+- **`/app/configuracoes`:** `redirect` (307) para `/app/conexao?aba=variaveis`, a aba que a tela antiga abria por padrão. Não lê nada, porque quem confere o administrador é a página de destino.
+- **Menu:** o item Configurações saiu, e "Conexão" virou **Integrações** (o endereço é o mesmo). O menu Ajustes fica com Integrações, Equipe e Atendimento.
+- **`revalidatePath`:** as rotas de token, de variável e da chave de assinatura passam a revalidar `/app/conexao`.
+
+**Decisões tomadas:**
+- **O dono delegou a escolha** ("o mais profissional, sem débito técnico"). Ficou um endereço por assunto, sem cópia. Duas telas com os mesmos blocos durante uma transição viram duas fontes de verdade, e o `revalidatePath` precisaria apontar para as duas.
+- **O endereço continua `/app/conexao`, e só o nome mudou.** Mudar a URL quebraria link, guard e rota (`/api/connection/*`) sem ganho para quem usa. "Conexão" não descrevia mais uma tela com API, agente e variáveis.
+- **`redirect`, e não `permanentRedirect`:** o 308 fica guardado no navegador para sempre, e o endereço não poderia voltar a ter página.
+- **`/app/configuracoes` continua em `ADMIN_PAGE_PREFIXES`:** cobre o Atendimento e o próprio redirect, e o membro volta para `/app` já no proxy.
+- **A aba de variáveis se chama "Variáveis", e não "Cofre"** como no plano: é o título do próprio bloco ("Variáveis do CRM"), e "Cofre" já aparece na tela como a origem do valor.
+- **A lista das abas fica num arquivo neutro** (`connection-tabs.ts`, sem "use client"): a página de servidor a entrega ao `UrlTabs` e o redirect a usa para montar o link. O PR 13b pode usá-la no servidor para ler os registros só com a aba Registros aberta.
+- **O PR 13 foi dividido em três** (ver o plano): 13a, a estrutura; 13b, Registros e Saúde, sobre as rotas do PR 12b (#40, já na `main`); 13c, a edição de token e o catálogo em Variáveis.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4341 em 228 arquivos, sobre a `main` com o #40) · `build` ✓ (`/app/conexao`, `/app/configuracoes` e `/app/configuracoes/atendimento` no build).
+- O que os testes conferem:
+  - os testes do Atendimento passam sem mudança sobre o `UrlTabs`;
+  - o teste novo do `UrlTabs` confere a ordem das abas, a aba lida da URL, o `keepMounted` (o painel fica no DOM escondido, e o outro desmonta) e o `replace` sem rolagem;
+  - o teste da página confere a ordem das abas, as leituras, o guard antes delas e que os blocos não vazam entre abas.
+- Não rodei o app contra um banco local nesta sessão. O redirect e as abas foram conferidos pelos testes e pelo build.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. No lugar: a releitura do diff e os quatro comandos acima.
+
+**Pendências / próximos passos:**
+- **PR 13b:** as abas Registros e Saúde, sobre `GET /api/connection/logs` e `GET /api/connection/health`. O que os PRs anteriores deixaram para ela está no `docs/PROXIMOS-PASSOS.md` §5.1.
+- **PR 13c:** a edição de token, o `FormSelect` do catálogo em Variáveis e a limpeza de Origem e de "Substituir".
+- **Cada troca de aba relê a página no servidor** (as seis leituras), como já acontece no Atendimento. São leituras do banco, baratas. A Saúde, que chama a uazapi, não entra nessa leitura: a aba dela pede `GET /api/connection/health` no navegador, só quando aberta (13b).
+
+**Armadilhas descobertas:**
+- **Página de servidor não lê constante de arquivo "use client":** o que ela importa de lá é uma referência de cliente, e não o valor. Lista de abas, href e parse ficam em arquivo neutro (`url-tab-state.ts`, `connection-tabs.ts`).
+- **O `TabsContent` com `keepMounted` deixa o painel no DOM, escondido.** No teste, o painel aparece com `not.toBeVisible()`, e não com `not.toBeInTheDocument()`.
+
 ## [2026-10-02] Fase 5, PR 12b: registros de integração e Saúde (back), terminado
 
 **Agente/Modelo:** Claude Opus 5.5.

@@ -32,7 +32,6 @@ describe("getDashboardNavigation", () => {
       "/app/contatos",
       "/app/conexao",
       "/app/equipe",
-      "/app/configuracoes",
       "/app/configuracoes/atendimento",
     ]);
   });
@@ -96,7 +95,6 @@ describe("buildTopNavigation", () => {
       expect(ajustes.items.map((item) => item.href)).toEqual([
         "/app/conexao",
         "/app/equipe",
-        "/app/configuracoes",
         "/app/configuracoes/atendimento",
       ]);
     }
@@ -153,10 +151,15 @@ describe("buildTopNavigation", () => {
   });
 });
 
-describe("Atendimento sob Configurações", () => {
-  // O href de Atendimento começa com o de Configurações: com prefixo simples,
-  // os dois acenderiam juntos na página de Atendimento.
+describe("Atendimento sob /app/configuracoes", () => {
+  // /app/configuracoes saiu do menu (o conteúdo foi para Integrações, e o
+  // endereço só redireciona); Atendimento continua sob ele.
   const hrefs = getDashboardNavigation("admin").map((item) => item.href);
+
+  it("Configurações não é mais item do menu; Integrações mora em /app/conexao", () => {
+    expect(hrefs).not.toContain("/app/configuracoes");
+    expect(getDashboardNavigation("admin").find((item) => item.href === "/app/conexao")?.title).toBe("Integrações");
+  });
 
   it("acende só Atendimento na página dele, com ou sem sub-rota", () => {
     expect(getActiveNavHref("/app/configuracoes/atendimento", hrefs)).toBe("/app/configuracoes/atendimento");
@@ -165,9 +168,9 @@ describe("Atendimento sob Configurações", () => {
     );
   });
 
-  it("acende só Configurações na página delas", () => {
-    expect(getActiveNavHref("/app/configuracoes", hrefs)).toBe("/app/configuracoes");
-    expect(getActiveNavHref("/app/configuracoes/atendimentox", hrefs)).toBe("/app/configuracoes");
+  it("o endereço antigo e um prefixo parecido não acendem Atendimento", () => {
+    expect(getActiveNavHref("/app/configuracoes", hrefs)).toBeNull();
+    expect(getActiveNavHref("/app/configuracoes/atendimentox", hrefs)).toBeNull();
   });
 
   it("o guard devolve o membro para /app, já pelo prefixo de /app/configuracoes", () => {
@@ -175,5 +178,6 @@ describe("Atendimento sob Configurações", () => {
       type: "redirect-app",
     });
     expect(decideRouteAccess("/app/configuracoes/atendimento", true, "admin")).toEqual({ type: "allow" });
+    expect(decideRouteAccess("/app/configuracoes", true, "member")).toEqual({ type: "redirect-app" });
   });
 });

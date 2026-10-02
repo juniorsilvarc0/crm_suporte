@@ -7,8 +7,8 @@ CRM **não** envia essas mensagens, só faz o relay do inbound e registra o echo
 Por isso a assinatura (prefixar um apelido antes do texto) **tem que ser aplicada
 no agente**, no momento em que ele monta a resposta.
 
-O CRM é a **fonte de verdade da config** (a tela em *Configurações → Automação /
-Integração*: check "assinar" + campo "apelido"). O agente recebe essa config e a
+O CRM é a **fonte de verdade da config** (a tela em *Integrações → Agente de IA*, bloco "Assinatura das mensagens da IA":
+check "assinar" + campo "apelido"). O agente recebe essa config e a
 aplica. Duas vias, complementares:
 
 - **Push (CRM → agente):** ao salvar na tela, o CRM faz `POST` no endpoint do
@@ -78,8 +78,8 @@ appointment, followup). Sem token válido → 401.
 
 ## 2. O que já está pronto no CRM
 
-- **Tela**: *Configurações → Automação / Integração → "Assinatura das mensagens da
-  IA"* (check + apelido com disable/obrigatório + botão Salvar).
+- **Tela**: *Integrações → Agente de IA → "Assinatura das mensagens da
+  IA"* (`/app/conexao?aba=agente`) (check + apelido com disable/obrigatório + botão Salvar).
 - **Storage**: `app_settings.key = 'bot_signature'`, `value = { enabled, apelido }`.
 - **Push on save**: ao salvar, o CRM faz o `POST` da seção 1.1 (best-effort, com
   retry manual pela própria tela se falhar).

@@ -28,7 +28,7 @@ O stack local é 100% `docker compose`: `crm-suporte-db` (Postgres da Supabase),
 `crm-suporte-rest` (PostgREST), `realtime` (chat ao vivo), `crm-suporte-storage`
 (mídia privada), `crm-suporte-gateway` (porta 54321) e `crm-suporte-web`.
 Credenciais de integração (uazapi, OpenAI) não vão no `.env.local`: são gravadas
-pelas telas Conexão e Configurações, no Vault do banco.
+pela tela Integrações (`/app/conexao`), no Vault do banco.
 
 ## Checks
 

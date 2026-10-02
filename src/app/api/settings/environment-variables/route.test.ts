@@ -127,7 +127,7 @@ describe("DELETE /api/settings/environment-variables", () => {
     expect(rpcMock).toHaveBeenCalledWith("delete_app_environment_variable", {
       p_name: "MINHA_CHAVE",
     });
-    expect(revalidatePathMock).toHaveBeenCalledWith("/app/configuracoes");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/app/conexao");
   });
 
   it("responde 404 quando a variável já não existe", async () => {

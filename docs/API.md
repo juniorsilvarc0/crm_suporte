@@ -39,7 +39,7 @@ Esta seção é um passo a passo para conectar suas automações do n8n ao CRM. 
 | Item | O que é | Onde conseguir |
 |---|---|---|
 | **URL base do CRM** | O endereço do CRM em produção | Com quem fez o deploy (ex.: `https://crm.seudominio.com.br`) |
-| **Credencial de acesso** | Autentica as chamadas. Pode ser o segredo compartilhado (`N8N_WEBHOOK_SECRET`, env) **ou** um **token de API** gerado no painel | Segredo: com quem fez o deploy · Token: **Configurações → Tokens de API** (gera na hora) |
+| **Credencial de acesso** | Autentica as chamadas. Pode ser o segredo compartilhado (`N8N_WEBHOOK_SECRET`, env) **ou** um **token de API** gerado no painel | Segredo: com quem fez o deploy · Token: **Integrações → API do CRM** (gera na hora) |
 
 > 🔐 A credencial vai no header `x-webhook-secret` (ou `Authorization: Bearer <credencial>`). Se não bater, o CRM responde `401`.
 >
@@ -220,7 +220,7 @@ Registra um evento genérico no log de integração. **Não tem schema** — ace
 Três formas de acesso:
 
 1. **Sessão (dashboard)** — cookie `crm-suporte-session`, um **JWT** emitido no login e verificado pelo middleware. **Toda rota `/api/*` interna exige esse cookie**; sem ele → `401`. O login é limitado a **10 tentativas/min por IP** (proteção contra força bruta → `429`).
-2. **Token de API (webhooks + integração)** — para `/api/webhooks/n8n/*` **e** para a **API de Integração** `/api/integracao/*` (agentes de IA), aceita **duas** credenciais: o segredo do ambiente `N8N_WEBHOOK_SECRET` **ou** qualquer **token de API** ativo (gerado em Configurações → Tokens de API, guardado como hash sha256). Envie no header `x-webhook-secret: <credencial>` **ou** `Authorization: Bearer <credencial>`. Os webhooks de chat (`/api/chat/webhook/*`) usam a verificação própria de cada provedor (`?s=` na URL).
+2. **Token de API (webhooks + integração)** — para `/api/webhooks/n8n/*` **e** para a **API de Integração** `/api/integracao/*` (agentes de IA), aceita **duas** credenciais: o segredo do ambiente `N8N_WEBHOOK_SECRET` **ou** qualquer **token de API** ativo (gerado em Integrações → API do CRM, guardado como hash sha256). Envie no header `x-webhook-secret: <credencial>` **ou** `Authorization: Bearer <credencial>`. Os webhooks de chat (`/api/chat/webhook/*`) usam a verificação própria de cada provedor (`?s=` na URL).
 3. **Pública** — apenas `/api/auth/login` e `/api/auth/logout`.
 
 **Padrão de resposta:** `{ ok: boolean, message?: string, errors?: Record<string, string[]> }`.
@@ -337,7 +337,7 @@ Rotas internas do dashboard. Todas exigem **sessão** (cookie `crm-suporte-sessi
 ## Tokens de API
 
 ### `GET` / `POST /api/api-tokens` · `DELETE /api/api-tokens/[id]`
-- Gerencia os **tokens de API** que autenticam chamadas externas aos webhooks do n8n (UI em **Configurações → Tokens de API**).
+- Gerencia os **tokens de API** que autenticam chamadas externas aos webhooks do n8n (UI em **Integrações → API do CRM**).
 - **GET:** lista os tokens (`name`, `token_prefix`, `created_at`, `last_used_at`, `revoked_at`). **Nunca** devolve o token em texto puro nem o hash.
 - **POST body:** `name` (1–60). → gera um token novo (`crmsuporte_…`) e o devolve **uma única vez** no campo `token` (só o hash sha256 fica no banco). Copie na hora — não há como recuperá-lo depois.
 - **DELETE:** revoga o token (soft-delete via `revoked_at`) — ele para de autenticar imediatamente; o histórico é preservado.
@@ -367,7 +367,7 @@ Superfície **autenticada por token de API** (header `Authorization: Bearer <tok
 - **Card do funil = `deal`, não lead.** O lead é o contato único (upsert pelo telefone); cada agendamento é um **deal** = um card, e há **N deals por lead** (cliente recorrente = vários cards, sem duplicar o contato). Todo lead novo já nasce com 1 deal. Para o funil visual use `/deals` (o `PATCH /leads` só muda a etapa "geral" do contato, para filtros/métricas).
 - `POST /deals` — body: `phone`* (resolve o lead; `404 lead_not_found`) · `stage` (default `novo`, precisa existir em board_columns) · `tipo_ensaio`, `valor`, `scheduled_at` (ISO), `title`, `notes` · `idempotency_key` (⭐ evita duplicar em retry). `PATCH /deals/[id]` — `stage` (move; carimba `won_at`/`lost_at` pela situação da coluna), `tipo_ensaio`, `valor`, `scheduled_at`, `notes`.
 - **Resposta:** `{ ok: true, ... }` · **Erros:** `401` (sem token) · `404` · `422` (payload) · `500`.
-- O **atendimento (bot WhatsApp)** usa o relay de entrada configurável (Configurações → Automação) + envio pela uazapi (ver seção abaixo), não a API de Integração.
+- O **atendimento (bot WhatsApp)** usa o relay de entrada configurável (Integrações → Agente de IA) + envio pela uazapi (ver seção abaixo), não a API de Integração.
 
 ## Chat e Conexão (WhatsApp via uazapi)
 

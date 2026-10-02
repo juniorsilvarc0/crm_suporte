@@ -72,7 +72,7 @@ export async function POST(request: Request) {
   }
 
   invalidateRuntimeEnvironmentCache();
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   return NextResponse.json({
     ok: true,
     name: parsed.data.name,
@@ -122,6 +122,6 @@ export async function DELETE(request: Request) {
   }
 
   invalidateRuntimeEnvironmentCache();
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   return NextResponse.json({ ok: true, message: "Variável removida." });
 }

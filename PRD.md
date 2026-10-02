@@ -31,7 +31,7 @@ Responder rápido, para analista e gestor:
 | **Analista** (`member`) | `/app` | Trabalha a fila do seu produto, assume a conversa quando a IA escala, comenta e resolve |
 | **Administrador** (`admin`) | `/app` completo | Tudo do analista, mais Conexão (credenciais e integrações), equipe, configurações e financeiro |
 | **Gestor** | `/app` (métricas) | Backlog, SLA, volume por produto, cliente e analista |
-| **IA de triagem** | `/api/v1/*`, com token criado no menu Conexão | Não usa a UI. Consulta contexto, abre e classifica ticket, envia mensagem pelo CRM, pede handoff |
+| **IA de triagem** | `/api/v1/*`, com token criado em Integrações › API do CRM | Não usa a UI. Consulta contexto, abre e classifica ticket, envia mensagem pelo CRM, pede handoff |
 | **Outros sistemas** | `/api/v1/*` e webhooks de saída assinados | Integram só por API; nenhuma credencial em código |
 | **Provedor de WhatsApp** | `/api/chat/webhook/uazapi` | Entrega mensagem recebida e status de entrega (um número único) |
 
@@ -66,9 +66,9 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | WhatsApp | `/app/chat` | member | Conversas ao vivo, texto/áudio/mídia, respostas rápidas compartilhadas, links com preview, telefones/vCards que iniciam conversa após Number Check, ações de arquivar/ler/limpar/apagar com menu e gestos mobile, transcrição, notas internas, etiquetas, takeover bot↔humano, Realtime. O painel do contato mostra a **empresa** e o **selo do contrato** e liga/troca/desliga a empresa (Fase 3) |
 | Clientes | `/app/clientes`, `/app/clientes/[id]` | member (ações de admin marcadas) | Empresas (razão social, fantasia, CNPJ alfanumérico opcional), busca e filtro por situação do contrato. Na ficha: contatos da empresa, contrato vigente e histórico. Member cria e edita empresa; **admin** arquiva/reativa e cria, edita, suspende, reativa e encerra contrato. **Valor e vencimento só para admin** |
 | Contatos | `/app/contatos` | member | Contatos do WhatsApp, busca por nome ou telefone, filtro com/sem empresa, vincular/trocar/desvincular empresa |
-| Conexão | `/app/conexao` | **admin** | QR e estado da instância de WhatsApp (uazapi) |
+| Integrações | `/app/conexao` | **admin** | Abas com a aba na URL (`?aba=`): **WhatsApp** (QR e estado da instância uazapi), **API do CRM** (tokens), **Agente de IA** (webhook com teste de conexão, chave de assinatura gerada pelo CRM e assinatura do bot) e **Variáveis** (cofre, só as chaves que o CRM usa). Registros e Saúde entram no PR 13b |
 | Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
-| Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre, só as chaves que o CRM usa), tokens de API, agente de IA (webhook com teste de conexão, chave de assinatura gerada pelo CRM e assinatura do bot) |
+| Atendimento | `/app/configuracoes/atendimento` | **admin** | Filas, categorias, SLA e status dos tickets. `/app/configuracoes` sozinho só redireciona para Integrações › Variáveis |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
 **API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline) e conversas (ler a conversa e as mensagens, enviar texto ao cliente, passar para um humano e escolher o ticket em foco). O relay v1 já está implementado (contrato em [`docs/CONTRATO-RELAY.md`](docs/CONTRATO-RELAY.md)); as telas vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.

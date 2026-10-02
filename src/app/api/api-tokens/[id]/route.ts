@@ -73,7 +73,7 @@ export async function PATCH(
     );
   }
 
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   return NextResponse.json({ ok: true, item: toApiTokenListItem(data), message: "Token alterado." });
 }
 
@@ -112,6 +112,6 @@ export async function DELETE(
     );
   }
 
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
   return NextResponse.json({ ok: true, message: "Token revogado." });
 }

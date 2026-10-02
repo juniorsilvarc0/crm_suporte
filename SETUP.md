@@ -50,7 +50,7 @@ docker compose up -d --build --wait # db + rest + realtime + storage + gateway +
   healthy, porque as migrations gravam os buckets. Use só contra o banco local.
 - **Credenciais de integração não vão no `.env.local`.** Token e segredo do
   webhook da uazapi são gravados pela tela **Conexão**; a chave da OpenAI
-  (transcrição), pela tela **Configurações** (cofre). Tudo fica no Vault do banco.
+  (transcrição), pela tela **Integrações › Variáveis** (cofre). Tudo fica no Vault do banco.
 - A **1ª conexão ao Realtime** depois de subir o stack pode falhar (`Tenant
   realtime-dev is initializing` no log); recarregue a tela.
 - WhatsApp **real** em localhost exige túnel HTTPS (a uazapi precisa alcançar o
