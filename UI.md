@@ -1276,7 +1276,11 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
     - "IA de triagem" traz os escopos do agente, o tipo `ai` e 300/min.
   - A lista ganha a coluna **Acesso** ("IA de triagem", "Sem escopo" ou "N escopos").
   - O status ganha **Vencido** ao lado de Ativo e Revogado, sempre com texto (§1.4). O mesmo status decide o filtro (que ganhou "Vencidos") e o esmaecimento da linha.
-  - Editar escopos um a um fica para a aba API do CRM de Integrações (PR 13c).
+- **Editar token (PR 13c):** botão **Editar** em cada token que não foi revogado. O vencido também tem o botão: é por ele que se estende a validade.
+  - **Abre o `ModalShell` "Editar token"** com nome, escopos, quem usa (IA ou integração), limite por minuto e validade. O prefixo do token aparece na descrição, com o aviso de que o segredo não muda: para trocar o segredo, gera-se outro token e se revoga este.
+  - **Escopos:** um a um, agrupados por recurso, com a ação em português e o código ao lado em fonte mono. **Aplicar IA de triagem** troca escopos, tipo e limite pelos do preset, e **Limpar** desmarca tudo. Sem escopo, a linha de apoio avisa que o token autentica mas não alcança nada. Um `recurso:*` que o token já tenha continua na lista, marcado.
+  - **Validade:** é uma data (`type="date"`) que vale até o fim do dia no fuso do app; o campo vazio quer dizer que o token não vence. Uma data no passado só é recusada se a validade foi mexida, então um token vencido abre com a data antiga e salva outro campo sem esbarrar nela.
+  - **Formulário:** react-hook-form com as mesmas regras de campo da rota (§5.23). O PATCH leva só o que mudou, e salvar sem mudar nada só fecha o diálogo. Erro de campo do servidor vai para o campo; erro sem campo (token revogado nesse meio-tempo, rede) vira alerta no topo, e o diálogo não fecha.
 - **Webhook do agente de IA (Fase 5, PR 11):** a linha de estado abaixo do campo diz o que o servidor conferiu, sempre com texto, em quatro casos:
   - **Ativo** (verde): há URL e o envio a aceita;
   - **Nenhuma URL configurada** (vermelho): o CRM não repassa. Campo vazio desliga o repasse; não existe mais reserva em variável de ambiente;

@@ -7,6 +7,7 @@ import {
   CopyIcon,
   KeyRoundIcon,
   Loader2Icon,
+  PencilIcon,
   PlusIcon,
   Trash2Icon,
   TriangleAlertIcon,
@@ -37,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ApiTokenEditDialog } from "@/features/settings/components/api-token-edit-dialog";
 import {
   accessPresetFields,
   describeTokenAccess,
@@ -58,6 +60,15 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ApiTokenListItem | null>(null);
   const [revoking, setRevoking] = useState(false);
+  // Dois estados, como no vínculo de contatos: fechar não zera o token, senão o
+  // conteúdo do diálogo sumiria no meio da animação de saída.
+  const [editTarget, setEditTarget] = useState<ApiTokenListItem | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+
+  function openEdit(token: ApiTokenListItem) {
+    setEditTarget(token);
+    setEditOpen(true);
+  }
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TokenStatus>("all");
   const filteredTokens = useMemo(() => {
@@ -235,16 +246,28 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
                     </TableCell>
                     <TableCell className="py-1 text-right">
                       {revoked ? null : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setRevokeTarget(token)}
-                        >
-                          <Trash2Icon data-icon="inline-start" />
-                          Revogar
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(token)}
+                            aria-label={`Editar o token ${token.name}`}
+                          >
+                            <PencilIcon data-icon="inline-start" />
+                            Editar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setRevokeTarget(token)}
+                          >
+                            <Trash2Icon data-icon="inline-start" />
+                            Revogar
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -257,7 +280,7 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
           {filteredTokens.map((token) => { const revoked = token.revoked_at !== null; const inactive = tokenStatus(token) !== "active"; return (
             <article key={token.id} className={inactive ? "p-4 opacity-60" : "p-4"}>
               <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="flex items-center gap-2 truncate font-medium"><KeyRoundIcon className="size-4 text-muted-foreground" aria-hidden />{token.name}</h3><p className="mt-1 font-mono text-xs text-muted-foreground">{token.token_prefix}…</p><p className="mt-1 text-xs">{describeTokenAccess(token)}</p></div><TokenStatusBadge token={token} /></div>
-              <div className="mt-3 flex items-end justify-between gap-3"><p className="text-xs text-muted-foreground">Criado em {formatDate(token.created_at)}<br />Último uso: {token.last_used_at ? formatDate(token.last_used_at) : "—"}</p>{revoked ? null : <Button type="button" variant="ghost" size="sm" className="h-11 text-destructive hover:text-destructive" onClick={() => setRevokeTarget(token)}><Trash2Icon data-icon="inline-start" />Revogar</Button>}</div>
+              <div className="mt-3 flex items-end justify-between gap-3"><p className="text-xs text-muted-foreground">Criado em {formatDate(token.created_at)}<br />Último uso: {token.last_used_at ? formatDate(token.last_used_at) : "—"}</p>{revoked ? null : <div className="flex gap-1"><Button type="button" variant="ghost" size="sm" className="h-11" onClick={() => openEdit(token)} aria-label={`Editar o token ${token.name}`}><PencilIcon data-icon="inline-start" />Editar</Button><Button type="button" variant="ghost" size="sm" className="h-11 text-destructive hover:text-destructive" onClick={() => setRevokeTarget(token)}><Trash2Icon data-icon="inline-start" />Revogar</Button></div>}</div>
             </article>
           ); })}
         </div>
@@ -336,6 +359,8 @@ export function ApiTokensManager({ tokens }: { tokens: ApiTokenListItem[] }) {
           </ModalShell>
         )}
       </Dialog>
+
+      <ApiTokenEditDialog token={editTarget} open={editOpen} onOpenChange={setEditOpen} />
 
       {/* Confirmação de revogação */}
       <Dialog

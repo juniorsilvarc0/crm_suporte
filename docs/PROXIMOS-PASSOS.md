@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #41 (o 13a, §5.1). Aberto: o PR do 13b (§5.1). |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4341 testes em 228 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 13b da Fase 5 **pronto**, à espera do merge. Depois, o 13c (§5.1). |
+| `main` | até o PR #42 (o 13b, §5.1). Aberto: o PR do 13c (§5.1). |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4386 testes em 231 arquivos) e `build` verdes. |
+| Trabalho em curso | PR 13c da Fase 5 **pronto**, à espera do merge. Depois, o 13d (§5.1). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -31,7 +31,7 @@
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
 | 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 · Registros e Saúde #42 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
@@ -87,14 +87,14 @@ Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". O PR foi dividido
 - O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
 - O pedido do QR continua POST (#38).
 
-**13b, feito (no PR aberto, à espera do merge): as abas Registros e Saúde,** sobre as rotas do #40. Como ficou está em `UI.md` §5.19. Em resumo:
+**13b, feito (#42): as abas Registros e Saúde,** sobre as rotas do #40. Como ficou está em `UI.md` §5.19. Em resumo:
 - **Registros:** `IntegrationLogsTable` refeita. Os filtros ficam na URL e são lidos no servidor, e "Carregar mais" pede `GET /api/connection/logs` com o cursor. A página só lê os registros com a aba aberta.
 - **Saúde:** `IntegrationHealthPanel` pede `GET /api/connection/health` ao abrir a aba e no "Atualizar". A página nunca a lê.
 - **Não feito:** o roteiro por HTTP contra o stack local (§4), de novo por falta de Docker.
 
-**13c, a fazer: API do CRM e Variáveis.**
-- **API do CRM:** edição de token (escopos um a um, preset, validade, limite). A rota `PATCH /api/api-tokens/[id]` já aceita esses campos.
-- **Variáveis:** o campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
+**13c, feito (no PR aberto, à espera do merge): editar token na API do CRM.** Nome, escopos um a um (com "Aplicar IA de triagem" e "Limpar"), quem usa, limite por minuto e validade, sobre o `PATCH /api/api-tokens/[id]` que já existia. Como ficou está em `UI.md` §5.19.
+
+**13d, a fazer: Variáveis.** O campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
 
 ### 5.2 PR 14 da Fase 5: documentação da API e guia do agente
 
@@ -203,6 +203,7 @@ O padrão descrito é o que está no código hoje. Cada uma está explicada no P
 
 - **Só com autorização literal do dono** ("pode subir"), por lote ([`AGENTS.md`](../AGENTS.md) §3.9 e §10). Leitura para diagnóstico é permitida.
 - O roteiro é o de [`deploy/README.md`](../deploy/README.md) §Deploy seguinte: `publicar.sh` aplica as migrations antes do build e troca uma réplica por vez.
+- **A sessão de nuvem do Claude Code não alcança a VPS:** não tem a chave SSH, o endereço do servidor nem liberação de rede. Em 2026-10-02 o dono pediu para publicar, e o deploy ficou para ele rodar da própria máquina. Configurar a chave de produção num container de nuvem é possível, mas não é recomendado: amplia quem alcança uma VPS compartilhada.
 - Para o que está na `main` e ainda não foi publicado:
   - o #24 mudou o vhost: depois do `publicar.sh`, reinstalar como em `deploy/README.md` §Atualizar o vhost;
   - há duas migrations (#20 e #28), aditivas. Se a do #28 falhar com `lock timeout`, nada mudou: rodar de novo, fora do horário do backup (03:30 UTC);

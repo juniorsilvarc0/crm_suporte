@@ -27,6 +27,46 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 13c: editar token na aba API do CRM
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O administrador edita um token de API sem precisar revogá-lo e gerar outro: nome, escopos um a um, quem usa, limite por minuto e validade.
+**Arquivos alterados:**
+- novos: `src/features/settings/components/api-token-edit-dialog.tsx`, `src/features/settings/lib/api-scope-labels.ts` e os testes deles;
+- alterados: `api-tokens-manager.tsx` (botão Editar) e o teste dele, `schemas/api-token-actions.ts` (`apiTokenEditFormSchema`, `isPastExpiry`, `PAST_EXPIRY_MESSAGE`) e o teste dele;
+- docs: `UI.md` §5.19, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` (13c, e o §8 sobre publicar) e este PROGRESS.
+
+**O que foi feito:**
+- **Editar** em cada token não revogado. O vencido também tem o botão, porque é por ele que se estende a validade.
+- **O diálogo** usa react-hook-form com `apiTokenEditFormSchema`, montado a partir das mesmas regras de campo da rota. O limite entra como texto e vira número. A validade entra como data, que vale até 23:59:59 no fuso do app, e o campo vazio quer dizer que o token não vence.
+- **O PATCH leva só o que mudou.** Erro de campo do servidor vai para o campo; erro sem campo vira alerta no topo, e o diálogo não fecha.
+- **Escopos:**
+  - agrupados por recurso, com a ação em português e o código ao lado;
+  - "Aplicar IA de triagem" troca escopos, tipo e limite pelos do preset, e "Limpar" desmarca tudo;
+  - um `recurso:*` que o token já tenha continua na lista, marcado, e não some ao salvar.
+- **A regra "validade no futuro" vale só quando a validade é mexida.** O teste pegou o caso: um token vencido abria com a data antiga e não deixava salvar mais nada. A rota segue aplicando a regra no PATCH (`expiresAtSchema`, agora com `isPastExpiry`).
+
+**Decisões tomadas:**
+- **Validade como data, e não data e hora.** "Vale até o fim do dia" é o que se decide ao dar validade a uma credencial, e o UI.md §5.16.1 proíbe `datetime-local`.
+- **Um schema de formulário, e não o da rota direto.** A entrada é diferente (texto e data), mas as regras de campo são as mesmas peças. O resultado passa no `updateApiTokenSchema`, e o teste confere isso.
+- **Sem mudança na rota nem no banco.** O `PATCH /api/api-tokens/[id]` já aceitava esses campos desde o PR 5.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4410 em 233 arquivos) · `build` ✓.
+- **Mutações conferidas à mão:**
+  - tirar a checagem da validade no passado derruba o teste dela;
+  - mandar todos os campos no PATCH, em vez de só os que mudaram, derruba 8 testes.
+- **Não feito:** a conferência no app contra um banco local (não há Docker aqui), e revisor independente.
+
+**Pendências / próximos passos:**
+- **PR 13d:** o catálogo em Variáveis.
+- **Publicar em produção:** pedido pelo dono em 2026-10-02 e não feito daqui. A sessão de nuvem não tem chave SSH nem acesso de rede à VPS. O deploy fica para o dono rodar (`deploy/publicar.sh`, mais a reinstalação do vhost do #24); ver `PROXIMOS-PASSOS.md` §8.
+
+**Armadilhas descobertas:**
+- **Regra de "data no futuro" no schema do formulário trava a edição de quem já venceu.** O resolver valida o formulário inteiro, mexido ou não. A regra que depende de "o campo mudou" fica no envio (`dirtyFields`), e não no schema.
+- **`watch()` do react-hook-form dispara `react-hooks/incompatible-library`.** O projeto usa `useWatch({ control, name })`.
+- **Constante usada num schema precisa vir antes dele no arquivo:** o `z` monta o schema na hora de carregar o módulo.
+
 ## [2026-10-02] Fase 5, PR 13b: as abas Registros e Saúde de Integrações
 
 **Agente/Modelo:** Claude Opus 5.5.
