@@ -198,7 +198,7 @@ describe("POST /api/connection/agent/signing-secret: gerar a primeira chave", ()
     expect(vault.value).toBe(body.secret);
     // A resposta leva um segredo: nenhum intermediário a guarda.
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(revalidatePathMock.mock.calls).toEqual([["/app/configuracoes"]]);
+    expect(revalidatePathMock.mock.calls).toEqual([["/app/conexao"]]);
     // A primeira chave não tem o que conferir: o `23505` do cofre é a trava.
     expect(h.chains.app_environment_variables).toBeUndefined();
   });
@@ -298,7 +298,7 @@ describe("POST /api/connection/agent/signing-secret: gerar a primeira chave", ()
       expect(body.secret).toMatch(KEY);
       expect(body.secret).toBe(vault.value);
       expect(audited()).toEqual([auditRow("signing_secret.generated")]);
-      expect(revalidatePathMock.mock.calls).toEqual([["/app/configuracoes"]]);
+      expect(revalidatePathMock.mock.calls).toEqual([["/app/conexao"]]);
     }
   );
 
@@ -406,7 +406,7 @@ describe("POST /api/connection/agent/signing-secret: trocar", () => {
       ["get_app_environment_variable", { p_name: "RELAY_SIGNING_SECRET" }],
     ]);
     expect(audited()).toEqual([auditRow("signing_secret.rotated")]);
-    expect(revalidatePathMock.mock.calls).toEqual([["/app/configuracoes"]]);
+    expect(revalidatePathMock.mock.calls).toEqual([["/app/conexao"]]);
   });
 
   it.each([
@@ -550,7 +550,7 @@ describe("DELETE /api/connection/agent/signing-secret", () => {
     expect(where(h.lastChain("app_environment_variables"), "name", "RELAY_SIGNING_SECRET")).toBe(true);
     expect(h.rpcCalls).toEqual([["delete_app_environment_variable", { p_name: "RELAY_SIGNING_SECRET" }]]);
     expect(audited()).toEqual([auditRow("signing_secret.removed")]);
-    expect(revalidatePathMock.mock.calls).toEqual([["/app/configuracoes"]]);
+    expect(revalidatePathMock.mock.calls).toEqual([["/app/conexao"]]);
   });
 
   it("tela desatualizada (outro administrador trocou a chave depois): 409, sem remover a chave dele", async () => {
@@ -636,7 +636,7 @@ describe("DELETE /api/connection/agent/signing-secret", () => {
       message: "Chave removida: os pedidos ao agente passam a sair sem assinatura.",
     });
     expect(audited()).toEqual([auditRow("signing_secret.removed")]);
-    expect(revalidatePathMock.mock.calls).toEqual([["/app/configuracoes"]]);
+    expect(revalidatePathMock.mock.calls).toEqual([["/app/conexao"]]);
   });
 
   it("o cofre falha ao remover e nem a conferência responde: 500 SEM dizer que nada foi removido (desfecho desconhecido)", async () => {

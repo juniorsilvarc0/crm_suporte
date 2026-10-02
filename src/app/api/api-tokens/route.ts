@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     );
   }
 
-  revalidatePath("/app/configuracoes");
+  revalidatePath("/app/conexao");
 
   // O token em texto puro é devolvido UMA única vez — a UI o exibe para cópia
   // e nunca mais tem como recuperá-lo (só o hash fica no banco).
