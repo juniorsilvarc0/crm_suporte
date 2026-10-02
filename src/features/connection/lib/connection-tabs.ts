@@ -9,6 +9,8 @@ export const CONNECTION_TABS = [
   // pedido pode voltar depois de o administrador ter ido a outra aba.
   { value: "agente", label: "Agente de IA", keepMounted: true },
   { value: "variaveis", label: "Variáveis" },
+  { value: "registros", label: "Registros" },
+  { value: "saude", label: "Saúde" },
 ] as const satisfies readonly [UrlTab, ...UrlTab[]];
 
 export type ConnectionTab = (typeof CONNECTION_TABS)[number]["value"];

@@ -1,7 +1,13 @@
 import { PageHeader } from "@/components/layout/page-header";
+import { parseUrlTab, URL_TAB_PARAM } from "@/components/layout/url-tab-state";
 import { UrlTabs } from "@/components/layout/url-tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ConnectionPanel } from "@/features/connection/components/connection-panel";
 import { CONNECTION_TABS } from "@/features/connection/lib/connection-tabs";
+import { IntegrationHealthPanel } from "@/features/integrations/components/integration-health-panel";
+import { IntegrationLogsTable } from "@/features/integrations/components/integration-logs-table";
+import { parseIntegrationLogFilters } from "@/features/integrations/lib/log-filters";
+import { getIntegrationLogs } from "@/features/integrations/queries/get-integration-logs";
 import { ApiTokensManager } from "@/features/settings/components/api-tokens-manager";
 import { AutomationSettings } from "@/features/settings/components/automation-settings";
 import { BotSignatureSettings } from "@/features/settings/components/bot-signature-settings";
@@ -16,6 +22,7 @@ import {
 } from "@/features/settings/queries/get-environment-variables";
 import { getRelaySigning } from "@/features/settings/queries/get-relay-signing";
 import { requireAdminPage } from "@/lib/auth/require-dashboard-session";
+import { firstParam, type SearchParams } from "@/lib/http/search-params";
 
 export const dynamic = "force-dynamic";
 
@@ -23,11 +30,23 @@ export const metadata = {
   title: "Integrações",
 };
 
-export default async function ConexaoPage() {
+export default async function ConexaoPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   // Admin confirmado no BANCO antes da leitura: member vai para /app, e quem
   // foi desativado (com cookie ainda válido) sai pelo logout.
   await requireAdminPage();
+  const query = await searchParams;
+  const tab = parseUrlTab(CONNECTION_TABS, firstParam(query[URL_TAB_PARAM]));
+  // Os registros só são lidos com a aba deles aberta. A Saúde nunca é lida
+  // aqui: o painel dela pede a rota no navegador, porque o provedor pode
+  // levar segundos para responder.
+  const logFilters = tab === "registros" ? parseIntegrationLogFilters(query) : null;
   const [
+    logs,
+
     apiTokens,
     relayConfig,
     relaySigning,
@@ -35,6 +54,7 @@ export default async function ConexaoPage() {
     environmentVariables,
     transcriptionModel,
   ] = await Promise.all([
+    logFilters ? getIntegrationLogs(logFilters) : null,
     getApiTokens(),
     getRelayConfig(),
     getRelaySigning(),
@@ -47,7 +67,7 @@ export default async function ConexaoPage() {
     <>
       <PageHeader
         title="Integrações"
-        description="WhatsApp, API do CRM, agente de IA e as variáveis que o CRM usa"
+        description="WhatsApp, API do CRM, agente de IA, variáveis, registros e saúde das integrações"
       />
       <main className="min-w-0 p-4 sm:p-6 lg:p-8">
         <UrlTabs
@@ -92,6 +112,22 @@ export default async function ConexaoPage() {
                 transcriptionModel={transcriptionModel}
               />
             ),
+            // Fora da aba, a página não leu os registros: ao trocar para ela, o
+            // esqueleto fica até a página relida chegar com a 1ª página.
+            registros:
+              logs && logFilters ? (
+                <IntegrationLogsTable
+                  page={logs}
+                  filters={logFilters}
+                  tokens={apiTokens.map((token) => ({ id: token.id, name: token.name }))}
+                />
+              ) : (
+                <div className="grid gap-3" aria-busy="true">
+                  <Skeleton className="h-11 w-full max-w-sm sm:h-9" />
+                  <Skeleton className="h-64 w-full" />
+                </div>
+              ),
+            saude: <IntegrationHealthPanel />,
           }}
         />
       </main>

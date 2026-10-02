@@ -30,6 +30,9 @@ export const DEFAULT_INTEGRATION_LOG_FILTERS: IntegrationLogFilters = {
 // ao Postgres, que o recusa, e a lista responderia 500.
 const REQUEST_ID_RE = /^[A-Za-z0-9_.:@-]{1,128}$/;
 
+/** O texto tem a forma de um id de pedido: a tela avisa quando o que foi digitado não vale. */
+export const isRequestIdLike = (value: string): boolean => REQUEST_ID_RE.test(value);
+
 const ALL_ACTIONS: readonly string[] = Object.values(INTEGRATION_LOG_ACTIONS).flat();
 
 const isProvider = (value: unknown): value is IntegrationLogProvider =>
