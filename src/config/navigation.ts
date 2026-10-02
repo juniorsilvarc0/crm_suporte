@@ -6,7 +6,6 @@ import {
   HouseIcon,
   MessageCircleIcon,
   PlugZapIcon,
-  Settings2Icon,
   SettingsIcon,
   TicketIcon,
   UsersRoundIcon,
@@ -57,9 +56,8 @@ export const dashboardNavigation: NavItem[] = [
   { title: "WhatsApp", href: "/app/chat", icon: MessageCircleIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Clientes", href: "/app/clientes", icon: Building2Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Contatos", href: "/app/contatos", icon: BookUserIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
-  { title: "Conexão", href: "/app/conexao", icon: PlugZapIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
+  { title: "Integrações", href: "/app/conexao", icon: PlugZapIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
-  { title: "Configurações", href: "/app/configuracoes", icon: Settings2Icon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Atendimento", href: "/app/configuracoes/atendimento", icon: HeadsetIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
 ];
 
@@ -119,7 +117,7 @@ const TOP_NAV_SPEC: ReadonlyArray<
   { kind: "link", href: "/app/chat" },
   { kind: "link", href: "/app/clientes" },
   { kind: "link", href: "/app/contatos" },
-  { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes", "/app/configuracoes/atendimento"] },
+  { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes/atendimento"] },
 ];
 
 /**
