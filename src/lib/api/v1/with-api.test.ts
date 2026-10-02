@@ -658,6 +658,69 @@ describe("withApi — Idempotency-Key", () => {
     });
   });
 
+  it("422 de regra de negócio fica guardado: a repetição recebe a mesma recusa", async () => {
+    const db = fakeDb(baseRow());
+    db.rpc.mockImplementation(async (fn) =>
+      fn === "api_idempotency_begin"
+        ? { data: { outcome: "started", attempt_id: "att-5" }, error: null }
+        : { data: null, error: null }
+    );
+    const body = { ok: false, error: { code: "invalid_transition", message: "Transição não permitida." } };
+    const { route } = idempotentRoute(vi.fn<Handler>(async () => NextResponse.json(body, { status: 422 })));
+
+    const response = await route(post('{"a":1}'), ctx());
+
+    expect(response.status).toBe(422);
+    const fns = db.rpc.mock.calls.map(([fn]) => fn);
+    expect(fns).not.toContain("api_idempotency_release");
+    expect(db.rpc.mock.calls.find(([fn]) => fn === "api_idempotency_finish")?.[1]).toMatchObject({
+      p_attempt_id: "att-5",
+      p_status: 422,
+      p_body: body,
+    });
+  });
+
+  it("422 de chave reusada, vindo do handler, libera a chave: a recusa não toma a chave da requisição dona", async () => {
+    const db = fakeDb(baseRow());
+    db.rpc.mockImplementation(async (fn) =>
+      fn === "api_idempotency_begin"
+        ? { data: { outcome: "started", attempt_id: "att-6" }, error: null }
+        : { data: null, error: null }
+    );
+    const body = { ok: false, error: { code: "idempotency_key_reused", message: "Já usada." }, request_id: "r" };
+    const { route } = idempotentRoute(vi.fn<Handler>(async () => NextResponse.json(body, { status: 422 })));
+
+    const response = await route(post('{"a":1}'), ctx());
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual(body);
+    const fns = db.rpc.mock.calls.map(([fn]) => fn);
+    expect(fns).not.toContain("api_idempotency_finish");
+    expect(db.rpc.mock.calls.find(([fn]) => fn === "api_idempotency_release")?.[1]).toMatchObject({
+      p_attempt_id: "att-6",
+    });
+  });
+
+  it.each([
+    ["o código está fora de `error`", { ok: false, code: "idempotency_key_reused" }],
+    ["`error` é uma lista", { ok: false, error: ["idempotency_key_reused"] }],
+    ["`error` é nulo", { ok: false, error: null }],
+    ["o corpo é uma lista", [{ error: { code: "idempotency_key_reused" } }]],
+    ["o corpo é nulo", null],
+  ])("422 em que %s é guardado como qualquer outro", async (_label, body) => {
+    const db = fakeDb(baseRow());
+    db.rpc.mockImplementation(async (fn) =>
+      fn === "api_idempotency_begin"
+        ? { data: { outcome: "started", attempt_id: "att-7" }, error: null }
+        : { data: null, error: null }
+    );
+    const { route } = idempotentRoute(vi.fn<Handler>(async () => NextResponse.json(body, { status: 422 })));
+
+    await route(post('{"a":1}'), ctx());
+
+    expect(db.rpc.mock.calls.map(([fn]) => fn)).toContain("api_idempotency_finish");
+  });
+
   it("exceção no handler libera a chave e responde 500", async () => {
     const db = fakeDb(baseRow());
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);

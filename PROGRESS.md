@@ -27,6 +27,114 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5 · PR 10b: envio de texto pela API v1, no máximo uma vez
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** A IA e as integrações enviam texto ao cliente pelo CRM, pelo mesmo caminho da tela, sem que uma repetição automática entregue a mesma mensagem duas vezes.
+**Arquivos alterados:**
+- `src/features/chat/lib/send-outbound.ts` (novo, com teste): o envio de texto, extraído de `src/app/api/chat/conversations/[id]/send/route.ts`, que passa a chamá-lo (com teste);
+- `src/app/api/v1/conversations/[id]/messages/route.ts` (o `POST`), com `src/app/api/v1/conversations.test.ts`;
+- `src/features/chat/lib/senders/uazapi.ts` (com teste) e `src/features/chat/lib/connection/ssrf-guard.ts` (só o tipo do erro);
+- `src/lib/api/v1/conversations.ts`, `openapi.ts` e `with-api.ts` (este com teste); `src/app/api/v1/tickets.test.ts`;
+- `PRD.md`, `docs/PLANO-FASE-5.md`, `docs/PLANO-IMPLANTACAO.md`, `.claude/skills/uazapi-integration/SKILL.md`, este PROGRESS.
+
+**O que foi feito:**
+- **`POST /conversations/{id}/messages`** (`messages:send`, com Idempotency-Key). O corpo é `{text}`, de 1 a 4.096 caracteres; o CRM não assina nem altera o texto. Token de IA grava `ai`; token de integração grava `system`. Devolve a mensagem (201).
+- **`send-outbound.ts`:** o trecho da rota da tela (chave do envio, linha `pending`, provedor, resultado), com o autor como parâmetro. A rota da tela chama o helper e responde o mesmo de antes.
+- **A IA só fala na conversa `bot`.** O status é relido na hora em que a mensagem vai ao provedor, e não na leitura inicial. Fora de `bot`: 409 `conversation_not_owned_by_ai`, com `current`. A integração não tem essa trava.
+- **No máximo uma vez, para o token:**
+  - 502 `whatsapp_unavailable`: a mensagem com certeza não saiu. A linha fica `failed`, e a mesma chave tenta de novo na mesma linha.
+  - 504 `delivery_unknown`: o provedor não confirmou. A linha fica `pending`, e enquanto ela estiver assim a mesma chave não manda de novo: responde 504. Quando o webhook confirma, a chave responde 200 com a mensagem; se o webhook avisar que falhou, ela volta a tentar.
+  - 422 `idempotency_key_reused`: a mesma chave com outro texto. A chave vale para um texto só, enquanto a linha existir.
+- **Tetos por conversa, por token:** 20 envios por minuto e 100 por hora. Só conta o que vai ao provedor.
+- **Só quem escreveu reenvia.** O "Tentar novamente" da tela sobre a linha de um token recebe 409.
+- **Cliente da uazapi:** `UazapiHttpError` (status e o que o corpo do erro diz), `uazapiSendDefinitelyFailed` (a falha prova que não saiu?), e 2xx com corpo `null` deixa de virar falha. A guarda de URL passou a lançar `UnsafeUrlError`, com as mesmas mensagens.
+- **`withApi`:** o 422 `idempotency_key_reused` vindo do handler libera a chave em vez de guardá-la. Vale para toda rota; o `POST /tickets` tem esse 422 (chave ou `external_id` já usados em outra conversa).
+- **Credencial que não pôde ser lida:** 503 `unavailable` para o token, como as outras leituras. Na tela segue 500.
+
+**Decisões tomadas:**
+- **O PR 10b ficou só com o envio.** Os rótulos na tela vão no 10c.
+- **Corpo `{text}`, sem `client_id`** (o plano previa os dois). A Idempotency-Key já é obrigatória e virou a chave do envio, junto com o id do token. Duas chaves para a mesma coisa abririam a combinação "mesma Idempotency-Key, outro `client_id`".
+- **Desfecho desconhecido não vira `failed` para o token.** A 1ª versão marcava `failed` e mandava repetir. O revisor de segurança mostrou o que isso faz: o provedor aceita, a resposta se perde, e a repetição entrega a mesma mensagem duas vezes. O analista segue como sempre (toda falha vira `failed`): ele vê a conversa, e mudar isso pede um estado novo na tela.
+- **"Com certeza não saiu" vem do OpenAPI oficial da uazapi e de medição,** não de suposição:
+  - 4xx do provedor;
+  - 5xx com `error_source: whatsapp_server` (recusa do próprio WhatsApp), ou com um texto de erro que diz não haver sessão (`No session`, `… not connected`: os textos que o spec usa em outras rotas);
+  - nenhum pedido chegou ao provedor: a conexão nem abriu, ou o certificado dele foi recusado no aperto de mão. Os códigos foram medidos no Node 22 (o da imagem de produção) e no 25, com servidores locais e certificados de teste;
+  - a URL da integração não passou na guarda.
+  O 500 genérico (`Failed to send message`) fica como desconhecido. Na dúvida, desconhecido.
+- **A linha `pending` não é promovida pelo eco.** O eco prova que a uazapi criou a mensagem; não sei se ele vem antes ou depois do aceite do WhatsApp. A linha anda pelos eventos de status.
+- **`failed` com `external_id` não vira "já enviada"** (sugestão de dois revisores). Com a regra nova, a linha de um token só fica assim quando o WhatsApp avisou erro depois do eco, e reenviar é o certo.
+- **O dono da conversa é conferido antes de gravar, não depois.** Depois fecharia mais alguns milissegundos, mas deixaria uma bolha `failed` na conversa que o analista acabou de assumir.
+- **O 409 de dono e os tetos só valem para o que vai sair.** Repetir a chave de uma mensagem que já saiu devolve a mensagem, mesmo com a conversa já em `human`.
+- **Teto da hora em memória,** como o do minuto. Contar no banco contaria linhas, e o reenvio de uma falha não cria linha.
+- **A recusa de chave reusada não toma a chave, em nenhuma rota.** O 422 é guardado por 24 h (D6). Guardado, o pedido com o texto errado passava a ser o dono da chave, e o pedido certo recebia 422 dali em diante. O ponta a ponta pegou. No `POST /tickets` muda uma coisa: a repetição dessa recusa roda de novo, em vez de vir do que estava guardado (sem `Idempotent-Replayed`). A resposta é a mesma.
+- **Mensagem apagada não é reenviada pelo token:** sairia de novo ao cliente o que o CRM mostra como apagado.
+
+**Verificação:**
+- **Testes:** 87 casos no `POST /messages` da v1, 28 na rota da tela (eram 9), 13 diretos no helper (`send-outbound.test.ts`), 66 no cliente da uazapi (eram 4), mais os da guarda de URL, do `withApi` e do `POST /tickets`. Todo status que a rota devolve nesses casos é conferido contra o OpenAPI publicado.
+- **Rota da tela igual à de antes:** a rota antiga (do `git show`) e a nova rodam lado a lado com o mesmo banco de mentira. Meus 38 cenários e os 180.000 do revisor (3 sementes) não mostram divergência em status, corpo, cabeçalhos, chamadas ao banco, ao provedor e ao log. A única diferença é a pedida: linha de token.
+- **Mutação:** 231 trocas no código do PR, 160 minhas e 71 do 3º revisor (que rodou as dele numa cópia). 225 derrubam algum teste. Das outras 6:
+  - 4 do revisor deixaram de casar com o texto depois das correções; reescrevi as quatro, e elas estão entre as 225;
+  - 2 sobrevivem de propósito: o `default` inalcançável da rota da tela, e o reenvio pela tela de uma linha `failed` apagada (não é requisito; o token não reenvia).
+  Na 1ª rodada o revisor tinha achado 41 trocas que atravessavam a suíte inteira; viraram teste.
+- **Contra o banco local** (`next dev` da worktree, tokens criados e apagados no fim), 45 verificações, em duas partes. Nenhuma mensagem saiu para o WhatsApp.
+  - Com a integração de dev (`demo.invalid`, que nem resolve): 502, a linha `failed` com o token e a chave; a mesma chave reusa a linha; outro texto é 422; a IA em conversa `human` é 409 sem gravar; a integração grava `system`.
+  - Com um provedor de mentira em 127.0.0.1 (a URL da integração de dev é trocada só durante o teste e devolvida no fim):
+    - a conexão cai depois de o pedido chegar: 504, a linha fica `pending`, e cinco repetições depois o provedor segue com UM pedido recebido;
+    - confirmada a entrega (como o webhook faria), a mesma chave responde 200 e passa a contar como 1ª resposta da IA;
+    - 500 genérico e 502 de proxy: 504, sem reenvio;
+    - recusa do WhatsApp: 502 e `failed`; com o provedor de volta, a mesma chave vira 201 na mesma linha;
+    - 500 com `No session`: 502 e `failed`;
+    - corpo `null` no 2xx: 201;
+    - conversa assumida no meio: a 2ª mensagem da IA é 409, e a chave da 1ª ainda devolve a mensagem.
+- **Revisão adversarial** (3 revisores independentes, cada um conferindo rodando). Corrigidos:
+  - **grave (segurança):** falha de desfecho desconhecido virava `failed`, e a API mandava repetir: mensagem em dobro. É a regra do "no máximo uma vez";
+  - a IA respondendo depois de o analista assumir (o status era lido antes de tudo; o plano pedia a conferência no envio);
+  - a mesma chave com outro texto: mandava o texto antigo e respondia como se fosse o novo;
+  - o "Tentar novamente" da tela reenviando a mensagem da IA, com a conversa já em `human`;
+  - o 200 com `pending` guardado por 24 h para uma mensagem que podia nunca ter saído;
+  - a repetição de uma mensagem que já saiu respondendo 409 depois de a conversa mudar de dono;
+  - só o teto por minuto, que em janela fixa deixa passar o dobro na virada;
+  - 504 "pode ter saído" quando a URL da integração era recusada antes de qualquer pedido;
+  - credencial ilegível respondendo 500 em vez de 503;
+  - os textos do OpenAPI: o 201 nem sempre traz `sent`, "nunca manda de novo" tinha exceção, e o exemplo do "número desconectado" não estava medido.
+  A rota da tela não teve regressão apontada.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3369 na máquina; no CI são 3 a menos, pelo teste velho de `.next/standalone`) · build ✓.
+- As skills `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente; no lugar delas ficaram a revisão adversarial e os quatro comandos rodados.
+
+**Pendências / próximos passos:**
+- **PR 10c (tela):**
+  - "IA" ou "Automático" na mensagem de token, e a assinatura da nota sem autor usuário;
+  - rótulo de `ticket.handoff_requested` e `sent_by_token_id` na timeline;
+  - tirar o "Tentar novamente" da mensagem de token (o servidor já recusa);
+  - quem apaga e quem edita a mensagem da IA. Hoje qualquer analista edita por 15 minutos, e a linha segue assinada pelo token com um texto que ele não escreveu.
+- **Conciliar o desfecho desconhecido.** A uazapi tem `POST /message/find` com `track_id`: dá para perguntar se a mensagem existe lá e resolver a linha `pending` nos dois sentidos. Hoje ela só anda pelo webhook:
+  - se o provedor não enviou, fica `pending` para sempre;
+  - o tick casa pelo `external_id`, que nessa linha só existe depois do eco. Um `Sent` que chegue antes do eco se perde, e a linha só anda no `Delivered`. Com o cliente offline, a mesma chave responde 504 por horas para uma mensagem que saiu.
+- **Medir o `/send/text` com a instância deslogada.** O spec não diz o que ele devolve; nas outras rotas é `No session`, com 401 ou 500. Se for o 500 genérico, cada mensagem da IA durante uma desconexão fica `pending` e não sai depois de reconectar. Medir com uma instância de teste, nunca com a de produção.
+- **A tela ainda tem a janela antiga:** resposta que se perde vira `failed`, e o "Tentar novamente" pode entregar em dobro. Fechar pede um estado de "não confirmado" na bolha.
+- **`redirect: "error"` no `fetch` do provedor.** Hoje um redirecionamento levaria o cabeçalho `token` a outro host e passaria pela guarda de URL. Vale para todos os envios; PR próprio.
+- **Decisões para o dono:**
+  - `{{...}}` no texto: a uazapi troca `{{name}}`, `{{first_name}}`, `{{lead_*}}` antes de entregar, e o spec não mostra como desligar. O CRM grava o texto pedido. Vale para a tela também. Opções: neutralizar o marcador, recusar ou só avisar (hoje a API avisa na descrição do campo).
+  - os tetos (20 por minuto e 100 por hora, por conversa e por token) e a falta de um teto entre conversas: um token em laço ainda alcança muitas conversas, limitado só pelo limite de requisições dele;
+  - a integração (`system`) envia em qualquer status de conversa, inclusive com um analista atendendo;
+  - o analista não reenvia a mensagem que falhou de um token (pode copiar o texto e enviar como dele).
+- **Erro do provedor no log:** `[send] provider send failed:` imprime até 200 caracteres do corpo de erro da uazapi, que pode trazer o número. Já era assim na tela.
+- **O corpo guardado da idempotência traz o texto da mensagem** por 24 h. A limpeza da tabela é da Fase 6.
+- **Contato anonimizado:** o envio não confere, como as leituras de conversa. Ainda não existe fluxo que anonimize.
+
+**Armadilhas descobertas:**
+- **"Falhou" não é "não saiu".** Demora, conexão que cai e 5xx de proxy acontecem depois de o provedor ter recebido o pedido. Quem repete sozinho (um programa) não pode tratar isso como falha.
+- **A referência da uazapi mudou de versão** (2.4.2, 148 rotas; a skill dizia 2.1.1). O 500 do `/send/text` ganhou a forma com `error_source`, e o campo `text` aceita placeholders. Baixe o `openapi-bundled.json` antes de decidir o que um erro quer dizer.
+- **Um 422 guardado toma a chave de idempotência.** Todo 422 que quer dizer "esta chave é de outro pedido" tem de liberar a chave.
+- **`vi.mock` de um módulo inteiro esconde o export novo dele.** O helper passou a importar `uazapiSendDefinitelyFailed` de `senders/uazapi`; o teste que troca o módulo por `{ sendUazapiText }` só não quebra enquanto ninguém chama o export que falta. Use `importOriginal` e troque só o que fala com a rede.
+- **Dois limites em janela fixa avaliados juntos contam o que o outro barrou.** O teto da hora só pode ser consultado depois de o do minuto deixar passar.
+- **Roteiro de mutação morto no meio deixa o mutante no arquivo.** Uma execução em segundo plano foi encerrada pelo limite de tempo e deixou `"validation_error"` no lugar de um código. O roteiro agora guarda o original em disco, restaura no sinal e na partida seguinte, e roda só os testes do PR.
+- **O ponta a ponta precisa de um provedor de mentira para o desfecho desconhecido.** O `demo.invalid` só produz "a conexão nem abriu". Um servidor em 127.0.0.1 que recebe o pedido e derruba a conexão cobre o resto, e conta quantos pedidos chegaram.
+- **Certificado recusado pode chegar como `ECONNRESET`.** Contra um site público de teste, o certificado vencido e o autoassinado vieram assim; com servidor local vieram `CERT_HAS_EXPIRED` e `DEPTH_ZERO_SELF_SIGNED_CERT`. `ECONNRESET` fica como desconhecido, porque também acontece no meio do pedido.
+- **Revisor que muta arquivo precisa de cópia própria.** Um revisor esperou o worktree parar por três minutos para mutar no lugar, enquanto eu esperava por ele. Diga no pedido: cópia de `src/` com symlink de `node_modules`, e vitest com `--root`.
+- **Mais um teste de tela instável sob carga:** `src/features/tickets/components/ticket-detail.test.tsx` (um `waitFor`), visto uma vez com a máquina carregada. Fora deste PR.
+
 ## [2026-10-01] Fase 5 · PR 10a: conversas na API v1 (ler, handoff e ticket em foco)
 
 **Agente/Modelo:** Claude Opus 5.5.

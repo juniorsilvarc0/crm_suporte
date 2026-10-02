@@ -369,6 +369,12 @@ async function readBody(request: Request, accepts: "json" | "multipart", maxBody
   }
 }
 
+function isKeyReused(body: Json): boolean {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return false;
+  const error = body.error;
+  return error != null && typeof error === "object" && !Array.isArray(error) && error.code === "idempotency_key_reused";
+}
+
 type IdempotentCall = {
   supabase: Admin;
   request: Request;
@@ -475,7 +481,9 @@ async function runIdempotent(
       body = undefined;
     }
   }
-  if (body === undefined) {
+  // O handler que responde "esta chave é de outra requisição" não fica com a
+  // chave: guardada, a recusa faria a requisição dona passar a ser a reusada.
+  if (body === undefined || isKeyReused(body)) {
     await releaseIdempotency(supabase, attempt).catch((error) =>
       console.error(`[api/v1] ${requestId} release`, error)
     );

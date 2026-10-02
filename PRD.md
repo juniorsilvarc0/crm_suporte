@@ -71,7 +71,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
-**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline) e conversas (ler a conversa e as mensagens, passar para um humano e escolher o ticket em foco). O envio de mensagem pela IA e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
+**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline) e conversas (ler a conversa e as mensagens, enviar texto ao cliente, passar para um humano e escolher o ticket em foco). O relay v1 e as telas vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
 
 **Tickets (Fase 4, em andamento):** o banco e as rotas de sessão já existem:
 - `/api/tickets`: abrir e listar por conversa;
@@ -108,6 +108,15 @@ Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avi
 - O pedido entra na trilha do ticket informado ou do ticket em foco, só com o motivo. A trilha não se apaga, e por isso o resumo não fica nela.
 - A conversa arquivada ou removida volta para a caixa de entrada.
 - Conversa que já está com um humano: nada muda. Conversa resolvida: a API recusa; quem a devolve à IA é uma mensagem nova do cliente.
+
+**Envio pela API v1 (a IA e as integrações falam com o cliente pelo CRM).** Só texto.
+- A IA só envia na conversa que está com ela (`bot`); o CRM confere isso na hora em que a mensagem vai sair. Uma integração (token do tipo `api`) envia em qualquer status, e a mensagem aparece como automática (`system`).
+- A mensagem fica gravada com o token como autor. O CRM não assina nem altera o texto.
+- **No máximo uma vez.** Cada pedido leva uma Idempotency-Key, que vale para um texto só.
+  - Se a mensagem com certeza não saiu (o WhatsApp recusou ou não foi alcançado), ela fica como não enviada, e a mesma chave tenta de novo.
+  - Se o WhatsApp não confirmou (demora, conexão que cai), ela fica pendente, e enquanto estiver pendente a mesma chave não manda de novo: só responde o que a mensagem virou. Um cliente não recebe a mesma mensagem duas vezes por causa de uma repetição automática.
+- Tetos por conversa, por token: 20 envios por minuto e 100 por hora.
+- Só quem escreveu reenvia: o "Tentar novamente" da tela não vale para a mensagem de um token.
 
 ### 7.3 Ticket (Fase 4)
 

@@ -82,8 +82,11 @@ function isPrivateHost(host: string): boolean {
   return false;
 }
 
+/** A URL não passou na guarda: nenhum pedido chegou a sair para ela. */
+export class UnsafeUrlError extends Error {}
+
 /**
- * Valida e normaliza uma URL externa. Lança `Error` se for insegura.
+ * Valida e normaliza uma URL externa. Lança `UnsafeUrlError` se for insegura.
  * Retorna a `URL` já parseada (sem barra final no pathname preservada).
  *
  * Em produção exige HTTPS. Em dev permite HTTP e `localhost` (para testar contra
@@ -94,23 +97,23 @@ export function assertSafeUrl(rawUrl: string): URL {
   try {
     url = new URL(rawUrl.trim());
   } catch {
-    throw new Error("URL inválida.");
+    throw new UnsafeUrlError("URL inválida.");
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("A URL deve usar http ou https.");
+    throw new UnsafeUrlError("A URL deve usar http ou https.");
   }
 
   const isProd = process.env.NODE_ENV === "production";
 
   if (isProd && url.protocol !== "https:") {
-    throw new Error("Em produção a URL deve usar HTTPS.");
+    throw new UnsafeUrlError("Em produção a URL deve usar HTTPS.");
   }
 
   if (isPrivateHost(url.hostname)) {
     // Em dev, liberamos localhost/loopback para facilitar testes locais.
     if (isProd || !(url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
-      throw new Error("A URL aponta para um host de rede interna (bloqueado).");
+      throw new UnsafeUrlError("A URL aponta para um host de rede interna (bloqueado).");
     }
   }
 

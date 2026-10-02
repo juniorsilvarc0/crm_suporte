@@ -159,7 +159,7 @@ Um teste Vitest varre `src/app/api/v1/**/route.ts` e falha se algum método resp
 | Contatos / Clientes | `GET` (q, cursor, `updated_since`), `POST` (upsert por telefone), `GET/PATCH /{id}` (telefone imutável → 422); `GET /customers?cnpj=` e `/{id}/contract` |
 | Catálogos | `/products`, `/ticket-categories`, `/ticket-statuses` (com transições), `/sla-policies`, `/users` |
 | Tickets | `GET` (filtros + `sla_breached`); `POST`; `GET /{id\|number}`; `PATCH` (`If-Match` → 412); `POST /{id}/transitions`; `/assign`; `/comments`; `/attachments` (multipart ou `source_url` com `assertSafeUrl`); `/timeline` |
-| Conversas | `GET /{id}`, `/{id}/messages`; `POST /{id}/messages {client_id,text}` (`sender_type='ai'`); `POST /{id}/handoff {reason,summary,ticket_id?}`; `PUT /{id}/active-ticket` |
+| Conversas | `GET /{id}`, `/{id}/messages`; `POST /{id}/messages {text}` com Idempotency-Key (`sender_type='ai'`; o `client_id` previsto aqui virou a própria Idempotency-Key no PR 10b); `POST /{id}/handoff {reason,summary,ticket_id?}`; `PUT /{id}/active-ticket` |
 | Avisos (F6) | `POST /tickets/{id}/notices/{step}/claim` e `/finalize` (só `claimed:true` autoriza o envio ao cliente) |
 
 **Idempotência.**
