@@ -14,6 +14,8 @@ Este documento é **normativo**. Ele vence suposições, hábitos do modelo e "b
 
 **Documentos irmãos (leitura obrigatória, §2):** [`PRD.md`](PRD.md) · [`UI.md`](UI.md) · [`PROGRESS.md`](PROGRESS.md) · [`SKILLS.md`](SKILLS.md) · [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
+**Onde o trabalho parou e o que vem a seguir (leitura obrigatória, §2):** [`docs/PROXIMOS-PASSOS.md`](docs/PROXIMOS-PASSOS.md)
+
 ---
 
 ## §0. Template de Tarefa (aplique a TODA task)
@@ -90,6 +92,7 @@ Nenhuma edição de arquivo é permitida antes de concluir **todos** os passos:
 
 - [ ] Ler este `AGENTS.md` **e** o `AGENTS.md` do subdiretório alvo, se existir
 - [ ] Ler `PRD.md`, `UI.md`, `PROGRESS.md` e `SKILLS.md`. Se algum não existir, **criá-lo** conforme §9 antes de prosseguir
+- [ ] Ler `docs/PROXIMOS-PASSOS.md`: onde o trabalho parou, o que vem agora e em que ordem
 - [ ] Ler no mínimo **2–3 arquivos vizinhos** do código a ser alterado (mesmo diretório ou imports diretos)
 - [ ] `grep` / busca semântica para checar se o que você vai criar **já existe** (§5)
 - [ ] Declarar em uma frase: o que vai mudar, onde e por quê
@@ -307,6 +310,7 @@ Uma task só está concluída quando **todos** os itens são verdadeiros **e voc
 - [ ] Diff relido linha a linha: nada fora do escopo
 - [ ] Nenhum `TODO`, `console.log`, código comentado ou stub deixado para trás
 - [ ] `PROGRESS.md` atualizado (§9)
+- [ ] `docs/PROXIMOS-PASSOS.md` atualizado **se** a task mudou o que falta fazer
 - [ ] `PRD.md` / `UI.md` atualizados **se** escopo ou interface mudaram
 - [ ] Migration nova? Idempotente, arquivo novo, e o PR diz **quando** rodar
 
@@ -340,6 +344,7 @@ Se algum arquivo abaixo não existir, **crie-o na primeira ação da sessão**, 
 | [`PROGRESS.md`](PROGRESS.md) | O que já foi feito, decidido e descoberto | **Append-only.** Entrada nova no topo. Nunca reescreva nem apague entrada antiga. |
 | [`SKILLS.md`](SKILLS.md) | Quais skills servem para esta stack e quais quebram | Muda quando a stack muda. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branch, commit, PR, camadas, migrations | Estável. |
+| [`docs/PROXIMOS-PASSOS.md`](docs/PROXIMOS-PASSOS.md) | Onde o trabalho parou, o que falta e em que ordem; decisões que esperam o dono | Muda a cada PR que altera o que falta. |
 
 Formatos canônicos de `PROGRESS.md` e `UI.md` estão nos próprios arquivos, no topo.
 

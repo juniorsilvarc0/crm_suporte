@@ -27,6 +27,39 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Documento de continuidade: onde o projeto está e o que falta
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Um documento no repositório com o estado do projeto e tudo o que falta, na ordem do plano, para quem continuar sem ter acompanhado as conversas anteriores. E o PR 12b, que só existia numa máquina, guardado no GitHub.
+**Arquivos alterados:** novo `docs/PROXIMOS-PASSOS.md`; ponteiros em `AGENTS.md` (cabeçalho, §2, §8 e §9), `CLAUDE.md` e `docs/PLANO-FASE-5.md`; este PROGRESS. Nenhum código.
+
+**O que foi feito:**
+- **`docs/PROXIMOS-PASSOS.md`:**
+  - o estado atual e o que já foi feito, por fase e por PR;
+  - o passo a passo para terminar o PR 12b, com as decisões já tomadas;
+  - a ordem do que vem depois: PR 13, PR 14, PR 11b, o Quadro e as Fases 6 a 10;
+  - as correções e propostas fora do plano, e as decisões que esperam o dono;
+  - as regras de deploy e o ciclo de trabalho de cada PR.
+- **O documento virou leitura obrigatória** (`AGENTS.md` §2) **e atualização obrigatória** quando a task muda o que falta (§8 e §9).
+- **PR 12b guardado:** a branch `feat/conexao-registros-e-saude` foi enviada com um commit `wip`. Não tem PR e não está pronta: 41 testes falham.
+- O dono mergeou os PRs #27 a #38 em 2026-10-02. Nenhum PR de código ficou aberto.
+
+**Decisões tomadas:**
+- **Um arquivo novo, e não mais uma seção nos planos.** Os planos dizem o que fazer e por quê, e o PROGRESS diz o que foi feito. Faltava um lugar só para "onde paramos e o que vem agora".
+- **O `AGENTS.md` mudou:** manter o documento passou a fazer parte de "concluído". Sem isso ele envelhece no PR seguinte.
+- **O `wip` foi para uma branch, sem PR.** Código que falha não vai para a `main`, e trabalho sem commit não existe para quem chega depois.
+- **O documento aponta, em vez de repetir.** O detalhe de cada item segue no plano, no PROGRESS e na descrição do PR.
+- **Repositório público:** sem endereço de servidor, sem segredo e sem detalhe de falha ainda não corrigida.
+
+**Verificação:** typecheck ✓ · lint ✓ (os 9 avisos antigos) · test ✓ (4198 em 220 arquivos) · build ✓. Não há mudança de código. Os números e os caminhos de arquivo citados no documento foram conferidos contra a `main`.
+
+**Pendências / próximos passos:** as do `docs/PROXIMOS-PASSOS.md`. A primeira é terminar o PR 12b.
+
+**Armadilhas descobertas:**
+- **Em zsh, uma variável chamada `path` é o `PATH`.** Um `while read -r st path` deixa todo comando seguinte do laço "não encontrado", e a checagem falha calada: uma comparação de arquivos respondeu "não existe na main" para todos, inclusive para o `PROGRESS.md`. Outro nome de variável, ou Python.
+- **Resultado bom demais ou ruim demais numa checagem é sinal para conferir a checagem,** antes de relatar.
+- **`.next/dev/types` sobrevive à troca de branch.** Depois de rodar o `next dev` numa branch com rotas novas e voltar para a `main`, o `typecheck` falha com TS2307 em `.next/dev/types/validator.ts` (rota que não existe mais). O `next build` só refaz `.next/types`. É arquivo gerado: apagar `.next/dev/types`. No CI não acontece.
+
 ## [2026-10-01] O pedido do QR deixa de ser GET
 
 **Agente/Modelo:** Claude Opus 5.5.
