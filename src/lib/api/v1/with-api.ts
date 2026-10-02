@@ -272,6 +272,13 @@ export function withApi<P extends RouteParams = RouteParams>(
       const run = (form: FormData | null) => handler({ request, params, requestId, supabase, token, form });
 
       if (options.idempotency !== "required") {
+        // Sem Idempotency-Key ninguém leu o corpo até aqui, e sem Content-Length
+        // (chunked) o teto acima não barra nada: o handler leria o corpo inteiro.
+        // A leitura com teto é numa cópia; o handler lê o dele depois, já medido.
+        // Pedido sem corpo (GET) passa direto.
+        if ((await readTextCapped(request, maxBodyBytes)) === null) {
+          return finish(tooLarge(requestId, maxBodyBytes));
+        }
         return finish(await run(null));
       }
       return finish(

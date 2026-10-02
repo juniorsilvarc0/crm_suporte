@@ -185,7 +185,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - a mensagem de token não tem "Editar" (apaga-se e escreve-se outra).
 > - **10d, a fazer (decisão do dono):** o administrador apagar a nota de um token. Hoje ninguém apaga nem edita. Mexe na regra da nota, na rota e em `/api/app-users` (a tela precisa saber o papel de quem vê).
 > - **Fora deles, em PRs próprios:**
->   - o teto do corpo nas escritas sem Idempotency-Key (o `withApi` só confere o Content-Length);
+>   - ~~o teto do corpo nas escritas sem Idempotency-Key~~ (feito em 2026-10-01: o `withApi` lê com teto antes do handler);
 >   - conciliar o envio de desfecho desconhecido pelo `track_id` (`POST /message/find` da uazapi), e levar o "no máximo uma vez" também para a tela;
 >   - `redirect: "error"` no `fetch` do provedor (hoje um redirecionamento levaria o cabeçalho `token` a outro host);
 >   - o que fazer com `{{...}}` no texto (a uazapi troca os placeholders antes de entregar).

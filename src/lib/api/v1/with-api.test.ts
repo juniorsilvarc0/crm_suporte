@@ -280,6 +280,77 @@ describe("withApi — chamada autorizada", () => {
   });
 });
 
+describe("withApi — teto do corpo nas escritas sem Idempotency-Key", () => {
+  type BodyHandler = (ctx: { request: Request }) => Promise<Response>;
+  function writeRoute(
+    handler = vi.fn<BodyHandler>(async ({ request }) => NextResponse.json({ ok: true, body: await request.json() }))
+  ) {
+    return { handler, route: withApi({ route: "/api/v1/tickets/[ref]", scopes: ["tickets:write"] }, handler) };
+  }
+  const write = (method: string, body: string, headers: Record<string, string> = {}) =>
+    request({ method, body, headers: { "content-type": "application/json", ...headers } });
+
+  it.each(["PATCH", "PUT", "POST", "DELETE"])(
+    "%s sem Content-Length (chunked) acima do teto é 413, sem chamar o handler",
+    async (method) => {
+      const db = fakeDb(baseRow({ scopes: ["tickets:write"] }));
+      const { route, handler } = writeRoute();
+      const big = JSON.stringify({ texto: "x".repeat(API_DEFAULT_MAX_BODY_BYTES) });
+
+      const response = await route(write(method, big), ctx());
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error.code).toBe("payload_too_large");
+      expect(handler).not.toHaveBeenCalled();
+      expect(db.logs[0]).toMatchObject({ http_status: 413 });
+    }
+  );
+
+  it("no teto exato passa, e o handler ainda lê o corpo inteiro", async () => {
+    fakeDb(baseRow({ scopes: ["tickets:write"] }));
+    const { route, handler } = writeRoute();
+    const overhead = JSON.stringify({ texto: "" }).length;
+    const body = JSON.stringify({ texto: "x".repeat(API_DEFAULT_MAX_BODY_BYTES - overhead) });
+    expect(Buffer.byteLength(body)).toBe(API_DEFAULT_MAX_BODY_BYTES);
+
+    const response = await route(write("PATCH", body), ctx());
+
+    expect(response.status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect((await response.json()).body.texto).toHaveLength(API_DEFAULT_MAX_BODY_BYTES - overhead);
+  });
+
+  it("um byte acima do teto é 413", async () => {
+    fakeDb(baseRow({ scopes: ["tickets:write"] }));
+    const { route, handler } = writeRoute();
+    const overhead = JSON.stringify({ texto: "" }).length;
+    const body = JSON.stringify({ texto: "x".repeat(API_DEFAULT_MAX_BODY_BYTES - overhead + 1) });
+
+    expect((await route(write("PATCH", body), ctx())).status).toBe(413);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("o teto próprio da rota vale também aqui", async () => {
+    fakeDb(baseRow({ scopes: ["tickets:write"] }));
+    const handler = vi.fn<BodyHandler>(async () => NextResponse.json({ ok: true }));
+    const route = withApi({ route: "/api/v1/tickets/[ref]", scopes: ["tickets:write"], maxBodyBytes: 64 }, handler);
+
+    expect((await route(write("PATCH", JSON.stringify({ texto: "x".repeat(64) })), ctx())).status).toBe(413);
+    expect((await route(write("PATCH", JSON.stringify({ a: 1 })), ctx())).status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("escrita sem corpo e leitura (GET) seguem como eram", async () => {
+    fakeDb(baseRow({ scopes: ["tickets:write"] }));
+    const handler = vi.fn<BodyHandler>(async () => NextResponse.json({ ok: true }));
+    const route = withApi({ route: "/api/v1/tickets/[ref]", scopes: ["tickets:write"] }, handler);
+
+    expect((await route(request({ method: "DELETE" }), ctx())).status).toBe(200);
+    expect((await route(request({ method: "GET" }), ctx())).status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("withApi — Idempotency-Key", () => {
   const post = (body: string, key: string | null = "chave-0001", type = "application/json") =>
     request({
