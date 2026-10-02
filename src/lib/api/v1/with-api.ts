@@ -14,6 +14,7 @@ import {
   releaseIdempotency,
   REPLAYED_HEADER,
   sha256Hex,
+  sha256OfBlob,
 } from "@/lib/api/v1/idempotency";
 import { missingScopes, type ApiScope } from "@/lib/api/v1/scopes";
 import { hashApiToken } from "@/lib/security/api-token";
@@ -31,9 +32,11 @@ import type { Database, Json } from "@/lib/supabase/types";
 //   4. escopos (curinga `recurso:*`);
 //   5. limite do token (rate_limit_per_min);
 //   6. last_used_at no máximo 1×/min, sem esperar;
-//   7. Idempotency-Key, quando a rota exige;
-//   8. handler; exceção vira 500 com request_id;
-//   9. log em integration_logs, SEM o corpo.
+//   7. teto do corpo pelo Content-Length, ANTES de ler um byte;
+//   8. Idempotency-Key, quando a rota exige: só aqui o corpo é lido, no tipo
+//      que a rota declarou (JSON, ou multipart para anexo);
+//   9. handler; exceção vira 500 com request_id;
+//  10. log em integration_logs, SEM o corpo.
 // Com 2 réplicas, os limites são por processo (aproximados, D5).
 
 /** Teto por IP, acima de qualquer limite de token (o da IA é 300/min). */
@@ -46,6 +49,10 @@ const LAST_USED_EVERY_MS = 60_000;
  * isso, uma rajada anônima vira até 1.200 linhas/min que só a Fase 6 expurga.
  */
 export const API_AUTH_FAIL_LOG_PER_MIN = 10;
+/** Teto do corpo de uma rota que não declara outro: o JSON da v1 é pequeno. */
+export const API_DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+/** `api_idempotency_keys.route` guarda o caminho concreto, com check de 512. */
+const IDEMPOTENCY_PATH_MAX = 512;
 
 /**
  * Registro, por identidade, das funções que withApi/withPublicApi devolvem. O
@@ -75,6 +82,11 @@ export type ApiContext<P extends RouteParams> = {
   requestId: string;
   supabase: Admin;
   token: ApiToken;
+  /**
+   * O multipart já lido (só em rota `body: "multipart"`). O corpo foi
+   * consumido aqui: o handler usa ISTO, nunca `request.formData()`.
+   */
+  form: FormData | null;
 };
 
 export type PublicApiContext<P extends RouteParams> = {
@@ -90,6 +102,13 @@ type Options = {
   scopes: readonly ApiScope[];
   /** POST de criação (D6): exige Idempotency-Key e repete a resposta. */
   idempotency?: "required";
+  /**
+   * O corpo que a rota idempotente aceita. `json` (padrão) ou `multipart`
+   * (anexo). O outro tipo é 415 sem ler o corpo nem reservar a chave.
+   */
+  body?: "json" | "multipart";
+  /** Teto do corpo em bytes (padrão: API_DEFAULT_MAX_BODY_BYTES). */
+  maxBodyBytes?: number;
 };
 
 function bearerToken(request: Request): string | null {
@@ -137,6 +156,12 @@ export function withApi<P extends RouteParams = RouteParams>(
   options: Options,
   handler: (ctx: ApiContext<P>) => Response | Promise<Response>
 ) {
+  // Quem lê o multipart é a idempotência: sem ela, ninguém preencheria ctx.form.
+  if (options.body === "multipart" && options.idempotency !== "required") {
+    throw new Error(`withApi(${options.route}): body "multipart" exige idempotency "required"`);
+  }
+  const maxBodyBytes = options.maxBodyBytes ?? API_DEFAULT_MAX_BODY_BYTES;
+
   const apiRoute = async (request: Request, context: HandlerContext<P>): Promise<Response> => {
     const startedAt = Date.now();
     const requestId = randomUUID();
@@ -237,13 +262,24 @@ export function withApi<P extends RouteParams = RouteParams>(
           );
       }
 
+      // Antes de ler: um corpo declarado acima do teto não é lido, parseado
+      // nem hasheado. Sem Content-Length (chunked), a leitura tem o mesmo teto.
+      if (Number(request.headers.get("content-length")) > maxBodyBytes) {
+        return finish(tooLarge(requestId, maxBodyBytes));
+      }
+
       const params = ((await context?.params) ?? {}) as P;
-      const run = () => handler({ request, params, requestId, supabase, token });
+      const run = (form: FormData | null) => handler({ request, params, requestId, supabase, token, form });
 
       if (options.idempotency !== "required") {
-        return finish(await run());
+        return finish(await run(null));
       }
-      return finish(await runIdempotent(supabase, request, requestId, token.id, run));
+      return finish(
+        await runIdempotent(
+          { supabase, request, requestId, tokenId: token.id, accepts: options.body ?? "json", maxBodyBytes },
+          run
+        )
+      );
     } catch (error) {
       console.error(`[api/v1] ${requestId}`, error);
       return finish(apiError(requestId, 500, "internal_error", "Erro interno. Informe o request_id ao suporte."));
@@ -253,27 +289,98 @@ export function withApi<P extends RouteParams = RouteParams>(
   return apiRoute;
 }
 
-/** Hash do corpo canônico. Só JSON (ou vazio): multipart é decisão do PR 8. */
-async function requestHash(request: Request): Promise<{ hash: string } | { error: Response }> {
-  const type = request.headers.get("content-type") ?? "";
-  const text = await request.clone().text();
-  if (text.trim() === "") return { hash: sha256Hex("") };
-  if (!/^application\/json\b/i.test(type)) {
-    return { error: new Response(null, { status: 415 }) };
+function tooLarge(requestId: string, maxBodyBytes: number) {
+  const megabytes = Math.floor(maxBodyBytes / (1024 * 1024));
+  const limit = megabytes >= 1 ? `${megabytes} MB` : `${Math.floor(maxBodyBytes / 1024)} KB`;
+  return apiError(requestId, 413, "payload_too_large", `Corpo acima do limite de ${limit}.`);
+}
+
+/** Lê o corpo como texto, parando no teto. `null` = passou do teto. */
+async function readTextCapped(request: Request, maxBytes: number): Promise<string | null> {
+  const reader = request.clone().body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // Sem await: o cancelamento de uma metade do clone só resolve quando a
+      // outra (o corpo original, que ninguém vai ler) também é cancelada.
+      void reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
   }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+type ReadBody =
+  | { hash: string; form: FormData | null }
+  | { error: "unsupported" | "too_large" | "invalid_json" | "invalid_multipart" };
+
+/**
+ * Lê o corpo no tipo que a rota aceita e devolve o hash canônico: JSON com as
+ * chaves em ordem, ou (anexo) as partes do multipart. O multipart não é
+ * hasheado cru: o boundary muda a cada envio, e o mesmo arquivo reenviado
+ * seria "outra requisição". Cada parte entra pelo nome, na ordem, com o texto
+ * ou com nome, tipo, tamanho e sha256 do arquivo.
+ *
+ * O multipart é lido UMA vez (sem clone): o FormData volta para o handler.
+ */
+async function readBody(request: Request, accepts: "json" | "multipart", maxBodyBytes: number): Promise<ReadBody> {
+  const type = request.headers.get("content-type") ?? "";
+
+  if (accepts === "multipart") {
+    if (!/^multipart\/form-data\b/i.test(type)) return { error: "unsupported" };
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch (error) {
+      // O parser lança TypeError no multipart malformado. Outra coisa (ex.:
+      // falta de memória) é falha nossa, não entrada inválida.
+      if (error instanceof TypeError) return { error: "invalid_multipart" };
+      throw error;
+    }
+    const parts: unknown[] = [];
+    for (const [name, value] of form.entries()) {
+      parts.push(
+        typeof value === "string"
+          ? { name, value }
+          : { name, file: { name: value.name, type: value.type, size: value.size, sha256: await sha256OfBlob(value) } }
+      );
+    }
+    return { hash: sha256Hex(canonicalJson(parts)), form };
+  }
+
+  // Tipo declarado que não é JSON é 415 SEM ler o corpo. Sem tipo (ou com o
+  // corpo declarado vazio), só o corpo vazio passa.
+  const isJson = /^application\/json\b/i.test(type);
+  if (!isJson && type !== "" && request.headers.get("content-length") !== "0") return { error: "unsupported" };
+  const text = await readTextCapped(request, maxBodyBytes);
+  if (text === null) return { error: "too_large" };
+  if (text.trim() === "") return { hash: sha256Hex(""), form: null };
+  if (!isJson) return { error: "unsupported" };
   try {
-    return { hash: sha256Hex(canonicalJson(JSON.parse(text))) };
+    return { hash: sha256Hex(canonicalJson(JSON.parse(text))), form: null };
   } catch {
-    return { error: new Response(null, { status: 400 }) };
+    return { error: "invalid_json" };
   }
 }
 
+type IdempotentCall = {
+  supabase: Admin;
+  request: Request;
+  requestId: string;
+  tokenId: string;
+  accepts: "json" | "multipart";
+  maxBodyBytes: number;
+};
+
 async function runIdempotent(
-  supabase: Admin,
-  request: Request,
-  requestId: string,
-  tokenId: string,
-  run: () => Response | Promise<Response>
+  { supabase, request, requestId, tokenId, accepts, maxBodyBytes }: IdempotentCall,
+  run: (form: FormData | null) => Response | Promise<Response>
 ): Promise<Response> {
   const key = request.headers.get(IDEMPOTENCY_HEADER);
   if (!key) {
@@ -288,20 +395,45 @@ async function runIdempotent(
     );
   }
 
-  const hashed = await requestHash(request);
-  if ("error" in hashed) {
-    return hashed.error.status === 415
-      ? apiError(requestId, 415, "unsupported_media_type", "Envie o corpo em JSON (Content-Type: application/json).")
-      : apiError(requestId, 400, "invalid_json", "JSON inválido.");
+  // Caminho CONCRETO, sem query: a mesma chave em outro recurso é reuso. Um
+  // caminho que nem cabe na coluna não é de recurso nenhum.
+  const path = new URL(request.url).pathname;
+  if (path.length > IDEMPOTENCY_PATH_MAX) {
+    return apiError(requestId, 404, "not_found", "Recurso não encontrado.");
+  }
+
+  const read = await readBody(request, accepts, maxBodyBytes);
+  if ("error" in read) {
+    switch (read.error) {
+      case "unsupported":
+        return apiError(
+          requestId,
+          415,
+          "unsupported_media_type",
+          accepts === "multipart"
+            ? "Envie o arquivo em multipart/form-data."
+            : "Envie o corpo em JSON (Content-Type: application/json)."
+        );
+      case "too_large":
+        return tooLarge(requestId, maxBodyBytes);
+      case "invalid_multipart":
+        return apiError(
+          requestId,
+          400,
+          "invalid_multipart",
+          'multipart/form-data inválido. No Content-Disposition, use name="file" e filename="..." entre aspas, sem filename*.'
+        );
+      case "invalid_json":
+        return apiError(requestId, 400, "invalid_json", "JSON inválido.");
+    }
   }
 
   const begun = await beginIdempotency(supabase, {
     tokenId,
     key,
     method: request.method,
-    // Caminho CONCRETO, sem query: a mesma chave em outro recurso é reuso.
-    path: new URL(request.url).pathname,
-    requestHash: hashed.hash,
+    path,
+    requestHash: read.hash,
   });
 
   if (begun.outcome === "replay") {
@@ -327,7 +459,7 @@ async function runIdempotent(
   const attempt = { tokenId, key, attemptId: begun.attemptId };
   let response: Response;
   try {
-    response = await run();
+    response = await run(read.form);
   } catch (error) {
     await releaseIdempotency(supabase, attempt).catch(() => undefined);
     throw error;

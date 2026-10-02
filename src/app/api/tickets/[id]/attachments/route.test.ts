@@ -198,14 +198,19 @@ describe("POST /api/tickets/[id]/attachments", () => {
     expect(adminClientMock).not.toHaveBeenCalled();
   });
 
-  it("ticket inexistente → 404 sem upload", async () => {
+  it("ticket inexistente → 404 sem upload e sem copiar o arquivo", async () => {
     ticketRead = { data: null, error: null };
+    // A cópia (até 50 MB) só acontece depois de o ticket ser conferido.
+    const copy = vi.spyOn(Blob.prototype, "arrayBuffer");
 
     const response = await send(formWith(new File(["abc"], "a.txt")));
     const json = await response.json();
+    const copies = copy.mock.calls.length;
+    copy.mockRestore();
 
     expect(response.status).toBe(404);
     expect(json.code).toBe("not_found");
+    expect(copies).toBe(0);
     expect(upload).not.toHaveBeenCalled();
     expect(ticketCalls).toEqual([
       ["select", "id"],

@@ -131,7 +131,13 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 
 > **PR 8 dividido em dois** (2026-09-30), para caber numa revisão:
 > - **8a, feito:** `GET /tickets` (cursor, filtros, `sla_breached`); `GET`/`PATCH /tickets/{id ou protocolo}`; `POST /tickets` idempotente em duas camadas (a `Idempotency-Key` também vai como `p_idempotency_key`, e o `external_id` é a 3ª chave); `transitions` e `assign`. O If-Match é obrigatório nas escritas: 428 sem ele, 412 com a versão velha, e a atual volta no ETag. As escritas relêem o ticket e devolvem o DTO inteiro. O Supabase falso dos testes da v1 virou helper (`src/app/api/v1/test-harness.ts`).
-> - **8b:** `comments`, `attachments` (multipart, com o hash de corpo que o PR 4 adiou) e `timeline`.
+> - **8b, feito (2026-10-01):**
+>   - `POST comments` e `POST attachments` (multipart, só o campo `file`), os dois com Idempotency-Key; `GET attachments/{attachment_id}`, que devolve uma URL assinada de 10 min; e `GET timeline` com cursor.
+>   - O hash de corpo que o PR 4 adiou é das PARTES do multipart (nome, e do arquivo nome, tipo, tamanho e sha256), porque o boundary muda a cada envio. O `withApi` passou a ter o tipo de corpo por rota (`body: "json" | "multipart"`; o outro é 415 sem ler) e um teto conferido pelo Content-Length antes de ler (1 MB; 50 MB no anexo).
+>   - A escrita de comentário e de anexo saiu das rotas de sessão para `server/ticket-comment.ts` e `server/ticket-attachment.ts`, com o ator vindo de fora.
+>   - **Escopo novo, `comments:read`, fora do preset da IA.** Na timeline, `tickets:read` dá a trilha e os anexos; as mensagens exigem `conversations:read`, os comentários internos `comments:read`, e a nota interna no chat os dois. É a regra do `/context` (a IA não lê o que é só do time) aplicada por escopo.
+>   - `source_url` continua fora, até o endurecimento do SSRF (§4).
+>   - **Em aberto para o dono:** o parser de multipart do Node só aceita `name` e `filename` entre aspas, e o padrão do `HttpClient` do .NET não é assim. Hoje a API documenta e avisa no erro; tolerar exige normalizar o cabeçalho antes do parse (ou aceitar o arquivo cru).
 
 **PR 9: `feat(banco)`, conversas da IA** · banco · P · depende das decisões D10 e D12; pode entrar no PR 3 se as decisões saírem antes
 - **Arquivos:** `chat_messages.sent_by_token_id`; RPC `conversation_handoff(token, conversation, reason, summary, ticket_id)`, que muda bot→human com trava e grava `ticket_event` quando houver ticket; testes SQL e `db:types`.
@@ -202,6 +208,7 @@ O texto abaixo é o da análise, com as opções que foram consideradas.
    - **Recomendação de semântica:** `recurso:*` cobre as ações atuais e futuras do recurso. As ações são `read` e `write`, e em tickets `write` cobre criar, PATCH, transition e assign.
    - **Preset:** `context:read`, `contacts:read`, `contacts:write`, `customers:read`, `catalog:read`, `tickets:read`, `tickets:write`, `comments:write`, `attachments:write`, `conversations:read`, `messages:send`, `conversations:handoff`, com `actor_type='ai'`.
    - **Fora do preset:** `customers:write`. `notices:claim` fica para a Fase 6.
+   - **Acrescentado no PR 8b:** `comments:read`, também fora do preset (a IA escreve comentário interno, mas não lê comentário nem nota do time).
 5. **D5. Rate limit com 2 réplicas.** `rate-limit.ts:1-4` é por processo, e o appgw faz hash por IP (`app-gateway.conf:44`).
    - (a) Aceitar o limite aproximado e documentar.
    - (b) Contador no banco (tabela UNLOGGED + RPC).

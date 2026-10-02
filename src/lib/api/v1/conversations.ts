@@ -14,9 +14,10 @@ import type { TicketMessageSender } from "@/features/tickets/types";
 // para um token.
 
 const CONVERSATION_STATUSES = ["bot", "human", "resolved"] as const satisfies readonly ConversationStatus[];
-const DIRECTIONS = ["inbound", "outbound"] as const satisfies readonly MessageDirection[];
-const SENDERS = ["contact", "agent", "ai", "system", "device"] as const satisfies readonly TicketMessageSender[];
-const MESSAGE_TYPES = [
+// Exportadas: a timeline do ticket (ticket-activity.ts) publica as mesmas.
+export const DIRECTIONS = ["inbound", "outbound"] as const satisfies readonly MessageDirection[];
+export const SENDERS = ["contact", "agent", "ai", "system", "device"] as const satisfies readonly TicketMessageSender[];
+export const MESSAGE_TYPES = [
   "text",
   "image",
   "audio",
@@ -27,7 +28,13 @@ const MESSAGE_TYPES = [
   "template",
   "note",
 ] as const satisfies readonly MessageType[];
-const DELIVERY_STATUSES = ["pending", "sent", "delivered", "read", "failed"] as const satisfies readonly MessageDeliveryStatus[];
+export const DELIVERY_STATUSES = [
+  "pending",
+  "sent",
+  "delivered",
+  "read",
+  "failed",
+] as const satisfies readonly MessageDeliveryStatus[];
 
 const oneOf = <T extends string>(list: readonly T[], value: string): value is T => list.some((item) => item === value);
 

@@ -205,9 +205,10 @@ const readComments: Reader = async (db, ticketId, before, limit) => {
 };
 
 // As mensagens da conversa carimbadas com ESTE ticket (chat_messages.ticket_id),
-// notas incluídas ("Nota no chat").
-const readMessages: Reader = async (db, ticketId, before, limit) => {
+// notas incluídas ("Nota no chat"), a menos que quem chama as tire.
+const readMessages = (includeNotes: boolean): Reader => async (db, ticketId, before, limit) => {
   let query = db.from("chat_messages").select(TIMELINE_MESSAGE_SELECT).eq("ticket_id", ticketId);
+  if (!includeNotes) query = query.neq("type", "note");
   if (before) query = query.lt("created_at", before);
   const result = await query
     .order("created_at", { ascending: false })
@@ -269,13 +270,33 @@ const readAttachments: Reader = async (db, ticketId, before, limit) => {
   });
 };
 
-const READERS: readonly Reader[] = [
-  readStatusHistory,
-  readEvents,
-  readComments,
-  readMessages,
-  readAttachments,
-];
+/**
+ * O que entra na timeline além da trilha (status e eventos) e dos anexos, que
+ * entram sempre. A tela lê tudo; a API v1 liga cada parte pelo escopo do token.
+ * Cortado NA FONTE: tirar depois de paginar furaria as páginas.
+ */
+export type TimelineSources = {
+  /** Comentários internos do ticket. */
+  comments: boolean;
+  /** Mensagens da conversa carimbadas com o ticket. */
+  messages: boolean;
+  /** Notas internas no chat (só valem com `messages`). */
+  notes: boolean;
+};
+
+const ALL_SOURCES: TimelineSources = { comments: true, messages: true, notes: true };
+
+const skipSource: Reader = async () => ({ items: [], hitLimit: false });
+
+function readersFor(sources: TimelineSources): readonly Reader[] {
+  return [
+    readStatusHistory,
+    readEvents,
+    sources.comments ? readComments : skipSource,
+    sources.messages ? readMessages(sources.notes) : skipSource,
+    readAttachments,
+  ];
+}
 
 /**
  * Uma página da timeline do ticket, do mais novo para o mais antigo, com os
@@ -293,7 +314,7 @@ const READERS: readonly Reader[] = [
  */
 export async function getTicketTimeline(
   ticketId: string,
-  options: { before?: string } = {}
+  options: { before?: string; sources?: TimelineSources } = {}
 ): Promise<TicketTimelinePage> {
   const { before } = options;
   if (before !== undefined && !isTimelineInstant(before)) {
@@ -301,9 +322,10 @@ export async function getTicketTimeline(
   }
 
   const db = createSupabaseAdminClient();
-  const read = (index: number, limit: number) => READERS[index](db, ticketId, before, limit);
+  const readers = readersFor(options.sources ?? ALL_SOURCES);
+  const read = (index: number, limit: number) => readers[index](db, ticketId, before, limit);
 
-  let sources = await Promise.all(READERS.map((_, index) => read(index, SOURCE_LIMIT)));
+  let sources = await Promise.all(readers.map((_, index) => read(index, SOURCE_LIMIT)));
   let page = buildTicketTimeline(sources);
   if (page) return page;
 

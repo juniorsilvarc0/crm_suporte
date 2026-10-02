@@ -1338,8 +1338,13 @@ declare
   v_tk20  uuid := pg_temp.id('tk20');
   v_q1    uuid := pg_temp.id('q1');
   v_c95   uuid := pg_temp.id('c95');
+  v_token uuid := pg_temp.id('token_ai');
   v_cm    uuid;
   v_att   uuid;
+  v_cm2   uuid;
+  v_att2  uuid;
+  v_au    uuid;
+  v_at    uuid;
   v_cat   uuid;
   v_cat1  uuid;
   v_cat2  uuid;
@@ -1378,6 +1383,17 @@ begin
     format('update public.ticket_comments set body = ''De volta'' where id = %L', v_cm), 'P0001', 'COMMENT_DELETED');
   perform pg_temp.expect_fail('T90e DELETE de comentário negado',
     format('delete from public.ticket_comments where id = %L', v_cm), '42501');
+  -- A API v1 (PR 8b) comenta com o TOKEN como autor: o grant por coluna e o
+  -- guard aceitam author_token_id, e só um dos dois autores.
+  insert into public.ticket_comments (ticket_id, author_token_id, body)
+  values (v_tk05, v_token, 'Pela API') returning id into v_cm2;
+  select c.author_user_id, c.author_token_id into v_au, v_at from public.ticket_comments c where c.id = v_cm2;
+  insert into r values (v_au is null and v_at = v_token, 'T90f comentário com o token como autor',
+    coalesce(v_au::text, '<null>') || ' | ' || coalesce(v_at::text, '<null>'));
+  perform pg_temp.expect_fail('T90g comentário com dois autores',
+    format('insert into public.ticket_comments (ticket_id, author_user_id, author_token_id, body) '
+           'values (%L, %L, %L, ''Dois autores'')', v_tk05, v_ana, v_token),
+    'P0001', 'INVALID_ACTOR');
 
   -- T91
   insert into public.ticket_attachments (ticket_id, object_key, file_name, mime, size_bytes, sha256, uploaded_by_user_id)
@@ -1403,6 +1419,18 @@ begin
     format('update public.ticket_attachments set file_name = ''outro.png'' where id = %L', v_att), '42501');
   perform pg_temp.expect_fail('T91f DELETE de anexo negado',
     format('delete from public.ticket_attachments where id = %L', v_att), '42501');
+  -- A API v1 (PR 8b) anexa com o TOKEN como autor.
+  insert into public.ticket_attachments (ticket_id, object_key, file_name, mime, size_bytes, sha256, uploaded_by_token_id)
+  values (v_tk05, 'tickets/' || v_tk05 || '/' || gen_random_uuid(), 'nota.pdf', 'application/pdf', 18, repeat('d', 64), v_token)
+  returning id into v_att2;
+  select a.uploaded_by_user_id, a.uploaded_by_token_id into v_au, v_at from public.ticket_attachments a where a.id = v_att2;
+  insert into r values (v_au is null and v_at = v_token, 'T91g anexo com o token como autor',
+    coalesce(v_au::text, '<null>') || ' | ' || coalesce(v_at::text, '<null>'));
+  perform pg_temp.expect_fail('T91h anexo com dois autores',
+    format('insert into public.ticket_attachments (ticket_id, object_key, file_name, mime, size_bytes, sha256, '
+           'uploaded_by_user_id, uploaded_by_token_id) values (%L, %L, ''a.txt'', ''text/plain'', 1, %L, %L, %L)',
+           v_tk05, 'tickets/' || v_tk05 || '/' || gen_random_uuid(), repeat('c', 64), v_ana, v_token),
+    '23514', 'ticket_attachments_one_uploader');
 
   -- T92
   insert into public.ticket_categories (name, product_id) values ('Financeiro', v_q1) returning id into v_cat;

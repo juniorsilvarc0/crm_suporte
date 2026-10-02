@@ -60,7 +60,7 @@ function fakeFrom(table: string) {
   const recorded: Call[] = [];
   calls.push({ table, calls: recorded });
   const builder: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "lt", "order", "limit"]) {
+  for (const method of ["select", "eq", "neq", "lt", "order", "limit"]) {
     builder[method] = (...args: unknown[]) => {
       recorded.push([method, ...args]);
       return builder;
@@ -79,6 +79,7 @@ function execute(table: string, recorded: Call[]) {
   let limit = Infinity;
   for (const [method, column, value] of recorded) {
     if (method === "eq") rows = rows.filter((row) => row[column as string] === value);
+    if (method === "neq") rows = rows.filter((row) => row[column as string] !== value);
     if (method === "lt") rows = rows.filter((row) => microsOf(row[column as string]) < microsOf(value));
     if (method === "order") orders.push([column as string, (value as { ascending: boolean }).ascending]);
     if (method === "limit") limit = column as number;
@@ -407,6 +408,59 @@ describe("getTicketTimeline: união", () => {
       expect.objectContaining({ id: "note", type: "note", sent_by_user_id: USER }),
       expect.objectContaining({ id: "doc", type: "document", file_name: "boleto.pdf" }),
     ]);
+  });
+});
+
+// A API v1 liga cada parte pelo escopo do token. A tela não passa `sources` e
+// lê tudo (o 1º teste do arquivo fixa as cinco cadeias, sem `neq`).
+describe("getTicketTimeline: fontes cortadas na origem", () => {
+  const everything = () =>
+    seed({
+      status: [statusRow(5, { id: "s" })],
+      events: [eventRow(4, { id: "e" })],
+      comments: [commentRow(3, { id: "c" })],
+      messages: [
+        messageRow(2, { id: "note", direction: "outbound", sender_type: "agent", type: "note" }),
+        messageRow(1, { id: "msg" }),
+      ],
+      attachments: [attachmentRow(0, { id: "a" })],
+    });
+  const ids = (page: TicketTimelinePage) => page.items.map((item) => item.id);
+
+  it("sem comentários nem mensagens: sobram a trilha e os anexos, e as duas tabelas nem são lidas", async () => {
+    everything();
+
+    const page = await getTicketTimeline(TICKET, { sources: { comments: false, messages: false, notes: false } });
+
+    expect(ids(page)).toEqual(["s", "e", "a"]);
+    expect(callsOf("ticket_comments")).toEqual([]);
+    expect(callsOf("chat_messages")).toEqual([]);
+  });
+
+  it("mensagens sem notas: a nota interna é cortada NA CONSULTA, não depois de paginar", async () => {
+    everything();
+
+    const page = await getTicketTimeline(TICKET, { sources: { comments: false, messages: true, notes: false } });
+
+    expect(ids(page)).toEqual(["s", "e", "msg", "a"]);
+    expect(callsOf("chat_messages")[0]).toContainEqual(["neq", "type", "note"]);
+  });
+
+  it("comentários sem mensagens", async () => {
+    everything();
+
+    const page = await getTicketTimeline(TICKET, { sources: { comments: true, messages: false, notes: false } });
+
+    expect(ids(page)).toEqual(["s", "e", "c", "a"]);
+  });
+
+  it("tudo ligado é igual ao padrão da tela", async () => {
+    everything();
+
+    const page = await getTicketTimeline(TICKET, { sources: { comments: true, messages: true, notes: true } });
+
+    expect(ids(page)).toEqual(["s", "e", "c", "note", "msg", "a"]);
+    expect(callsOf("chat_messages")[0]).not.toContainEqual(["neq", "type", "note"]);
   });
 });
 

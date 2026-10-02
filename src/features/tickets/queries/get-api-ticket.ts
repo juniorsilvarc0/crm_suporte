@@ -41,3 +41,14 @@ export async function resolveTicketId(supabase: SupabaseClient<Database>, ref: T
   if (error) throw new Error(`tickets: ${error.message}`);
   return data?.id ?? null;
 }
+
+/**
+ * O id do ticket CONFERINDO que existe (por id ou protocolo), para as rotas
+ * que não passam por RPC (timeline, anexo). `null` = não existe. LANÇA em erro.
+ */
+export async function findTicketId(supabase: SupabaseClient<Database>, ref: TicketRef): Promise<string | null> {
+  const query = supabase.from("tickets").select("id");
+  const { data, error } = await ("id" in ref ? query.eq("id", ref.id) : query.eq("number", ref.number)).maybeSingle();
+  if (error) throw new Error(`tickets: ${error.message}`);
+  return data?.id ?? null;
+}

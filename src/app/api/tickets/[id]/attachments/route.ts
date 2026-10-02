@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { mapTicketError } from "@/features/tickets/lib/map-ticket-error";
 import { ticketErrorResponse } from "@/features/tickets/lib/ticket-error-response";
-import { TIMELINE_ATTACHMENT_SELECT } from "@/features/tickets/queries/get-ticket-timeline";
-import type { TicketAttachment } from "@/features/tickets/types";
+import { addTicketAttachment } from "@/features/tickets/server/ticket-attachment";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
-import {
-  TICKET_ATTACHMENT_MAX_BYTES,
-  TICKET_ATTACHMENTS_BUCKET,
-  putTicketAttachment,
-  removeTicketAttachment,
-  sanitizeAttachmentFileName,
-} from "@/lib/storage/ticket-attachments";
+import { TICKET_ATTACHMENT_MAX_BYTES } from "@/lib/storage/ticket-attachments";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 import { isUuid } from "@/lib/validation/uuid";
 
@@ -30,21 +22,11 @@ function fileError(message: string, status: 400 | 413) {
 }
 
 /**
- * Anexa um arquivo ao ticket (multipart, campo `file`, até 50 MB).
- *
- * Ordem: valida → upload → INSERT. Se o INSERT falhar, o objeto é apagado, e
- * nenhum arquivo fica no bucket sem linha. O ticket é conferido ANTES do
- * upload: inexistente → 404 sem tocar no storage.
- *
- * Sem RPC e sem evento na trilha (decisão 14): grant por coluna em
- * `ticket_attachments`, e o autor é sempre quem está na sessão. A migration não
- * barra anexo em ticket encerrado (nem comentário): quem precisa juntar um
- * comprovante depois de fechar consegue.
- *
- * O tipo gravado é o do bucket (storageContentType): HTML, SVG e afins viram
- * `application/octet-stream`, e é esse que vai em `mime`, porque é o que o
- * storage serve. O nome original fica em `file_name`, saneado. A resposta
- * nunca leva bucket, `object_key` nem sha256.
+ * Anexa um arquivo ao ticket (multipart, campo `file`, até 50 MB). A rota lê e
+ * confere o arquivo; o resto (ticket → upload → INSERT, e o objeto apagado se
+ * o INSERT falhar) é o addTicketAttachment, a mesma escrita da API v1, com o
+ * autor da sessão. A migration não barra anexo em ticket encerrado: quem
+ * precisa juntar um comprovante depois de fechar consegue.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireDashboardUser();
@@ -87,70 +69,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return fileError(TOO_LARGE_MESSAGE, 413);
   }
 
-  const supabase = createSupabaseAdminClient();
-  const { data: ticket, error: ticketError } = await supabase
-    .from("tickets")
-    .select("id")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (ticketError) {
-    console.error(ROUTE, ticketError.code, ticketError.message);
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível anexar o arquivo." },
-      { status: 500 }
-    );
-  }
-  if (!ticket) {
-    return NextResponse.json(
-      { ok: false, code: "not_found", message: "Ticket não encontrado." },
-      { status: 404 }
-    );
-  }
-
-  // O id do banco, em minúsculas: a chave precisa bater com `ticket_id::text`.
-  const stored = await putTicketAttachment({
-    supabase,
-    ticketId: ticket.id,
-    body: Buffer.from(await file.arrayBuffer()),
-    mime: file.type,
-  });
-  if (!stored) {
-    return NextResponse.json(
-      { ok: false, message: "Não foi possível guardar o arquivo. Tente de novo." },
-      { status: 502 }
-    );
+  const result = await addTicketAttachment(
+    createSupabaseAdminClient(),
+    { kind: "user", userId: auth.viewer.id },
+    id,
+    { name: file.name, type: file.type, read: async () => Buffer.from(await file.arrayBuffer()) }
+  );
+  if (!result.ok) {
+    switch (result.reason) {
+      case "read_failed":
+        console.error(ROUTE, result.cause.code, result.cause.message);
+        return NextResponse.json(
+          { ok: false, message: "Não foi possível anexar o arquivo." },
+          { status: 500 }
+        );
+      case "not_found":
+        return NextResponse.json(
+          { ok: false, code: "not_found", message: "Ticket não encontrado." },
+          { status: 404 }
+        );
+      case "storage_failed":
+        return NextResponse.json(
+          { ok: false, message: "Não foi possível guardar o arquivo. Tente de novo." },
+          { status: 502 }
+        );
+      case "insert_failed":
+        return ticketErrorResponse(ROUTE, result.error, result.cause);
+    }
   }
 
-  const { data: row, error: insertError } = await supabase
-    .from("ticket_attachments")
-    .insert({
-      ticket_id: ticket.id,
-      bucket: TICKET_ATTACHMENTS_BUCKET,
-      object_key: stored.objectKey,
-      file_name: sanitizeAttachmentFileName(file.name),
-      mime: stored.mime,
-      size_bytes: stored.sizeBytes,
-      sha256: stored.sha256,
-      uploaded_by_user_id: auth.viewer.id,
-    })
-    .select(TIMELINE_ATTACHMENT_SELECT)
-    .single();
-
-  if (insertError || !row) {
-    // Sem linha, o objeto não é de ninguém: apaga antes de responder.
-    await removeTicketAttachment(supabase, stored.objectKey);
-    return ticketErrorResponse(ROUTE, mapTicketError(insertError), insertError);
-  }
-
-  const attachment: TicketAttachment = {
-    id: row.id,
-    file_name: row.file_name,
-    mime: row.mime,
-    size_bytes: row.size_bytes,
-    uploaded_by_user_id: row.uploaded_by_user_id,
-    uploaded_by_token_id: row.uploaded_by_token_id,
-    created_at: row.created_at,
-  };
-  return NextResponse.json({ ok: true, attachment }, { status: 201 });
+  return NextResponse.json({ ok: true, attachment: result.data }, { status: 201 });
 }

@@ -36,6 +36,21 @@ export function sha256Hex(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/**
+ * sha256 de um arquivo, lido em pedaços: sem copiar os 50 MB de um anexo para
+ * hashear, e devolvendo o event loop entre um pedaço e outro.
+ */
+export async function sha256OfBlob(blob: Blob): Promise<string> {
+  const hash = createHash("sha256");
+  const reader = blob.stream().getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    hash.update(value);
+  }
+  return hash.digest("hex");
+}
+
 export type BeginOutcome =
   | { outcome: "started"; attemptId: string }
   | { outcome: "replay"; status: number; body: Json }
