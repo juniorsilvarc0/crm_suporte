@@ -1003,6 +1003,10 @@ O motivo é concreto e foi relatado em uso: no celular o diálogo centrado nasci
 - Listas de `Select` e `Combobox` respeitam a altura disponível, isolam o overscroll e mantêm inércia no WebKit. Cada opção tem alvo mínimo de 44 px no toque; o desktop reduz a densidade a partir de `sm`.
 - O breakpoint é lido com **`useMediaQuery`/`useSyncExternalStore`** (`src/lib/use-media-query.ts`), nunca `useState` + `useEffect`: o padrão comum começa em `false` e corrige depois de montar — e quando isso decide *qual componente renderizar*, o resultado não é um pisca, é o conteúdo montando duas vezes. Mesmo motivo do `useFunnelView` (§9).
 - O X continua na gaveta, apesar da alça: o `ModalShell` reserva `pr-16` no cabeçalho contando com ele.
+- **`dismissible={false}` no `Dialog`** é para o modal que só quem abriu fecha: pedido em curso, ou algo que aparece uma vez só.
+  - Toque fora e arrastar não fecham. O X chega ao `onOpenChange` de quem abriu, que decide (no desktop, o Esc também).
+  - ⚠️ **Na gaveta, recusar um fechamento sem isto deixa a folha deslocada.** O vaul já a arrastou para baixo e não a devolve, e o toque seguinte a fecha. Quem recusa no `onOpenChange` (o padrão `if (!next && !pending) fechar()`) passa `dismissible={!pending}`. Os modais antigos que recusam durante o envio (§5.23) ainda não passam: é dívida, não padrão.
+  - Na gaveta travada o X é um botão comum que chama o `onOpenChange`: pelo `DrawerClose` o vaul engoliria o pedido.
 
 ### §5.11 Campo de texto no celular: 16px é obrigatório
 
@@ -1238,10 +1242,10 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 
 - A tela administrativa usa três abas lineares: **Variáveis**, **API do CRM** e **Agente de IA**. Tokens e webhook permanecem visíveis, mas não disputam altura com credenciais de provedores.
 - Variáveis são uma lista operacional única, não um card por chave. Desktop usa tabela; mobile usa linhas empilhadas. A página nunca mostra o valor já salvo.
-- Origem é explícita: **Cofre** sobrescreve **Servidor**. Remover a substituição restaura o fallback da VPS quando ele existir.
+- A origem de toda variável é o **Cofre**: desde a Fase 2 o app não lê variável de integração do ambiente do servidor, e remover uma chave não "restaura" nada.
 - Criar ou substituir usa `ModalShell`; valor começa oculto, pode ser revelado durante a digitação e desaparece da memória visual ao fechar.
 - O modelo de transcrição OpenAI usa `FormSelect` com opções compatíveis. `whisper-1` continua como padrão para evitar mudança silenciosa de custo ou comportamento.
-- Variáveis públicas embutidas no bundle continuam exigindo rebuild. O editor administra runtime do servidor; não promete alterar `NEXT_PUBLIC_*` já compilada.
+- O Cofre só guarda as chaves que o app lê em tempo de execução (o catálogo). `NEXT_PUBLIC_*` é embutida no build e não passa por ele.
 - Abas podem rolar dentro do próprio trilho em telas estreitas. A página não ganha overflow horizontal; ações mobile mantêm alvo de 44 px.
 - **Tokens de API (Fase 5, PR 5):**
   - Gerar token pede **Acesso**, um `FormSelect` com dois valores:
@@ -1256,6 +1260,35 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - **URL recusada** (vermelho): a URL salva não passa na guarda do envio. A linha diz que nada está sendo repassado e o motivo, e a URL fica no campo para ser corrigida. Nunca aparece como "Ativo";
   - **Configuração ilegível** (âmbar): a leitura falhou. O campo fica desabilitado (e, sem digitar, o Salvar não habilita), para ninguém gravar por cima de uma URL que não viu. A tela não mostra "nenhuma URL" quando não sabe.
   - A recusa ao salvar aparece no toast, com o motivo que o servidor devolveu.
+- **Testar conexão (Fase 5, PR 12a):** botão na mesma linha do campo e do Salvar (a ação mora junto do bloco, §9).
+  - Só habilita com o estado **Ativo** e o campo sem alteração: o teste vai à URL **salva**, e com o campo mexido ele não testaria o que está à vista. Com o campo alterado, uma linha diz por quê ("O teste vai à URL salva: salve antes de testar.").
+  - Enquanto testa: desabilitado, com `Loader2Icon`.
+  - O desfecho vem num toast, e sempre diz **para qual host** o teste foi (a URL salva pode não ser a do campo de quem testa):
+    - o agente confirmou (verde): host, status, tempo, e se o pedido foi enviado com assinatura. "Enviado com assinatura" não é "assinatura aceita";
+    - o agente respondeu outro status (erro): host, status, e se foi enviado com assinatura (é o que explica um 401). Num 3xx, diz que o CRM não segue redirecionamento;
+    - não houve resposta, por rede ou prazo (erro): host e motivo, sem falar de assinatura;
+    - nada saiu, por URL recusada, cofre ilegível ou teto de testes por minuto (erro): o motivo que o servidor devolveu.
+- **Chave de assinatura do webhook (Fase 5, PR 12a):** bloco próprio, entre o webhook e a assinatura das mensagens da IA.
+  - Dois "assinatura" na mesma aba: os títulos e os textos dizem qual é qual. Aqui é sempre "os pedidos ao agente"; no bloco de baixo, "as mensagens da IA".
+  - A linha de estado diz, sempre com texto, um destes casos:
+    - **Gerada em <data>** (verde): os pedidos ao agente saem assinados;
+    - **Sem chave** (âmbar): os pedidos ao agente saem sem assinatura;
+    - **Cofre ilegível** (âmbar) e **última operação não confirmada** (âmbar): o bloco só oferece **Tentar de novo** (`router.refresh()`, que não troca de aba como recarregar a página). A tela não diz "sem chave" nem "assinados" quando não sabe, e não oferece gerar, trocar nem remover.
+  - **Gerar chave**, **Gerar nova chave** e **Remover chave** pedem confirmação num `ModalShell` `compact`, e o pedido corre com o diálogo aberto. A confirmação diz o que muda: na troca e na remoção, o agente recusa os pedidos, e as mensagens recusadas não chegam à IA.
+  - A chave aparece **uma vez**, no mesmo `Dialog`, com o conteúdo trocado (sem modal sobre modal):
+    - toque fora e arrastar a gaveta não fecham essa visão (`dismissible={false}`, §5.10); Esc, o X e **Concluir** fecham, e a chave sai do estado do componente;
+    - o botão de copiar tem `aria-label` e 44 px no celular, e recebe o foco quando a chave aparece (o botão que confirmava saiu da tela);
+    - **o estado só é relido depois que a chave sai de vista.** Um `router.refresh()` com a chave na tela pode recarregar a página inteira (servidor com build novo, rede que falha), e a chave se perderia.
+  - **Com o pedido em curso o diálogo não fecha** (§5.23): Cancelar fica desabilitado, e Esc, X, toque fora e arrastar são ignorados. O pedido tem prazo de 30 s, para o diálogo não ficar preso.
+  - **Trocar e remover levam a data da chave que estava na tela quando a confirmação abriu.** Se a chave guardada já não é essa (outro administrador mexeu), o servidor recusa, o bloco avisa, fecha a confirmação e relê o estado.
+  - **Três desfechos de falha, três tratamentos:**
+    - recusa (4xx): nada foi feito. O toast traz o motivo, e o bloco relê o estado;
+    - erro em que o servidor diz que nada foi gravado (`applied: false`): o mesmo;
+    - desfecho desconhecido (erro do servidor sem essa marca, resposta que não é do app, pedido que não voltou): o toast diz que não deu para confirmar, e o bloco passa ao estado "não confirmada". Ele **não relê sozinho**: com a rede fora do ar o refresh recarregaria a página e levaria o aviso junto.
+  - **A aba Agente de IA fica montada ao trocar de aba** (`keepMounted`): o teste de conexão em curso e a URL digitada não se perdem.
+- **Cofre restrito ao catálogo (Fase 5, PR 12a):** o servidor só grava os nomes que o app lê, e a chave de assinatura não aparece na lista nem se grava ou apaga por ali.
+  - Os textos da aba dizem o que vale desde a Fase 2: o CRM lê estas chaves só do cofre, **sem reserva no ambiente do servidor**. Remover uma chave para o que depende dela.
+  - Ficou para a aba Cofre da Conexão (PR 13): o campo de nome ainda é livre (o servidor recusa com o motivo; falta o `FormSelect` do catálogo), a coluna **Origem** e os rótulos "Servidor"/"Sobrescrever" ainda existem no código sem caso que os mostre, e "Substituir" numa variável antiga, de fora do catálogo, leva a uma recusa.
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 
@@ -1517,5 +1550,6 @@ Não autorizam refatoração incidental. Reuse o padrão dominante da tela alvo.
 - Migrar os `select` nativos restantes para `FormSelect`.
 - Padronizar os diálogos administrativos secundários no `ModalShell`, com tamanho proporcional à tarefa.
 - Levar a `DataToolbar` às tabelas de gestão restantes.
+- Passar `dismissible={!pending}` aos modais que recusam o fechamento durante o envio (§5.10): no celular, arrastar a gaveta com o envio em curso a deixa deslocada.
 - Revisão manual em 320 px / 375 px / tablet / desktop, claro e escuro, zoom 200%, nomes longos e listas vazias.
 - Validar com usuários se busca global agrega valor antes de introduzir a complexidade.

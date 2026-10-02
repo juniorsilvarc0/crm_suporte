@@ -5,13 +5,19 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { relayFieldsSchema, RELAY_MEDIA_URL_TTL_SECONDS, RELAY_VERSION } from "@/features/integrations/server/relay-envelope";
+import {
+  PING_ONLY_KEYS,
+  relayFieldsSchema,
+  RELAY_MEDIA_URL_TTL_SECONDS,
+  RELAY_VERSION,
+} from "@/features/integrations/server/relay-envelope";
 import {
   RELAY_EVENT,
   RELAY_RETRY_DELAY_MS,
   RELAY_TIMEOUT_MS,
   RELAY_USER_AGENT,
 } from "@/features/integrations/server/relay-message";
+import { PING_EVENT, pingBody } from "@/features/integrations/server/relay-ping";
 import { RELAY_SIGNING_SECRET_NAME } from "@/features/settings/types";
 import { signEvent } from "@/lib/security/hmac";
 
@@ -70,7 +76,7 @@ describe("docs/CONTRATO-RELAY.md", () => {
   );
 
   it("diz o evento, a versão, os prazos, a validade da mídia, quem envia e o nome da chave que o código usa", () => {
-    expect(doc).toContain(`Sempre \`${RELAY_EVENT}\``);
+    expect(doc).toContain(`| \`X-CRM-Event\` | \`${RELAY_EVENT}\` na mensagem do cliente. No teste de conexão, \`${PING_EVENT}\``);
     expect(doc).toContain(`Hoje \`${RELAY_VERSION}\``);
     // A frase inteira: o documento tem outros prazos em negrito (os 5 minutos da assinatura).
     expect(doc).toContain(`O agente tem **${RELAY_TIMEOUT_MS / 1000} segundos** para responder`);
@@ -96,6 +102,81 @@ describe("docs/CONTRATO-RELAY.md", () => {
     expect(others).toEqual(expect.arrayContaining(["EventType", "message"]));
     // Como no envio: os campos do CRM vêm depois de tudo o que é do provedor.
     expect(Object.keys(body).slice(-crmKeys.length)).toEqual(crmKeys);
+  });
+
+  it("a chave de assinatura é gerada pelo CRM: o documento não manda mais digitá-la no cofre", () => {
+    expect(doc).toContain("**Gerar chave**");
+    expect(doc).toContain("64 caracteres hexadecimais");
+    expect(doc).toContain("são 64 caracteres, e não 32 bytes a decodificar do hexadecimal");
+    // A troca tem uma janela: o documento não promete o que o CRM não faz.
+    expect(doc).toContain("não dá para configurar o agente antes");
+    expect(doc).not.toContain("aceitar a nova e a anterior");
+    expect(doc).toContain("**uma única vez**");
+    expect(doc).not.toContain("Adicionar variável");
+    expect(doc).not.toContain("openssl rand");
+  });
+
+  describe("o teste de conexão", () => {
+    function pingExample(): Record<string, unknown> {
+      const match = /<!-- exemplo:ping -->\n```json\n([\s\S]*?)\n```/.exec(doc);
+      if (!match) throw new Error("exemplo do ping não encontrado no documento");
+      return JSON.parse(match[1]) as Record<string, unknown>;
+    }
+
+    it("o exemplo tem os campos, a ordem e os valores fixos do que o CRM envia", () => {
+      const sent = JSON.parse(pingBody("7c1d0c5e-2f4b-4a6d-9e8f-0a1b2c3d4e5f", new Date("2026-10-01T12:00:00.000Z")));
+
+      expect(pingExample()).toEqual(sent);
+      expect(Object.keys(pingExample())).toEqual(Object.keys(sent));
+      expect(pingExample()).toMatchObject({ event: PING_EVENT, relay_version: RELAY_VERSION });
+    });
+
+    it("o exemplo não leva nenhum campo da mensagem do cliente, e a mensagem não leva o campo `event`", () => {
+      const ping = pingExample();
+
+      for (const key of [...crmKeys.filter((key) => key !== "relay_version"), "message", "chat", "EventType"]) {
+        expect(ping, key).not.toHaveProperty(key);
+      }
+      // É por `event` que o agente separa o teste da mensagem: ele não pode existir na mensagem.
+      expect(example()).not.toHaveProperty("event");
+      expect(crmKeys).not.toContain("event");
+    });
+
+    it("diz que as chaves do teste nunca chegam na mensagem, e são as que o código reserva", () => {
+      const sentence = doc.split("\n").find((line) => line.includes("Uma chave de raiz do provedor")) ?? "";
+
+      expect(sentence).toContain("não é repassada");
+
+      for (const key of PING_ONLY_KEYS) expect(sentence, key).toContain(`\`${key}\``);
+      expect(doc).toContain(`**Reconhece o teste pelo corpo: \`event\` igual a \`${PING_EVENT}\`.**`);
+      expect(doc).toContain("nunca tem o campo `event`");
+    });
+
+    it.each(Object.keys(JSON.parse(pingBody("x"))))("descreve o campo `%s` do corpo do teste", (key) => {
+      const section = doc.slice(doc.indexOf("## 10. Teste de conexão"));
+
+      expect(section).toContain(`| \`${key}\` |`);
+    });
+
+    it("diz por onde o teste vai: o mesmo caminho do repasse, assinado, com o mesmo prazo e sem seguir redirecionamento", () => {
+      // A frase inteira: trocar "a mesma assinatura" por "sem assinatura" tem de falhar aqui.
+      expect(doc).toContain(
+        `O botão **Testar conexão** envia um evento \`${PING_EVENT}\` ao endereço salvo, pelo mesmo caminho do repasse: ` +
+          `os mesmos cabeçalhos, a mesma assinatura, o mesmo prazo de ${RELAY_TIMEOUT_MS / 1000} segundos, e sem seguir redirecionamento.`
+      );
+      expect(doc).toContain("| `X-CRM-Event-Id` | Um identificador novo a cada teste. Repete o `event_id` do corpo. |");
+      expect(doc).toContain("Ele testa o endereço **salvo**.");
+    });
+
+    it("diz o evento do cabeçalho, o que o agente faz e onde o teste fica registrado", () => {
+      expect(doc).toContain(`## 10. Teste de conexão (\`${PING_EVENT}\`)`);
+      expect(doc).toContain(`| \`X-CRM-Event\` | \`${PING_EVENT}\`. |`);
+      expect(doc).toContain("Repete o `event_id` do corpo.");
+      expect(doc).toContain("**Responde `2xx` e não faz mais nada.**");
+      expect(doc).toContain(`ação \`${PING_EVENT}\``);
+      expect(doc).toContain("O teste que chegou a sair também fica no registro do CRM");
+      expect(doc).toContain("um agente que responde `2xx` a qualquer pedido passa no teste");
+    });
   });
 
   it("o vetor de assinatura do documento é o que o CRM calcula", () => {

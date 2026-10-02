@@ -29,16 +29,38 @@ beforeEach(() => {
 });
 
 describe("getRuntimeEnvironmentVariable", () => {
-  it("lê o catálogo inteiro do cofre numa chamada", async () => {
+  it("lê do cofre, numa chamada, o que vai para o cache: o catálogo SEM a chave de assinatura", async () => {
     vault([{ name: "OPENAI_API_KEY", value: "sk-cofre" }]);
 
     await expect(getRuntimeEnvironmentVariable("OPENAI_API_KEY")).resolves.toEqual({
       value: "sk-cofre",
       source: "vault",
     });
-    expect(rpcMock).toHaveBeenCalledWith("get_app_environment_variables", {
-      p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL", "RELAY_SIGNING_SECRET"],
+    // A chave de assinatura do relay não é pedida: ela não mora na memória da réplica.
+    expect(rpcMock.mock.calls).toEqual([
+      ["get_app_environment_variables", { p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL"] }],
+    ]);
+  });
+
+  it("a chave de assinatura não se lê pelo cache, nem que o cofre a devolva sem ter sido pedida", async () => {
+    vault([
+      { name: "RELAY_SIGNING_SECRET", value: "chave-que-veio-de-carona" },
+      { name: "OPENAI_API_KEY", value: "sk-cofre" },
+    ]);
+
+    // @ts-expect-error o tipo recusa o nome: a chave só se lê por readRuntimeEnvironmentVariable.
+    const fromCache = getRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET");
+
+    // Três travas: o TIPO (acima), a consulta (o nome não é pedido ao cofre) e o
+    // cache (uma linha que viesse de carona não entra nele).
+    await expect(fromCache).resolves.toEqual({ value: null, source: "none" });
+    expect(rpcMock.mock.calls[0][1].p_names).not.toContain("RELAY_SIGNING_SECRET");
+    // O resto da mesma leitura entrou normalmente.
+    await expect(getRuntimeEnvironmentVariable("OPENAI_API_KEY")).resolves.toEqual({
+      value: "sk-cofre",
+      source: "vault",
     });
+    expect(rpcMock).toHaveBeenCalledTimes(1);
   });
 
   it("ignora a variável de ambiente: credencial não mora no env", async () => {
@@ -134,16 +156,20 @@ describe("readRuntimeEnvironmentVariable", () => {
   });
 
   it("não lê nem alimenta o cache do catálogo", async () => {
-    vault([{ name: "RELAY_SIGNING_SECRET", value: "do-cache" }]);
-    await getRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET");
+    vault([{ name: "OPENAI_API_KEY", value: "do-cache" }]);
+    await getRuntimeEnvironmentVariable("OPENAI_API_KEY");
     one("do-cofre-agora");
 
-    await expect(readRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toBe("do-cofre-agora");
+    await expect(readRuntimeEnvironmentVariable("OPENAI_API_KEY")).resolves.toBe("do-cofre-agora");
     // O cache segue com o que tinha: a leitura direta não o toca.
-    await expect(getRuntimeEnvironmentVariable("RELAY_SIGNING_SECRET")).resolves.toEqual({
+    await expect(getRuntimeEnvironmentVariable("OPENAI_API_KEY")).resolves.toEqual({
       value: "do-cache",
       source: "vault",
     });
+    expect(rpcMock.mock.calls.map(([name]) => name)).toEqual([
+      "get_app_environment_variables",
+      "get_app_environment_variable",
+    ]);
   });
 
   it.each([

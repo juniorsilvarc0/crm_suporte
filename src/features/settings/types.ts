@@ -58,6 +58,16 @@ export const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
 /** Chave com que o CRM assina o que repassa ao agente (docs/CONTRATO-RELAY.md). */
 export const RELAY_SIGNING_SECRET_NAME = "RELAY_SIGNING_SECRET";
 
+/**
+ * O catálogo: as variáveis que o app lê do cofre. O Cofre só guarda estes
+ * nomes, porque variável que nada lê é segredo guardado sem uso.
+ */
+export const RUNTIME_ENVIRONMENT_NAMES = [
+  OPENAI_API_KEY_NAME,
+  OPENAI_TRANSCRIPTION_MODEL_NAME,
+  RELAY_SIGNING_SECRET_NAME,
+] as const;
+
 export const OPENAI_TRANSCRIPTION_MODELS = [
   { value: "whisper-1", label: "Whisper 1 — compatibilidade" },
   { value: "gpt-4o-mini-transcribe", label: "GPT-4o mini Transcribe — econômico" },

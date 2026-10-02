@@ -225,8 +225,8 @@ export function EnvironmentVariablesManager({
           <div>
             <h2 className="text-sm font-semibold">Variáveis do CRM</h2>
             <p className="max-w-3xl text-sm text-muted-foreground">
-              Chaves livres para integrações compatíveis do servidor. Valores salvos
-              não voltam a ser exibidos.
+              Credenciais das integrações que o CRM usa. Valores salvos não voltam
+              a ser exibidos.
             </p>
           </div>
           <Button onClick={openCreate} className="h-11 sm:h-9">
@@ -238,9 +238,8 @@ export function EnvironmentVariablesManager({
         <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
           <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <p>
-            Valores gerenciados ficam cifrados no cofre. Eles sobrescrevem a
-            configuração equivalente da VPS sem revelar o conteúdo na interface.
-            Variáveis públicas continuam exigindo rebuild.
+            Os valores ficam cifrados no cofre, e a interface não os revela. O
+            CRM lê estas chaves só daqui: não há reserva no ambiente do servidor.
           </p>
         </div>
 
@@ -461,7 +460,7 @@ export function EnvironmentVariablesManager({
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Letras, números e sublinhado. Ex.: OPENAI_API_KEY.
+                  O cofre só guarda as chaves que o CRM usa. Ex.: OPENAI_API_KEY.
                 </p>
               )}
             </div>
@@ -512,7 +511,7 @@ export function EnvironmentVariablesManager({
           title="Remover variável"
           description={
             removeTarget
-              ? `A substituição segura de ${removeTarget.name} será removida.`
+              ? `${removeTarget.name} será apagada do cofre.`
               : undefined
           }
           footer={
@@ -543,8 +542,8 @@ export function EnvironmentVariablesManager({
           }
         >
           <p className="text-sm text-muted-foreground">
-            Se a mesma chave existir no ambiente da VPS, o valor do servidor
-            voltará a ser usado automaticamente.
+            O que depende desta chave para de funcionar até ela ser gravada de
+            novo: não há reserva no ambiente do servidor.
           </p>
         </ModalShell>
       </Dialog>

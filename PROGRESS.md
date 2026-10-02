@@ -27,6 +27,88 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5, PR 12a: chave de assinatura gerada pelo CRM e teste de conexão do agente
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O administrador gera a chave de assinatura do relay pela tela (mostrada uma vez), troca, remove, e testa a conexão com o agente; o Cofre só guarda o que o app lê.
+**Arquivos alterados:**
+- novos: `src/features/integrations/server/relay-ping.ts`, `src/app/api/connection/agent/signing-secret/route.ts`, `src/app/api/connection/agent/test/route.ts`, `src/features/settings/queries/get-relay-signing.ts`, `src/features/settings/components/relay-signing-settings.tsx`, cada um com o seu teste; e os testes `get-environment-variables.test.ts` e `configuracoes/page.test.tsx` (a lista do Cofre e a página não tinham teste), `relay-signing-settings.mobile.test.tsx` e `components/ui/dialog.drawer.test.tsx` (a gaveta do celular);
+- alterados: `src/components/ui/dialog.tsx` (prop `dismissible`), `relay-message.ts` (o envio virou `postRelayEvent`), `relay-envelope.ts` (chaves reservadas), `settings/types.ts`, `get-runtime-environment.ts`, `schemas/environment-variable.ts`, `queries/get-environment-variables.ts`, `api/settings/environment-variables/route.ts`, `automation-settings.tsx`, `environment-variables-manager.tsx` (textos), `configuracoes/page.tsx`, e os testes deles;
+- docs: `docs/CONTRATO-RELAY.md` (e o teste que o confere), `PRD.md`, `UI.md` §5.10 e §5.19, `docs/PLANO-FASE-5.md`, a skill `uazapi-integration` e este PROGRESS.
+
+**O que foi feito:**
+- **Chave de assinatura** (`/api/connection/agent/signing-secret`, só admin):
+  - `POST` gera 32 bytes aleatórios em hex, grava no Cofre (`set_app_environment_variable`) e devolve o valor uma vez, com `Cache-Control: no-store`. O corpo é um objeto estrito: a chave nunca vem de fora;
+  - gerar com a chave já existente é 409 (o `23505` da RPC);
+  - trocar (`replace: true`) e remover levam `expectedUpdatedAt`, o `updated_at` da chave que a tela mostrava, e a rota recusa (409) se a guardada já não é essa;
+  - depois de gravar, a rota relê a chave e só a devolve se for a guardada;
+  - erro do cofre ao gravar ou ao remover não é tratado como "não aconteceu": a rota confere o que ficou guardado, e marca com `applied: false` o erro em que nada mudou;
+  - quem gerou, trocou ou removeu fica em `integration_logs` (`signing_secret.generated|rotated|removed`, com `payload.by`).
+- **Teste de conexão** (`POST /api/connection/agent/test`, só admin): `pingAgent` manda um `webhook.ping` à URL salva pelo `postRelayEvent`, que saiu de dentro do `attempt()` do relay. Mesma guarda de URL, mesma chave lida sem cache, mesmos cabeçalhos, 10 s, sem seguir redirecionamento. Corpo: `{event, event_id, relay_version, sent_at}`. Responde 200 com o desfecho (e o host testado), registra em `integration_logs` (ação `webhook.ping`) só quando o pedido saiu, e tem teto de 10 testes por minuto por administrador.
+- **Envelope da mensagem:** `event`, `event_id` e `sent_at` na raiz, vindos do provedor, não são repassados (`PING_ONLY_KEYS`).
+- **Cofre:** a rota de gravar só aceita o catálogo (`RUNTIME_ENVIRONMENT_NAMES`, agora em `settings/types.ts`); `RELAY_SIGNING_SECRET` não se grava nem se apaga por ela, não aparece na lista e saiu do cache de 60 s (o tipo de `getRuntimeEnvironmentVariable` recusa o nome). Apagar segue aceitando qualquer nome bem formado. O piso de 32 caracteres do PR 11 saiu.
+- **Tela** (Configurações → Agente de IA): o bloco "Chave de assinatura do webhook" e o botão "Testar conexão". O comportamento está no `UI.md` §5.19.
+- **`Dialog` travável** (`dismissible={false}`, `UI.md` §5.10): toque fora e arrastar não fecham, e o X chega ao `onOpenChange` de quem abriu. Na gaveta do celular o `dismissible` vai para o vaul, e a gaveta travada leva `data-locked`.
+- **Contrato:** a seção 9 diz que a chave é gerada pelo CRM e que a troca tem uma janela, e a seção 10 (nova) descreve o `webhook.ping`.
+
+**Decisões tomadas:**
+- **O front mínimo veio junto** (o plano o punha no PR 13): sem ele a chave não teria por onde entrar, já que o nome deixou de ser gravável à mão. O PR 12 virou 12a (este) e 12b (registros e Saúde).
+- **Carimbo no lugar de trava no banco:** a conferência do `updated_at` é feita na rota, antes da RPC. Um passo só no banco pediria migration. Sobra uma janela de milissegundos entre conferir e gravar, e a releitura depois de gravar cobre quem gerou. O carimbo é comparado como TEXTO, do jeito que o PostgREST o entrega (microssegundos): convertido em `Date`, perderia precisão.
+- **A rota do teste não recebe URL:** ela testa a que está salva, e a tela desabilita o botão com o campo alterado. Testar um endereço que o repasse não usa diria "funciona" sobre a coisa errada. Fica para o dono decidir se quer "testar antes de salvar".
+- **`event` e `event_id` dentro do corpo do ping:** a assinatura cobre o corpo, e não os cabeçalhos (achado da revisão do PR 11). E o envelope da mensagem passou a recusar essas chaves vindas do provedor: sem isso, a frase do contrato ("a mensagem nunca tem `event`") seria uma promessa que o código não cumpria.
+- **Cofre ilegível não vira "sem chave":** o teste não sai, como o repasse.
+- **O teste responde 200 mesmo quando o agente falha:** a rota funcionou; quem não respondeu foi o agente. O desfecho vai em `result`.
+- **Desfecho desconhecido não é falha:** erro do servidor sem a marca `applied: false`, resposta que não é do app, ou pedido que não voltou podem ter gravado. A tela fecha a confirmação e passa ao estado "última operação não confirmada", que só oferece reler. Ela não relê sozinha: com a rede fora do ar o `router.refresh()` recarrega a página e leva o aviso junto.
+- **Com a chave à vista o estado não é relido.** O `router.refresh()` vira navegação completa quando o servidor está com outro build ou a busca falha, e a chave, que só aparece uma vez, se perderia. O refresh acontece ao fechar.
+- **O `Dialog` compartilhado ganhou `dismissible`.** Era o jeito de travar a gaveta do celular: recusar um fechamento no `onOpenChange` a deixava deslocada. A prop é opcional, e só o bloco da chave a usa por ora.
+- **Chave em hex (64 caracteres), sem prefixo:** copia inteira com dois cliques e é usada como texto, como o contrato já dizia.
+- **A troca tem uma janela, e este PR não a fecha:** a chave nova só existe depois de o CRM já assinar com ela. O contrato e a tela dizem isso. Quem fecha é o reenvio do outbox (Fase 6).
+- **Três frases antigas da aba Variáveis foram corrigidas** (a "reserva no ambiente do servidor" saiu na Fase 2). O resto da limpeza dessa aba fica para o PR 13.
+
+**Verificação:**
+- **Testes:** 265 casos novos (a suíte foi de 3823 para 4088, em 217 arquivos). Entre eles:
+  - o teste de contrato lê o `docs/CONTRATO-RELAY.md` e confere as frases da seção do teste, a tabela de campos e o exemplo do ping contra o código;
+  - o bloco da chave tem um arquivo para o desktop e outro para a gaveta do celular (a largura é lida uma vez por arquivo);
+  - a página de Configurações ganhou teste: cada leitura chega ao bloco dela, o bloco não remonta no refresh, e a aba do agente fica montada.
+- **Mutação:** 348 alterações propositais no código, e todas derrubam algum teste. Não saiu assim de primeira:
+  - 1ª rodada (200): 7 sobreviveram. Quatro eram lacunas de teste (o registro esperado ou não, a latência incluindo as leituras, o corpo que não é objeto no apagar, a resposta 200 com `ok: false`), e viraram teste;
+  - 2ª rodada (310): 3 sobreviveram. Duas lacunas (status 400, e resposta com a chave e status de erro);
+  - 3ª rodada (348): 1 sobreviveu, o título do diálogo de troca;
+  - ficaram fora da lista, com o motivo anotado nela: 2 mutantes equivalentes e 1 que só o `tsc` pega.
+- **Revisão:** três revisores independentes (segurança; qualidade dos testes; comportamento, tela e contrato), cada um numa cópia privada, e depois um quarto só sobre as correções. Nenhum defeito grave. O que mudou por causa deles:
+  - **segurança:** trocar e remover conferem a chave que a tela mostrava; a rota relê a chave antes de devolvê-la; a trilha de quem mexeu na chave; teto de testes por minuto; `event`, `event_id` e `sent_at` reservados no envelope; a chave fora do cache;
+  - **testes:** 20 alterações de comportamento que os testes da 1ª versão deixavam passar, entre elas a chave vinda de `Math.random`, um `GET` que devolvesse a chave, a URL e a chave indo para o console no teste de conexão, e o teste reenviado quando não há resposta;
+  - **tela e contrato:** o contrato prometia "aceitar a chave nova e a anterior", que não é possível com a chave gerada pelo CRM; "sem assinatura" tinha dois sentidos na mesma aba; a falha de desfecho desconhecido aparecia como "não foi possível";
+  - **segunda rodada:** a chave se perdia se o `router.refresh()` virasse recarga da página com ela à vista; uma falha de rede recarregava a página e levava o aviso junto; no celular a gaveta fechava com um toque fora, e ficava deslocada depois de um fechamento recusado.
+- **Ponta a ponta contra o banco local:** 82 verificações, com um agente de mentira em 127.0.0.1 e a sessão de um administrador e de um membro que já existem no banco local. Entre elas: 401 sem sessão e 403 para membro nas três rotas; a chave gerada assina o teste e o repasse seguinte, conferida por conta feita em Python e pela função do documento; a troca com a data que a página de verdade entrega, e a recusa com data velha; a trilha com quem gerou, trocou e removeu; o teto de 10 por minuto; a mensagem com chaves de raiz forjadas (`event: webhook.ping`) chegando ao agente sem elas. O que o teste criou foi apagado, e a configuração local voltou ao que era.
+- **Servidor de produção local** (`node .next/standalone/server.js`, banco local): 30 verificações. A chave é gerada, trocada e removida pelo build de produção, e o teste de conexão passa pela guarda de produção (`http`, `localhost` e nome de um rótulo só recusados).
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ · build ✓.
+- As skills `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente; no lugar delas ficaram a revisão adversarial e os quatro comandos rodados.
+- **Nenhuma mensagem saiu para o WhatsApp, e nenhum agente de verdade foi chamado.** Produção não foi tocada.
+
+**Pendências / próximos passos:**
+- **PR 12b:** leitura real de `get-integration-logs.ts` com filtros, e Saúde. A taxa de erro do relay tem de filtrar pela ação `conversation.message_received`: o teste e a trilha da chave usam o mesmo provider.
+- **PR 13:** as abas da Conexão. Lá o bloco da chave e o botão mudam de lugar, o `revalidatePath` passa a apontar para `/app/conexao`, e o campo de nome do Cofre vira `FormSelect` do catálogo (hoje o servidor recusa com o motivo). A coluna Origem, os rótulos "Servidor"/"Sobrescrever" e o "Substituir" em variável antiga saem junto.
+- **D13 (rotação do segredo do webhook):** proposta de adiar, aguardando o dono.
+- **A guarda de URL não resolve DNS** (pendência do PR da guarda): o teste de conexão devolve ao administrador o status e o tempo da resposta. Fechar num PR próprio (resolver o nome e fixar o endereço antes do pedido).
+- **Testar antes de salvar:** decisão do dono.
+
+**Armadilhas descobertas:**
+- **Banco de mentira que responde na hora não distingue `await` de `void`.** O teste "o registro é gravado antes de a resposta voltar" passava com o `await` trocado por `void`. Só uma gravação que termina quando o teste manda (promessa travada) prova a espera.
+- **`router.refresh()` pode virar recarga da página inteira.** Quando o servidor responde com outro build, ou a busca falha, o Next cai para a navegação do navegador (`fetch-server-response.js`). Daí duas regras: não chamar `refresh()` com algo na tela que só aparece uma vez, e não chamar `refresh()` no caminho de uma falha de rede (ele leva o aviso junto).
+- **Na gaveta do celular, recusar um fechamento a deixa deslocada.** O vaul arrasta a folha, pede o fechamento, e não a devolve se quem abriu recusar; o toque seguinte a fecha. Quem recusa no `onOpenChange` passa `dismissible={false}` ao `Dialog` enquanto recusa. Os modais antigos que recusam durante o envio ainda não passam (backlog do `UI.md`).
+- **`useMediaQuery` guarda a consulta por módulo:** num arquivo de teste a superfície (caixa ou gaveta) é a do primeiro render. Desktop e celular vão em arquivos separados. E o arrasto da gaveta não é observável no jsdom: o teste confere `data-locked`.
+- **`Tabs.Panel` do Base UI desmonta a aba inativa.** O estado do componente morre na troca de aba, e um pedido em curso volta para ninguém. O HTML do servidor só tem o DOM da aba ativa, mas os dados embutidos da página levam as props de TODAS as abas: nunca passar segredo como prop.
+- **Erro do cliente do banco não quer dizer que nada foi gravado.** A resposta pode se perder depois do commit. Onde isso importa (uma chave que passa a valer), a rota confere o que ficou guardado antes de responder que falhou.
+- **O carimbo de `updated_at` se compara como TEXTO.** O PostgREST o entrega com microssegundos; convertido em `Date`, dois carimbos diferentes ficam iguais.
+- **Arquivo `route.ts` só exporta handler e configuração.** Uma constante exportada quebra o `next build` ("not a valid Route export field"). Fica privada do módulo.
+- **`z.string()` sem `error` responde em inglês** quando o campo falta ou não é texto, e a rota que devolve a mensagem do schema leva isso à tela.
+- **O limitador (`rate-limit.ts`) é por processo e mora na memória.** Em teste, cada caso usa uma chave só dele (um administrador por teste). No ponta a ponta, esperar o `Retry-After`.
+- **Listar processo com `pgrep -fl` (ou `ps e`) pode imprimir o AMBIENTE dele,** e o servidor de teste carrega os segredos locais no ambiente. Para achar e encerrar processo: `pgrep -f` (só os pids).
+- **Mutante que se desfaz sozinho:** com o relógio de mentira o instante inicial é 0, e `inicio || performance.now()` cai no valor certo. Em mutante que guarda um instante, usar `??`.
+- **`userEvent.setup()` instala a própria área de transferência:** o `vi.spyOn(navigator.clipboard, "writeText")` vem DEPOIS do `setup()`.
+- **Durante a mutação, a worktree tem arquivo mutado:** não editar fonte nem teste, não rodar `next build` e não mexer em documento que teste lê (`docs/CONTRATO-RELAY.md`). O aviso de "arquivo alterado em disco" nessa hora é o roteiro, e não é para corrigir. A cópia dos revisores é feita antes de a mutação começar.
+
 ## [2026-10-01] Guarda de URL: recusa o que escapava, e deixa de barrar host público por engano
 
 **Agente/Modelo:** Claude Opus 5.5.

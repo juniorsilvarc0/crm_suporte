@@ -2,6 +2,7 @@ import { getTranscriptionModelConfig as readTranscriptionModelConfig } from "@/f
 import {
   DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
+  RELAY_SIGNING_SECRET_NAME,
   type EnvironmentVariableListItem,
   type TranscriptionModelConfig,
 } from "@/features/settings/types";
@@ -20,6 +21,8 @@ export async function getEnvironmentVariables(): Promise<EnvironmentVariableList
         .from("app_environment_variables")
         .select("id, name, created_at, updated_at")
         .neq("name", OPENAI_TRANSCRIPTION_MODEL_NAME)
+        // A chave de assinatura do relay é gerada e removida em Agente de IA.
+        .neq("name", RELAY_SIGNING_SECRET_NAME)
         .order("name", { ascending: true });
 
       if (error) {

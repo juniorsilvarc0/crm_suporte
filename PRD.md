@@ -68,7 +68,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Contatos | `/app/contatos` | member | Contatos do WhatsApp, busca por nome ou telefone, filtro com/sem empresa, vincular/trocar/desvincular empresa |
 | Conexão | `/app/conexao` | **admin** | QR e estado da instância de WhatsApp (uazapi) |
 | Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
-| Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
+| Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre, só as chaves que o CRM usa), tokens de API, agente de IA (webhook com teste de conexão, chave de assinatura gerada pelo CRM e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
 **API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline) e conversas (ler a conversa e as mensagens, enviar texto ao cliente, passar para um humano e escolher o ticket em foco). O relay v1 já está implementado (contrato em [`docs/CONTRATO-RELAY.md`](docs/CONTRATO-RELAY.md)); as telas vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
@@ -100,10 +100,11 @@ As telas (lista, detalhe, quadro, chat, Início, Configurações › Atendimento
 6. Se a conversa está em `bot`, a mensagem nova do cliente é repassada ao agente externo (relay v1, contrato em [`docs/CONTRATO-RELAY.md`](docs/CONTRATO-RELAY.md)):
    - **o que vai:** o envelope da uazapi sem o `token` da instância, com a conversa e o status dela (lidos na hora de montar o envelope), o contato, a empresa, o contrato, o ticket em foco e a URL assinada da mídia (10 min);
    - **para onde:** a URL salva na tela (sem reserva em variável de ambiente), conferida ao salvar e a cada envio; redirecionamento não é seguido;
-   - **assinatura:** `X-CRM-Signature` com a chave `RELAY_SIGNING_SECRET` do cofre, quando ela existe. A chave é lida a cada repasse, sem cache: trocá-la vale na mensagem seguinte;
+   - **assinatura:** `X-CRM-Signature` com a chave `RELAY_SIGNING_SECRET` do cofre, quando ela existe. Quem gera a chave é o CRM, na tela (mostrada uma vez; não se grava à mão). Ela é lida a cada repasse e não entra no cache do cofre: gerar, trocar ou remover vale na mensagem seguinte. Trocar e remover conferem que a chave guardada ainda é a que a tela mostrava, e fica registrado quem gerou, trocou ou removeu;
    - **registro:** cada tentativa vai para `integration_logs` (provider `relay`) com status, HTTP e latência, sem corpo e sem a URL;
    - **garantia:** no máximo uma vez: o que chegou a sair não é enviado de novo. Se uma leitura falha antes do envio, o CRM tenta mais uma vez, 1 s depois; se falhar de novo, o repasse não sai (nunca um envelope pela metade). A retentativa de entrega vem com o outbox (Fase 6);
-   - **quando roda:** depois da resposta à uazapi, agendado com `after()`: o Next termina o repasse em curso antes de sair num deploy.
+   - **quando roda:** depois da resposta à uazapi, agendado com `after()`: o Next termina o repasse em curso antes de sair num deploy;
+   - **teste de conexão:** o administrador dispara um `webhook.ping` à URL salva, pelo mesmo caminho (guarda de URL, chave, cabeçalhos e prazo), sem dado de cliente. O desfecho aparece na tela e fica em `integration_logs`. Há um teto de 10 testes por minuto por administrador. Uma chave de raiz `event`, `event_id` ou `sent_at` vinda do provedor não é repassada na mensagem: é por `event` que o agente separa o teste da mensagem.
 
 ### 7.2 Atendimento humano (takeover)
 
@@ -196,7 +197,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 | Integração | Uso | Código |
 |---|---|---|
 | **uazapi** | WhatsApp — único provedor suportado | `src/features/chat/lib/{senders,normalizers,connection}/uazapi.ts` |
-| **Agente de IA externo** | Recebe o relay das mensagens em modo `bot` e o aviso de takeover | `src/features/integrations/server/relay-message.ts` e `relay-envelope.ts`, `src/features/settings/lib/get-relay-url.ts`, `src/features/chat/lib/push-takeover.ts` |
+| **Agente de IA externo** | Recebe o relay das mensagens em modo `bot` e o aviso de takeover | `src/features/integrations/server/relay-message.ts`, `relay-envelope.ts` e `relay-ping.ts` (teste de conexão), `src/features/settings/lib/get-relay-url.ts`, `src/features/chat/lib/push-takeover.ts` |
 | **OpenAI** | Transcrição de áudio no chat; chave e modelo só no cofre (Vault), nunca no env | `src/app/api/chat/transcribe`, `src/features/settings/lib/get-runtime-environment.ts` |
 | **Supabase Storage** | Mídia do chat e foto do contato no bucket **privado** `chat-media` (servidos por URL assinada via `/api/chat/media/[id]` e `/api/contacts/[id]/avatar`); avatar da equipe no público `profile-avatars` | `src/lib/storage/chat-media.ts`, `src/lib/storage/put-media.ts` |
 
@@ -242,8 +243,8 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 | Risco | Impacto | Onde |
 |---|---|---|
 | Configuração do agente ainda lida de env (`TAKEOVER_AGENT_URL`, `BOT_SIGNATURE_AGENT_*`) | Contraria "nenhuma credencial no código". O token e o segredo do webhook da uazapi e a chave da OpenAI já estão no Vault (Fase 2); a URL do relay saiu do env no relay v1 | Fase 6 do plano |
-| Relay é "no máximo uma vez", sem nova tentativa | Agente fora do ar, ou falha do CRM ao montar o envelope, e a IA não recebe aquela mensagem. Ela fica no CRM e a tentativa fica em `integration_logs` | Fase 6 (outbox) |
-| A guarda de URL (`assertSafeUrl`) confere só o host literal e não resolve DNS | Um nome público que aponte para um endereço interno passa pela guarda. Só um administrador configura essas URLs, e em produção o HTTPS obrigatório ainda pede um certificado válido para o nome | Resolver e fixar o endereço antes do `fetch`, se um dia a URL vier de quem não é administrador (`source_url`, por exemplo) |
+| Relay é "no máximo uma vez", sem nova tentativa | Agente fora do ar, ou falha do CRM ao montar o envelope, e a IA não recebe aquela mensagem. Ela fica no CRM e a tentativa fica em `integration_logs`. Vale também para a troca da chave de assinatura: entre gerar a chave nova e configurá-la no agente, um agente que confere a assinatura recusa os pedidos, e eles não são reenviados | Fase 6 (outbox) |
+| A guarda de URL (`assertSafeUrl`) confere só o host literal e não resolve DNS | Um nome público que aponte para um endereço interno passa pela guarda. Só um administrador configura essas URLs, e em produção o HTTPS obrigatório ainda pede um certificado válido para o nome. O teste de conexão mostra a esse administrador o status e o tempo da resposta, que já ficavam em `integration_logs` | Resolver e fixar o endereço antes do `fetch`, se um dia a URL vier de quem não é administrador (`source_url`, por exemplo) |
 | Dependência de um único provedor de WhatsApp (uazapi) | Sessão WhatsApp Web cai e o atendimento para | `SKILLS.md` §Armadilhas |
 
 ## 15. Glossário de domínio

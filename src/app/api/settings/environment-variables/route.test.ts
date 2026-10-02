@@ -77,38 +77,33 @@ describe("POST /api/settings/environment-variables", () => {
   });
 
   it.each([
-    ["curta", "1"],
-    ["31 caracteres", "a".repeat(31)],
-    ["com espaço no meio", `${"a".repeat(20)} ${"b".repeat(20)}`],
-    ["com quebra de linha colada no fim", `${"a".repeat(40)}\n`],
-    ["só espaços", " ".repeat(40)],
-  ])("chave de assinatura do relay %s é recusada, sem gravar", async (_label, value) => {
-    const response = await POST(request("POST", { name: " relay_signing_secret ", value }));
+    ["nome bem formado que o app não lê", "OUTRA_CHAVE"],
+    ["o antigo endereço do agente por variável", "N8N_WEBHOOK_URL"],
+  ])("chave fora do catálogo (%s) é recusada, sem gravar", async (_label, name) => {
+    const response = await POST(request("POST", { name, value: "valor-qualquer" }));
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body.errors.value[0]).toContain("32 caracteres ou mais, sem espaços");
-    expect(JSON.stringify(body)).not.toContain(value.trim() || "a".repeat(40));
+    expect(body.errors.name).toEqual([
+      "O cofre só guarda as chaves que o CRM usa: OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL.",
+    ]);
+    expect(JSON.stringify(body)).not.toContain("valor-qualquer");
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
-  it("chave de assinatura do relay com 32 caracteres sem espaço é gravada", async () => {
-    const value = "f".repeat(32);
+  it.each([
+    ["valor forte", "f".repeat(64)],
+    ["valor curto", "1"],
+  ])("a chave de assinatura não se grava à mão (%s): quem gera é o CRM", async (_label, value) => {
+    const response = await POST(
+      request("POST", { name: " relay_signing_secret ", value, replace: true })
+    );
+    const body = await response.json();
 
-    const response = await POST(request("POST", { name: "RELAY_SIGNING_SECRET", value, replace: true }));
-
-    expect(response.status).toBe(200);
-    expect(rpcMock).toHaveBeenCalledWith("set_app_environment_variable", {
-      p_name: "RELAY_SIGNING_SECRET",
-      p_value: value,
-      p_replace: true,
-    });
-  });
-
-  it("o piso é só da chave de assinatura: outra variável aceita valor curto", async () => {
-    const response = await POST(request("POST", { name: "OUTRA_CHAVE", value: "x" }));
-
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(400);
+    expect(body.errors.name).toEqual(["A chave de assinatura é gerada pelo CRM, em Agente de IA."]);
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("não substitui silenciosamente uma chave existente", async () => {
@@ -141,5 +136,33 @@ describe("DELETE /api/settings/environment-variables", () => {
     const response = await DELETE(request("DELETE", { name: "MINHA_CHAVE" }));
 
     expect(response.status).toBe(404);
+  });
+
+  it("a chave de assinatura não sai por aqui, e a resposta diz por onde", async () => {
+    const response = await DELETE(request("DELETE", { name: " relay_signing_secret " }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      ok: false,
+      message: "A chave de assinatura é gerada pelo CRM, em Agente de IA.",
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["nome mal formado", { name: "1-chave" }],
+    ["sem nome", {}],
+    ["nome que não é texto", { name: 42 }],
+    // Corpo que não é objeto: o erro não é do campo `name`, e a mensagem ainda vem.
+    ["corpo nulo", null],
+    ["corpo em lista", ["OPENAI_API_KEY"]],
+    ["corpo em texto", "OPENAI_API_KEY"],
+  ])("%s: 400 `Variável inválida.`, sem tocar o cofre", async (_label, body) => {
+    const response = await DELETE(request("DELETE", body));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, message: "Variável inválida." });
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 });

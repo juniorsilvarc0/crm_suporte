@@ -54,9 +54,25 @@ function asDrawerProps<T>(props: unknown): T {
 type DialogProps = DialogPrimitive.Root.Props & {
   /** `responsive` (padrão) vira gaveta no celular; `dialog` nunca troca. */
   variant?: "responsive" | "dialog"
+  /**
+   * `false` = só quem abriu fecha. Toque fora e arrastar não fecham; o X (e, no
+   * desktop, o Esc) chegam ao `onOpenChange`, que decide. É para o modal com
+   * pedido em curso, ou com algo que só aparece uma vez.
+   *
+   * ⚠️ Na gaveta, RECUSAR um fechamento sem isto deixa a folha deslocada: o
+   * vaul já a arrastou para baixo e não a devolve, e o toque seguinte a fecha.
+   * Quem recusa no `onOpenChange` passa `dismissible={false}` enquanto recusa.
+   */
+  dismissible?: boolean
 }
 
-function Dialog({ variant = "responsive", ...props }: DialogProps) {
+/**
+ * Na gaveta travada, o X chama quem abriu: pelo `DrawerClose` o vaul engoliria
+ * o pedido (`dismissible={false}` descarta todo fechamento que nasce dentro dele).
+ */
+const DialogRequestCloseContext = React.createContext<(() => void) | null>(null)
+
+function Dialog({ variant = "responsive", dismissible = true, ...props }: DialogProps) {
   const isMobile = useIsMobile()
   const live: DialogSurface =
     variant === "dialog" || !isMobile ? "dialog" : "drawer"
@@ -74,28 +90,41 @@ function Dialog({ variant = "responsive", ...props }: DialogProps) {
     const { open, defaultOpen, onOpenChange, children } = props
     return (
       <DialogSurfaceContext.Provider value="drawer">
-        <Drawer
-          open={open}
-          defaultOpen={defaultOpen}
-          // O Base UI entrega `(open, eventDetails)`; o vaul, só `(open)`.
-          // Conferido nos 25 call sites: todos leem apenas o primeiro
-          // argumento. O segundo vai como `undefined`, que é o que ele já é
-          // para quem não o usa.
-          onOpenChange={(next) =>
-            onOpenChange?.(next, undefined as never)
+        <DialogRequestCloseContext.Provider
+          value={
+            dismissible ? null : () => onOpenChange?.(false, undefined as never)
           }
         >
-          {/* O Base UI aceita `children` como função de render (payload);
-              o vaul, só nós. Nenhum dos 25 call sites usa a forma de função. */}
-          {children as React.ReactNode}
-        </Drawer>
+          <Drawer
+            open={open}
+            defaultOpen={defaultOpen}
+            dismissible={dismissible}
+            // O Base UI entrega `(open, eventDetails)`; o vaul, só `(open)`.
+            // Conferido nos 25 call sites: todos leem apenas o primeiro
+            // argumento. O segundo vai como `undefined`, que é o que ele já é
+            // para quem não o usa.
+            onOpenChange={(next) =>
+              onOpenChange?.(next, undefined as never)
+            }
+          >
+            {/* O Base UI aceita `children` como função de render (payload);
+                o vaul, só nós. Nenhum dos 25 call sites usa a forma de função. */}
+            {children as React.ReactNode}
+          </Drawer>
+        </DialogRequestCloseContext.Provider>
       </DialogSurfaceContext.Provider>
     )
   }
 
   return (
     <DialogSurfaceContext.Provider value="dialog">
-      <DialogPrimitive.Root data-slot="dialog" {...props} />
+      <DialogPrimitive.Root
+        data-slot="dialog"
+        // Travado: o toque fora nem chega a pedir o fechamento. Vem antes de
+        // `props`, para um `disablePointerDismissal` explícito continuar valendo.
+        disablePointerDismissal={!dismissible}
+        {...props}
+      />
     </DialogSurfaceContext.Provider>
   )
 }
@@ -164,12 +193,23 @@ function DialogContent({
   portalContainer?: DialogPrimitive.Portal.Props["container"]
 }) {
   const surface = useDialogSurface()
+  const requestClose = React.useContext(DialogRequestCloseContext)
   const drawerContentRef = React.useRef<HTMLDivElement>(null)
 
   if (surface === "drawer") {
+    const closeButtonClassName =
+      "absolute top-3 right-3 flex size-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    const closeButtonLabel = (
+      <>
+        <XIcon className="size-[18px]" />
+        <span className="sr-only">Fechar</span>
+      </>
+    )
     return (
       <DrawerContent
         ref={drawerContentRef}
+        // Travada (`dismissible={false}`): não arrasta nem fecha por dentro.
+        data-locked={requestClose ? "" : undefined}
         // A alça já sinaliza como fechar; com o X vira ruído no topo.
         showHandle
         className={cn(
@@ -190,14 +230,22 @@ function DialogContent({
           {/* A alça já ensina o gesto, mas o X fica: o `ModalShell` reserva
               `pr-16` no cabeçalho contando com ele, e sem o botão sobra um vão.
               Vem depois de `children` para ficar por cima do cabeçalho. */}
-          {showCloseButton && (
-            <DrawerClose
-              className="absolute top-3 right-3 flex size-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <XIcon className="size-[18px]" />
-              <span className="sr-only">Fechar</span>
-            </DrawerClose>
-          )}
+          {showCloseButton &&
+            (requestClose ? (
+              // Gaveta travada: o X pede o fechamento a quem abriu.
+              <button
+                type="button"
+                data-slot="drawer-close"
+                onClick={requestClose}
+                className={closeButtonClassName}
+              >
+                {closeButtonLabel}
+              </button>
+            ) : (
+              <DrawerClose className={closeButtonClassName}>
+                {closeButtonLabel}
+              </DrawerClose>
+            ))}
         </FloatingPortalContainerProvider>
       </DrawerContent>
     )

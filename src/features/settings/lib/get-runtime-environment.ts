@@ -4,6 +4,7 @@ import {
   OPENAI_TRANSCRIPTION_MODELS,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
   RELAY_SIGNING_SECRET_NAME,
+  RUNTIME_ENVIRONMENT_NAMES,
   type OpenAiTranscriptionModel,
   type TranscriptionModelConfig,
 } from "@/features/settings/types";
@@ -24,14 +25,22 @@ import {
  *   (quem chama responde 503). "Não consegui ler" não vira "não configurado".
  * - **Cache de 60 s**, zerado pela rota que grava no cofre. Com mais de uma
  *   instância, a outra enxerga a mudança em até 60 s.
+ * - **A chave de assinatura do relay fica FORA do cache:** ela só é lida na
+ *   hora (`readRuntimeEnvironmentVariable`). No cache, a chave trocada ou
+ *   removida seguiria na memória da outra réplica, e uma leitura por ele
+ *   assinaria com a chave antiga.
  */
-export const RUNTIME_ENVIRONMENT_CATALOG = [
-  OPENAI_API_KEY_NAME,
-  OPENAI_TRANSCRIPTION_MODEL_NAME,
-  RELAY_SIGNING_SECRET_NAME,
-] as const;
+export const RUNTIME_ENVIRONMENT_CATALOG = RUNTIME_ENVIRONMENT_NAMES;
 
 export type RuntimeEnvironmentName = (typeof RUNTIME_ENVIRONMENT_CATALOG)[number];
+
+/** O que pode ser lido pelo cache: o catálogo sem a chave de assinatura do relay. */
+export type CachedEnvironmentName = Exclude<RuntimeEnvironmentName, typeof RELAY_SIGNING_SECRET_NAME>;
+
+const CACHED_NAMES = RUNTIME_ENVIRONMENT_CATALOG.filter(
+  (name): name is CachedEnvironmentName => name !== RELAY_SIGNING_SECRET_NAME
+);
+const CACHED = new Set<string>(CACHED_NAMES);
 
 type RuntimeEnvironmentValue = {
   value: string | null;
@@ -70,12 +79,15 @@ async function loadCatalog(): Promise<Map<string, string>> {
   const startedAt = generation;
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_app_environment_variables", {
-    p_names: [...RUNTIME_ENVIRONMENT_CATALOG],
+    p_names: CACHED_NAMES,
   });
   if (error) throw new RuntimeEnvironmentUnavailableError(error.message);
 
   const values = new Map<string, string>();
   for (const row of data ?? []) {
+    // Só o que foi pedido entra no cache: uma linha de carona (a chave de
+    // assinatura, por exemplo) não fica na memória da réplica.
+    if (!CACHED.has(row.name)) continue;
     if (typeof row.value === "string" && row.value.length > 0) values.set(row.name, row.value);
   }
   if (generation === startedAt) cache = { values, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -83,7 +95,7 @@ async function loadCatalog(): Promise<Map<string, string>> {
 }
 
 export async function getRuntimeEnvironmentVariable(
-  name: RuntimeEnvironmentName
+  name: CachedEnvironmentName
 ): Promise<RuntimeEnvironmentValue> {
   const value = (await loadCatalog()).get(name) ?? null;
   return value ? { value, source: "vault" } : { value: null, source: "none" };

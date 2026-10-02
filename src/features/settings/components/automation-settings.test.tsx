@@ -168,3 +168,198 @@ describe("AutomationSettings", () => {
     expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
   });
 });
+
+describe("AutomationSettings: testar conexão", () => {
+  const test = () => screen.getByRole("button", { name: "Testar conexão" });
+  const HOST = "agente.exemplo.com";
+  const delivered = { sent: true, host: HOST, delivered: true, error: null, httpStatus: 200, latencyMs: 132, signed: true };
+  const HINT = "O teste vai à URL salva: salve antes de testar.";
+
+  it.each([
+    ["sem URL", none],
+    ["com a URL recusada pelo envio", { configuredUrl: "http://10.0.0.5/hook", state: "refused", reason: "bloqueado" }],
+    ["com a configuração ilegível", { configuredUrl: null, state: "unreadable", reason: null }],
+  ] as const)("%s: o teste fica indisponível", (_label, config) => {
+    render(<AutomationSettings config={config} />);
+
+    expect(test()).toBeDisabled();
+    // O campo não foi mexido: não há o que explicar sobre salvar.
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+  });
+
+  it("com o campo alterado e não salvo: o teste fica indisponível, e a tela diz por quê", async () => {
+    const user = userEvent.setup();
+    render(<AutomationSettings config={active} />);
+    expect(test()).toBeEnabled();
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Webhook do agente de IA"));
+    await user.paste("/v2");
+
+    expect(test()).toBeDisabled();
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+    await user.click(test());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("dispara um POST sem corpo (a URL testada é a salva, não a do campo) e diz para onde foi e o que voltou", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(Response.json({ ok: true, result: delivered }));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(fetchMock.mock.calls).toEqual([["/api/connection/agent/test", { method: "POST" }]]);
+    expect(toastMock.success.mock.calls).toEqual([
+      ["agente.exemplo.com respondeu HTTP 200 em 132 ms. Pedido enviado com assinatura."],
+    ]);
+    expect(toastMock.error).not.toHaveBeenCalled();
+    // Testar não muda configuração: nada a recarregar.
+    expect(refreshMock).not.toHaveBeenCalled();
+    expect(test()).toBeEnabled();
+  });
+
+  it("o host do aviso é o que o SERVIDOR testou, e não o do campo (outro administrador pode ter salvo outra URL)", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(Response.json({ ok: true, result: { ...delivered, host: "outro-agente.exemplo.net:8443" } }));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(toastMock.success.mock.calls).toEqual([
+      ["outro-agente.exemplo.net:8443 respondeu HTTP 200 em 132 ms. Pedido enviado com assinatura."],
+    ]);
+  });
+
+  it("sem chave de assinatura: o sucesso diz que o pedido foi sem assinatura", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(Response.json({ ok: true, result: { ...delivered, signed: false } }));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(toastMock.success.mock.calls).toEqual([
+      ["agente.exemplo.com respondeu HTTP 200 em 132 ms. Pedido enviado sem assinatura: não há chave."],
+    ]);
+  });
+
+  it.each([
+    [
+      "o agente recusa (401), com o pedido assinado",
+      { sent: true, host: HOST, delivered: false, error: "O agente respondeu HTTP 401.", httpStatus: 401, latencyMs: 80, signed: true },
+      "agente.exemplo.com respondeu HTTP 401. Pedido enviado com assinatura.",
+    ],
+    [
+      "o agente recusa (401), com o pedido sem assinatura",
+      { sent: true, host: HOST, delivered: false, error: "O agente respondeu HTTP 401.", httpStatus: 401, latencyMs: 80, signed: false },
+      "agente.exemplo.com respondeu HTTP 401. Pedido enviado sem assinatura: não há chave.",
+    ],
+    [
+      "o agente redireciona (308): diz que o CRM não segue",
+      { sent: true, host: HOST, delivered: false, error: "O agente respondeu HTTP 308.", httpStatus: 308, latencyMs: 20, signed: true },
+      "agente.exemplo.com respondeu HTTP 308. O CRM não segue redirecionamento: salve o endereço final. Pedido enviado com assinatura.",
+    ],
+    [
+      "o agente responde 300 (o primeiro da faixa de redirecionamento)",
+      { sent: true, host: HOST, delivered: false, error: "O agente respondeu HTTP 300.", httpStatus: 300, latencyMs: 20, signed: false },
+      "agente.exemplo.com respondeu HTTP 300. O CRM não segue redirecionamento: salve o endereço final. Pedido enviado sem assinatura: não há chave.",
+    ],
+    [
+      "o agente responde 400 (logo depois da faixa de redirecionamento)",
+      { sent: true, host: HOST, delivered: false, error: "O agente respondeu HTTP 400.", httpStatus: 400, latencyMs: 20, signed: true },
+      "agente.exemplo.com respondeu HTTP 400. Pedido enviado com assinatura.",
+    ],
+    [
+      "o agente não responde no prazo: sem falar de assinatura (nada voltou)",
+      { sent: true, host: HOST, delivered: false, error: "O agente não respondeu em 10 s.", httpStatus: null, latencyMs: 10000, signed: true },
+      "agente.exemplo.com: O agente não respondeu em 10 s.",
+    ],
+    [
+      "o nome não existe (rede): sem falar de assinatura (nada chegou a ninguém)",
+      { sent: true, host: HOST, delivered: false, error: "Falha de rede (ENOTFOUND).", httpStatus: null, latencyMs: 12, signed: true },
+      "agente.exemplo.com: Falha de rede (ENOTFOUND).",
+    ],
+    [
+      "nada saiu (URL recusada no servidor)",
+      { sent: false, error: "URL do agente recusada: Em produção a URL deve usar HTTPS." },
+      "URL do agente recusada: Em produção a URL deve usar HTTPS.",
+    ],
+    [
+      "nada saiu (cofre ilegível)",
+      { sent: false, error: "Cofre indisponível: não foi possível ler a chave de assinatura." },
+      "Cofre indisponível: não foi possível ler a chave de assinatura.",
+    ],
+  ])("quando %s: o aviso é de erro, com o motivo", async (_label, result, message) => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(Response.json({ ok: true, result }));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(toastMock.error.mock.calls).toEqual([[message]]);
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["o pedido nem sai (rede)", () => Promise.reject(new TypeError("fetch failed")), "Não foi possível testar a conexão."],
+    ["a resposta 200 não é JSON", async () => new Response("<html>proxy</html>", { status: 200 }), "Não foi possível testar a conexão."],
+    ["a resposta diz ok, mas não traz o desfecho", async () => Response.json({ ok: true }), "Não foi possível testar a conexão."],
+    [
+      "a resposta traz o desfecho, mas o status é de erro",
+      async () => Response.json({ ok: true, result: delivered }, { status: 502 }),
+      "Não foi possível testar a conexão.",
+    ],
+    [
+      "o status é 200 e há desfecho, mas a resposta diz que falhou",
+      async () => Response.json({ ok: false, message: "Sessão inválida.", result: delivered }),
+      "Sessão inválida.",
+    ],
+    [
+      "o servidor recusa (403), com mensagem",
+      async () => Response.json({ ok: false, message: "Apenas administradores podem executar esta ação." }, { status: 403 }),
+      "Apenas administradores podem executar esta ação.",
+    ],
+    [
+      "passou do teto de testes por minuto (429)",
+      async () => Response.json({ ok: false, message: "Muitos testes seguidos. Tente de novo em 40 s." }, { status: 429 }),
+      "Muitos testes seguidos. Tente de novo em 40 s.",
+    ],
+  ])("quando %s: avisa que o teste não rodou, e nunca diz que o agente respondeu", async (_label, respond, message) => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(respond);
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(toastMock.error.mock.calls).toEqual([[message]]);
+    expect(toastMock.success).not.toHaveBeenCalled();
+    expect(test()).toBeEnabled();
+  });
+
+  it("enquanto testa, o botão fica travado (um clique, um pedido ao agente)", async () => {
+    const user = userEvent.setup();
+    let release: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => (release = resolve)));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(test()).toBeDisabled();
+    await user.click(test());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    release(Response.json({ ok: true, result: delivered }));
+    await vi.waitFor(() => expect(test()).toBeEnabled());
+  });
+
+  it("salvar e testar não se misturam: o Salvar segue travado sem alteração, e o teste não grava nada", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(Response.json({ ok: true, result: delivered }));
+    render(<AutomationSettings config={active} />);
+
+    await user.click(test());
+
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/connection/agent/test"]);
+  });
+});
