@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import {
+  BotIcon,
   Check,
   CheckCheck,
   ClockIcon,
@@ -36,10 +37,12 @@ import {
   canDeleteMessage,
   canEditMessage,
   canForwardMessage,
+  canRetryMessage,
   isEditableMessage,
   isForwardedMessage,
   wasEdited,
 } from "@/features/chat/lib/message-actions";
+import { automatedSenderLabel } from "@/features/chat/lib/message-sender";
 import { canEditNote, noteAuthorLabel } from "@/features/chat/lib/note-actions";
 import { stripWhatsappFormat } from "@/features/chat/lib/whatsapp-format";
 import {
@@ -119,7 +122,7 @@ function QuotedBlock({
       )}
     >
       <span className="text-[11px] font-semibold opacity-80">
-        {quoted.direction === "outbound" ? "Você" : "Contato"}
+        {automatedSenderLabel(quoted) ?? (quoted.direction === "outbound" ? "Você" : "Contato")}
       </span>
       <span className="line-clamp-2 min-w-0 w-full [overflow-wrap:anywhere] text-[12.5px] opacity-70">
         {quotedPreview(quoted)}
@@ -542,6 +545,10 @@ function MessageBubbleImpl({
   // própria bolha: é ali que se olha para saber se a mensagem saiu.
   const failedSend =
     isOutbound && message.delivery_status === "failed" && !message.is_deleted;
+  // A mensagem de um token (a IA ou uma integração) diz quem a enviou, e só
+  // ele a reenvia: aqui a falha fica só avisada.
+  const automatedSender = isOutbound ? automatedSenderLabel(message) : null;
+  const canRetry = canRetryMessage(message);
   // Só texto puro encaixa a hora na última linha. Com mídia a bolha tem alturas
   // variáveis e a hora sobreposta cairia em cima da imagem. Com falha, também
   // não: o "Tentar novamente" não cabe no cantinho reservado da última linha.
@@ -633,6 +640,22 @@ function MessageBubbleImpl({
           <p className="px-1 py-0.5 text-sm italic opacity-50">🚫 Mensagem apagada</p>
         ) : (
           <div className="flex min-w-0 flex-col gap-1">
+            {/* Quem enviou, quando não foi uma pessoa. O texto de um analista
+                traz a assinatura dele; o de um token não traz nenhuma, e sem
+                este rótulo a resposta da IA passaria por resposta da equipe. */}
+            {automatedSender ? (
+              <span
+                className={cn(
+                  // 80%: o "Encaminhada" (60%) não chega a 4,5:1 no tema escuro.
+                  "flex items-center gap-1 px-1 text-[12.5px] font-medium text-[var(--wa-out-text)]/80",
+                  isMediaBubble && "pt-[3px]"
+                )}
+              >
+                <BotIcon aria-hidden className="size-3.5 shrink-0" />
+                {automatedSender}
+              </span>
+            ) : null}
+
             {/* "Encaminhada", como no WhatsApp: seta e itálico acima do
                 conteúdo, em cor apagada. O dado já era gravado pela rota de
                 encaminhar (`metadata.forwarded`) desde sempre — só não tinha
@@ -791,7 +814,7 @@ function MessageBubbleImpl({
         >
           {/* Reenviar. Aparece só no que falhou e nunca apaga o texto: a mesma
               bolha volta a "enviando", sem virar uma segunda mensagem. */}
-          {failedSend && onRetry ? (
+          {failedSend && canRetry && onRetry ? (
             <button
               type="button"
               onClick={() => onRetry(message)}
@@ -800,6 +823,11 @@ function MessageBubbleImpl({
               <RotateCcwIcon className="size-3" aria-hidden />
               Tentar novamente
             </button>
+          ) : null}
+          {/* Falha de token: o ✕ sozinho seria só cor. Sem botão, porque o
+              reenvio é dele. */}
+          {failedSend && !canRetry ? (
+            <span className="text-[11px] font-medium text-red-700 dark:text-red-200">Não enviada</span>
           ) : null}
           {/* "Editada" ao lado da hora, como no WhatsApp: sem isso o texto da
               mensagem muda sozinho e ninguém sabe por quê. */}

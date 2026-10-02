@@ -118,6 +118,7 @@ describe("MessageBubble", () => {
       conversation_id: "conversation-1",
       external_id: null,
       direction: "inbound",
+      sender_type: "contact",
       type: "text",
       content: longToken,
       media_url: null,
@@ -125,6 +126,7 @@ describe("MessageBubble", () => {
       quoted_message_id: null,
       delivery_status: "read",
       sent_by_user_id: null,
+      sent_by_token_id: null,
       is_deleted: false,
       metadata: {},
       created_at: "2026-08-06T21:00:00.000Z",
@@ -147,6 +149,7 @@ describe("MessageBubble", () => {
       conversation_id: "conversation-1",
       external_id: "wa-link-1",
       direction: "outbound",
+      sender_type: "agent",
       type: "text",
       content: "Confira https://github.com/",
       media_url: null,
@@ -154,6 +157,7 @@ describe("MessageBubble", () => {
       quoted_message_id: null,
       delivery_status: "read",
       sent_by_user_id: null,
+      sent_by_token_id: null,
       is_deleted: false,
       metadata: {
         linkPreview: {

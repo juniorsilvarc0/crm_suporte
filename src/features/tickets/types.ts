@@ -2,6 +2,7 @@ import type {
   ConversationStatus,
   MessageDeliveryStatus,
   MessageDirection,
+  MessageSenderType,
   MessageType,
 } from "@/features/chat/types";
 import type { ContractView } from "@/features/contracts/types";
@@ -32,9 +33,8 @@ export type TicketSource = "ai" | "agent" | "api";
 // FK de ator: um actor_user_id sem nome na lista de usuários é "Usuário removido".
 export type TicketActorType = "agent" | "ai" | "api" | "system";
 
-// chat_messages.sender_type (check chat_messages_sender_type_check). `device` =
-// o celular da empresa, fora do CRM.
-export type TicketMessageSender = "contact" | "agent" | "ai" | "system" | "device";
+// chat_messages.sender_type: o mesmo vocabulário do chat.
+export type TicketMessageSender = MessageSenderType;
 
 // O jsonb de public.ticket_summary, que toda RPC de ticket devolve em `ticket`.
 // O serviço confere com zod antes de repassar.
@@ -215,6 +215,7 @@ export type TimelineMessageItem = {
   file_name: string | null;
   delivery_status: MessageDeliveryStatus;
   sent_by_user_id: string | null;
+  sent_by_token_id: string | null;
   is_deleted: boolean;
 };
 

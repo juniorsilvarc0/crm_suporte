@@ -94,6 +94,7 @@ function message(overrides: Partial<TimelineMessageItem> = {}): TimelineMessageI
     file_name: null,
     delivery_status: "delivered",
     sent_by_user_id: null,
+    sent_by_token_id: null,
     is_deleted: false,
     ...overrides,
   };
@@ -328,12 +329,32 @@ describe("eventLines", () => {
   });
 });
 
+describe("eventLines: pedido de handoff", () => {
+  const lines = (metadata: Record<string, unknown>) =>
+    eventLines(event({ event_type: "ticket.handoff_requested", actor_type: "ai", actor_user_id: null, metadata }), people);
+
+  // O motivo abre a nota interna gravada no mesmo instante, que a timeline
+  // mostra colada a esta linha: repeti-lo aqui seria dizer duas vezes.
+  it("tem nome próprio, sem repetir o motivo nem mostrar o id da nota", () => {
+    expect(lines({ reason: "Cliente pediu um atendente", note_id: "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f" })).toEqual([
+      "Pediu atendimento humano",
+    ]);
+    expect(lines({})).toEqual(["Pediu atendimento humano"]);
+  });
+});
+
 describe("mensagem compacta", () => {
   it("remetente de cada origem", () => {
-    expect(messageSenderLabel({ sender_type: "contact" })).toBe("Cliente");
-    expect(messageSenderLabel({ sender_type: "ai" })).toBe("IA");
-    expect(messageSenderLabel({ sender_type: "agent" })).toBe("Analista");
-    expect(messageSenderLabel({ sender_type: "device" })).toBe("Celular da empresa");
+    const sender = (sender_type: TimelineMessageItem["sender_type"], sent_by_token_id: string | null = null) =>
+      messageSenderLabel({ sender_type, sent_by_token_id });
+
+    expect(sender("contact")).toBe("Cliente");
+    expect(sender("ai", "tok-1")).toBe("IA");
+    expect(sender("agent")).toBe("Analista");
+    expect(sender("device")).toBe("Celular da empresa");
+    // O token de integração tem o mesmo nome que na trilha; sem token, é o sistema.
+    expect(sender("system", "tok-2")).toBe("Integração");
+    expect(sender("system")).toBe("Automático");
   });
 
   it("resume texto, mídia com legenda, documento pelo nome e esconde o vCard", () => {

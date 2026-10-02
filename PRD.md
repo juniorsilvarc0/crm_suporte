@@ -110,7 +110,7 @@ Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avi
 - Conversa que já está com um humano: nada muda. Conversa resolvida: a API recusa; quem a devolve à IA é uma mensagem nova do cliente.
 
 **Envio pela API v1 (a IA e as integrações falam com o cliente pelo CRM).** Só texto.
-- A IA só envia na conversa que está com ela (`bot`); o CRM confere isso na hora em que a mensagem vai sair. Uma integração (token do tipo `api`) envia em qualquer status, e a mensagem aparece como automática (`system`).
+- A IA só envia na conversa que está com ela (`bot`); o CRM confere isso na hora em que a mensagem vai sair. Uma integração (token do tipo `api`) envia em qualquer status, e a mensagem fica gravada como `system` e aparece na tela como "Integração".
 - A mensagem fica gravada com o token como autor. O CRM não assina nem altera o texto.
 - **No máximo uma vez.** Cada pedido leva uma Idempotency-Key, que vale para um texto só.
   - Se a mensagem com certeza não saiu (o WhatsApp recusou ou não foi alcançado), ela fica como não enviada, e a mesma chave tenta de novo.

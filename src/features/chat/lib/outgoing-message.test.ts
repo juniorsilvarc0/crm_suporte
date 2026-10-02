@@ -10,6 +10,8 @@ import {
   setSendStatus,
   upsertMessage,
 } from "@/features/chat/lib/outgoing-message";
+import { canRetryMessage } from "@/features/chat/lib/message-actions";
+import { automatedSenderLabel } from "@/features/chat/lib/message-sender";
 import type { ChatMessage } from "@/features/chat/types";
 
 function message(overrides: Partial<ChatMessage> & { id: string }): ChatMessage {
@@ -17,6 +19,7 @@ function message(overrides: Partial<ChatMessage> & { id: string }): ChatMessage 
     conversation_id: "conv-1",
     external_id: null,
     direction: "outbound",
+    sender_type: "agent",
     type: "text",
     content: "oi",
     media_url: null,
@@ -24,6 +27,7 @@ function message(overrides: Partial<ChatMessage> & { id: string }): ChatMessage 
     quoted_message_id: null,
     delivery_status: "sent",
     sent_by_user_id: null,
+    sent_by_token_id: null,
     is_deleted: false,
     metadata: {},
     created_at: "2026-08-14T12:00:00.000Z",
@@ -63,6 +67,16 @@ describe("createOptimisticMessage", () => {
     expect(readClientId(optimistic)).toBe("abc");
     // O texto da bolha é o que sai para o contato — assinatura incluída.
     expect(optimistic.content).toBe("*Ana:*\nbom dia");
+  });
+
+  // A bolha otimista é de quem está digitando: nunca ganha o rótulo de IA, e
+  // se falhar oferece o reenvio.
+  it("nasce como mensagem do analista, sem token", () => {
+    const optimistic = createOptimisticMessage({ conversationId: "conv-1", clientId: "abc", content: "oi" });
+
+    expect(optimistic).toMatchObject({ sender_type: "agent", sent_by_token_id: null, sent_by_user_id: null });
+    expect(automatedSenderLabel(optimistic)).toBeNull();
+    expect(canRetryMessage({ ...optimistic, delivery_status: "failed" })).toBe(true);
   });
 
   it("uma linha vinda do banco nunca é confundida com bolha local", () => {

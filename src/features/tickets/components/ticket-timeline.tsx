@@ -8,6 +8,7 @@ import {
   ChevronUpIcon,
   CircleDotIcon,
   CrosshairIcon,
+  HeadsetIcon,
   LinkIcon,
   Loader2Icon,
   MessageCircleIcon,
@@ -363,6 +364,8 @@ function EntryIcon({ item }: { item: TimelineItem }) {
           return <LinkIcon className={className} />;
         case "ticket.updated":
           return <PencilIcon className={className} />;
+        case "ticket.handoff_requested":
+          return <HeadsetIcon className={className} />;
         default:
           return <CircleDotIcon className={className} />;
       }

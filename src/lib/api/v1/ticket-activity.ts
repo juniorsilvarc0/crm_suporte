@@ -74,6 +74,7 @@ export const timelineItemSchema = z.discriminatedUnion("kind", [
     file_name: z.string().nullable(),
     delivery_status: z.enum(DELIVERY_STATUSES),
     sent_by_user_id: z.string().nullable(),
+    sent_by_token_id: z.string().nullable().describe("O token da API que enviou (a IA ou uma integração)."),
     is_deleted: z.boolean(),
   }),
   z.strictObject({ kind: z.literal("attachment"), at: z.string(), ...attachmentFields }),
@@ -154,6 +155,7 @@ export function toApiTimelineItem(item: TimelineItem): ApiTimelineItem {
         file_name: item.file_name,
         delivery_status: item.delivery_status,
         sent_by_user_id: item.sent_by_user_id,
+        sent_by_token_id: item.sent_by_token_id,
         is_deleted: item.is_deleted,
       };
     case "attachment":

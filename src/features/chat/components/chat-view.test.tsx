@@ -10,6 +10,8 @@ const { useConversationTicketsMock, received } = vi.hoisted(() => ({
   received: {
     chip: null as Record<string, unknown> | null,
     sheet: null as Record<string, unknown> | null,
+    // A última leva de bolhas: o id da mensagem e se ela abriu um grupo.
+    tails: new Map<string, boolean>(),
   },
 }));
 
@@ -31,7 +33,12 @@ vi.mock("@/features/tickets/components/conversation-ticket-chip", () => ({
   focusTicketSummary: () => "",
 }));
 vi.mock("@/features/chat/components/chat-footer", () => ({ ChatFooter: () => null }));
-vi.mock("@/features/chat/components/message-bubble", () => ({ MessageBubble: () => null }));
+vi.mock("@/features/chat/components/message-bubble", () => ({
+  MessageBubble: (props: { message: { id: string }; showTail?: boolean }) => {
+    received.tails.set(props.message.id, props.showTail ?? true);
+    return null;
+  },
+}));
 vi.mock("@/features/chat/components/contact-info-sheet", () => ({
   ContactInfoSheet: (props: Record<string, unknown>) => {
     received.sheet = props;
@@ -79,6 +86,7 @@ function inbound(id: string, createdAt: string): ChatMessage {
     conversation_id: CONVERSATION.id,
     external_id: null,
     direction: "inbound",
+    sender_type: "contact",
     type: "text",
     content: "oi",
     media_url: null,
@@ -86,10 +94,11 @@ function inbound(id: string, createdAt: string): ChatMessage {
     quoted_message_id: null,
     delivery_status: "delivered",
     sent_by_user_id: null,
+    sent_by_token_id: null,
     is_deleted: false,
     metadata: {},
     created_at: createdAt,
-  } as ChatMessage;
+  };
 }
 
 /** A leitura dos tickets do hook falso: o MESMO objeto a cada render. */
@@ -128,6 +137,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   received.chip = null;
   received.sheet = null;
+  received.tails.clear();
 });
 
 type ChatViewOptions = {
@@ -183,6 +193,35 @@ function pastePrint() {
   });
   return event;
 }
+
+describe("ChatView · agrupamento das bolhas", () => {
+  const outbound = (id: string, createdAt: string, overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+    ...inbound(id, createdAt),
+    direction: "outbound",
+    sender_type: "agent",
+    delivery_status: "sent",
+    ...overrides,
+  });
+  const fromAi = (id: string, createdAt: string) => outbound(id, createdAt, { sender_type: "ai", sent_by_token_id: "tok-1" });
+
+  it("a bolha da IA e a do analista não colam, apesar de saírem do mesmo lado", () => {
+    renderChatView({
+      messages: [
+        fromAi("ia-1", "2026-09-26T12:00:00+00:00"),
+        fromAi("ia-2", "2026-09-26T12:00:10+00:00"),
+        outbound("ana-1", "2026-09-26T12:00:20+00:00"),
+        outbound("ana-2", "2026-09-26T12:00:30+00:00"),
+      ],
+    });
+
+    expect(Object.fromEntries(received.tails)).toEqual({
+      "ia-1": true, // abre o grupo da IA
+      "ia-2": false, // cola na anterior, do mesmo remetente
+      "ana-1": true, // remetente mudou: grupo novo
+      "ana-2": false,
+    });
+  });
+});
 
 describe("ChatView · colar arquivo", () => {
   it("com a conversa na frente, o print colado abre o envio de anexo", () => {

@@ -45,6 +45,7 @@ import {
   type AttachmentDraft,
 } from "@/features/chat/lib/attachment-batch";
 import { CHAT_COLUMN_CLASS } from "@/features/chat/lib/chat-layout";
+import { startsBubbleGroup } from "@/features/chat/lib/message-sender";
 import { isNoteMessage } from "@/features/chat/lib/note-actions";
 import { isOptimistic } from "@/features/chat/lib/outgoing-message";
 import { signMessage } from "@/features/chat/lib/signature";
@@ -919,7 +920,7 @@ export function ChatView({
                   </div>
                   {group.items.map((msg, index) => {
                     const previous = group.items[index - 1];
-                    const showTail = !previous || previous.direction !== msg.direction || previous.type === "note" || msg.type === "note";
+                    const showTail = startsBubbleGroup(previous, msg);
                     // Enquanto o envio não voltou não existe id de mensagem no
                     // banco nem no provedor: responder ou encaminhar dali citaria
                     // uma mensagem que ninguém tem, e a rota devolveria erro.

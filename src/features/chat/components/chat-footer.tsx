@@ -27,6 +27,7 @@ import {
 import { useQuickReplies } from "@/features/quick-replies/hooks/use-quick-replies";
 import { stripWhatsappFormat } from "@/features/chat/lib/whatsapp-format";
 import { CHAT_COLUMN_CLASS } from "@/features/chat/lib/chat-layout";
+import { replyTargetLabel } from "@/features/chat/lib/message-sender";
 import { useIsMobile, useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, ConversationStatus } from "@/features/chat/types";
@@ -563,7 +564,7 @@ export function ChatFooter({
               <CornerUpLeftIcon className="mt-0.5 size-3.5 shrink-0 text-[var(--wa-meta)]" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-semibold text-[var(--wa-green-deep)]">
-                  Respondendo {replyingTo.direction === "outbound" ? "você mesmo" : "o contato"}
+                  Respondendo {replyTargetLabel(replyingTo)}
                 </p>
                 <p className="line-clamp-2 break-words text-xs text-[var(--wa-meta)]">
                   {replyingTo.content?.trim()

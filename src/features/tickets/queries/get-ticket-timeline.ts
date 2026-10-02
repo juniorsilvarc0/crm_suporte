@@ -39,7 +39,7 @@ export const TIMELINE_EVENT_SELECT =
 export const TIMELINE_COMMENT_SELECT =
   "id, author_user_id, author_token_id, body, created_at, edited_at, deleted_at";
 export const TIMELINE_MESSAGE_SELECT =
-  "id, direction, sender_type, type, content, file_name:metadata->>fileName, delivery_status, sent_by_user_id, is_deleted, created_at";
+  "id, direction, sender_type, type, content, file_name:metadata->>fileName, delivery_status, sent_by_user_id, sent_by_token_id, is_deleted, created_at";
 export const TIMELINE_ATTACHMENT_SELECT =
   "id, file_name, mime, size_bytes, uploaded_by_user_id, uploaded_by_token_id, created_at";
 
@@ -237,6 +237,7 @@ const readMessages = (includeNotes: boolean): Reader => async (db, ticketId, bef
       file_name: typeof fileName === "string" ? fileName : null,
       delivery_status: row.delivery_status,
       sent_by_user_id: row.sent_by_user_id,
+      sent_by_token_id: row.sent_by_token_id,
       is_deleted: row.is_deleted,
     };
   });

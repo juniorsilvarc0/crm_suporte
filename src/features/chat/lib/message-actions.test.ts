@@ -6,6 +6,8 @@ import {
   canDeleteMessage,
   canEditMessage,
   canForwardMessage,
+  canRetryMessage,
+  isEditableMessage,
   isForwardedMessage,
   wasEdited,
 } from "@/features/chat/lib/message-actions";
@@ -19,6 +21,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     conversation_id: "c1",
     external_id: "3EB0538DA65A59F6D8A251",
     direction: "outbound",
+    sender_type: "agent",
     type: "text",
     content: "oi",
     media_url: null,
@@ -26,12 +29,69 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     quoted_message_id: null,
     delivery_status: "sent",
     sent_by_user_id: null,
+    sent_by_token_id: null,
     is_deleted: false,
     metadata: {},
     created_at: new Date(NOW - 60_000).toISOString(),
     ...overrides,
   };
 }
+
+describe("mensagem de um token (IA ou integração)", () => {
+  const fromToken = (overrides: Partial<ChatMessage> = {}) =>
+    message({ sender_type: "ai", sent_by_token_id: "tok-1", ...overrides });
+
+  // A linha seguiria assinada pelo token com um texto que ele não escreveu.
+  it("não se edita pela tela, nem dentro da janela", () => {
+    expect(isEditableMessage(fromToken())).toBe(false);
+    expect(canEditMessage(fromToken(), NOW)).toBe(false);
+    expect(canEditMessage(fromToken({ sender_type: "system" }), NOW)).toBe(false);
+    // Vale pelo remetente também: uma linha `ai` sem o token gravado não vira editável.
+    expect(canEditMessage(fromToken({ sent_by_token_id: null }), NOW)).toBe(false);
+    // A mesma mensagem, de um analista, edita.
+    expect(canEditMessage(message(), NOW)).toBe(true);
+  });
+
+  it("apaga-se e encaminha-se como qualquer outra", () => {
+    expect(canDeleteMessage(fromToken())).toBe(true);
+    expect(canForwardMessage(fromToken())).toBe(true);
+  });
+
+  // A regra é "não foi uma pessoa", e não "só o analista": o celular da empresa
+  // segue como era. E vale para a legenda de mídia, não só para o texto.
+  it("o celular da empresa segue editável e reenviável; a legenda de token, não", () => {
+    expect(canEditMessage(message({ sender_type: "device" }), NOW)).toBe(true);
+    expect(canRetryMessage(message({ sender_type: "device", delivery_status: "failed", external_id: null }))).toBe(true);
+    for (const type of ["image", "video", "document"] as const) {
+      expect(canEditMessage(fromToken({ type }), NOW)).toBe(false);
+    }
+  });
+});
+
+describe("canRetryMessage", () => {
+  const failed = (overrides: Partial<ChatMessage> = {}) =>
+    message({ delivery_status: "failed", external_id: null, ...overrides });
+
+  it("o envio do analista que falhou pode ser tentado de novo", () => {
+    expect(canRetryMessage(failed())).toBe(true);
+  });
+
+  // O servidor recusa (send-outbound.ts): só o token reenvia a mensagem dele.
+  it("o envio de um token que falhou não oferece o reenvio", () => {
+    expect(canRetryMessage(failed({ sender_type: "ai", sent_by_token_id: "tok-1" }))).toBe(false);
+    expect(canRetryMessage(failed({ sender_type: "system", sent_by_token_id: "tok-2" }))).toBe(false);
+    expect(canRetryMessage(failed({ sender_type: "ai", sent_by_token_id: null }))).toBe(false);
+  });
+
+  it.each(["pending", "sent", "delivered", "read"] as const)("mensagem %s não tem o que reenviar", (delivery_status) => {
+    expect(canRetryMessage(failed({ delivery_status }))).toBe(false);
+  });
+
+  it("mensagem apagada ou recebida não se reenvia", () => {
+    expect(canRetryMessage(failed({ is_deleted: true }))).toBe(false);
+    expect(canRetryMessage(failed({ direction: "inbound", sender_type: "contact" }))).toBe(false);
+  });
+});
 
 describe("canEditMessage", () => {
   it("mensagem nossa, recente, com id do provedor", () => {
