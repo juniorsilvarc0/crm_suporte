@@ -1,6 +1,8 @@
 # Guia de Integração para Agentes de IA
 
 > ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** As rotas de leads, funil, agenda, follow-ups e métricas usadas nos exemplos foram **removidas**. O guia é reescrito sobre a API v1 (`/api/v1/*`) na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md).
+>
+> **O que já vale (2026-10-01):** o que o CRM envia ao agente a cada mensagem, e como o agente responde, está em [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md). A IA responde **pela API do CRM**, e não direto na uazapi como este guia descreve abaixo.
 
 Como um **agente de IA** (n8n, Python, LangChain, Agno, Claude, etc.) opera o CRM
 de ponta a ponta: **atender pelo WhatsApp, salvar/editar leads, mover no funil,

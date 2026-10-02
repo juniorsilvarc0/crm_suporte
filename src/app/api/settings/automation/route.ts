@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getRelayConfig } from "@/features/settings/lib/get-relay-url";
+import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { assertRelayUrl, getRelayConfig } from "@/features/settings/lib/get-relay-url";
 import { requireDashboardAdmin } from "@/lib/auth/require-dashboard-session";
 import { readJsonBody } from "@/lib/http/read-json-body";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -9,18 +10,29 @@ import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/a
 export const runtime = "nodejs";
 
 // URL para onde o CRM repassa as mensagens do bot. Guardado em
-// app_settings.key = 'automation' → value.relay_url. String vazia limpa e volta
-// ao fallback do env (N8N_WEBHOOK_URL). Rota protegida pela sessão do dashboard
-// (middleware) — não é pública.
+// app_settings.key = 'automation' → value.relay_url. String vazia limpa e
+// DESLIGA o repasse: não há reserva em variável de ambiente. Rota protegida
+// pela sessão do dashboard (middleware) — não é pública.
+//
+// A URL passa pela mesma guarda do envio (assertRelayUrl): o relay a confere de
+// novo a cada mensagem, mas recusar aqui avisa quem configura, em vez de deixar
+// o erro só no log.
 const schema = z.object({
   relayUrl: z
-    .string()
+    .string({ error: "Informe a URL do agente (ou vazio para desligar o repasse)." })
     .trim()
-    .max(2048)
-    .refine(
-      (v) => v === "" || /^https?:\/\/.+/i.test(v),
-      "Informe uma URL http(s) válida (ou deixe vazio para usar o fallback)."
-    ),
+    .max(2048, { error: "A URL deve ter no máximo 2048 caracteres." })
+    .superRefine((value, context) => {
+      if (value === "") return;
+      try {
+        assertRelayUrl(value);
+      } catch (error) {
+        context.addIssue({
+          code: "custom",
+          message: error instanceof UnsafeUrlError ? error.message : "URL inválida.",
+        });
+      }
+    }),
 });
 
 export async function GET() {

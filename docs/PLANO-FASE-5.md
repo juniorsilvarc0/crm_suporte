@@ -203,12 +203,30 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 - **O filtro `bot` sai só no PR 11b**, com o teste que falha se o filtro voltar, depois que o dono confirmar que a IA é fail-closed.
 - **Pronto quando:** existe teste de contrato do envelope, e o log registra status e latência.
 
+> **Feito (2026-10-01), com a D3 respondida: chave no Cofre.** Como ficou, e onde difere do texto acima:
+> - **Envelope:** `relay_version`, `conversation_id`, `conversation_status`, `message_id`, `contact`, `customer`, `contract{status,alert}`, `active_ticket` e `media_url`.
+>   - `message_id` foi acrescentado: é o id que o agente usa para descartar repetição.
+>   - `contact`, `customer` e `active_ticket` saem no formato da API v1, pelos mesmos mapeadores das rotas. O ticket vai inteiro (com `version`), e não só os seis campos previstos.
+>   - O builder é próprio (`relay-envelope.ts`), não o do `/context`: aquele acha pelo telefone e pega a conversa mais recente; aqui valem a conversa e o contato da mensagem, e só o que o envelope leva é lido.
+> - **Tudo ou nada:** leitura que falha derruba o repasse, com uma 2ª tentativa 1 s depois quando nada chegou a sair. O status é relido na hora do envelope, e status desconhecido nunca vira `bot`.
+> - **Assinatura:** `src/lib/security/hmac.ts`, com a chave `RELAY_SIGNING_SECRET` do Cofre, lida sem cache. Sem chave, o repasse sai sem assinatura. O Cofre só aceita essa chave com 32 caracteres ou mais.
+> - **Destino:** `assertRelayUrl` ao salvar e a cada envio, sem seguir redirecionamento, e `after()` no lugar do `void` (o Next termina o repasse antes de sair num deploy).
+> - **Não feito, de propósito:**
+>   - **a marca de repasse.** Ela só é segura com trava atômica: sem isso, duas entregas simultâneas da uazapi repassam em dobro, que é o que o PR 1 fechou. A trava pede migration, e o outbox da Fase 6 a torna desnecessária. **Dívida que fica:** a mensagem gravada cujo webhook respondeu 500 não é repassada quando a uazapi reenvia (segue só o `console.info`).
+>   - **gerar a chave pela tela:** vai no PR 12 (rota) e no PR 13 (botão). Até lá a chave entra por Configurações → Variáveis.
+>   - **endurecer a guarda de URL** (seção 4): PR próprio, logo depois deste. A guarda fica onde está; mover para `src/lib/security` é só troca de import.
+> - **Achado da revisão, fora deste PR:**
+>   - o webhook grava como mensagem do cliente o que chega com `chatid: status@broadcast` (status do WhatsApp), reação e tipo sem tratamento, e isso é repassado. Corrigir no normalizador, em PR próprio, medindo o que a uazapi entrega de fato;
+>   - a tela não diz se há chave de assinatura, e os registros ainda não têm tela (PRs 12 e 13);
+>   - na Fase 6, o id e o tipo do evento têm de ir no corpo assinado: hoje a assinatura não cobre os cabeçalhos.
+
 **PR 12: `feat(conexao)`, back das abas** · back · M · depende dos PRs 4 e 11
 - **Rotas:**
   - `POST /api/connection/agent/test` (evento `webhook.ping`);
   - leitura real de `get-integration-logs.ts` com filtros;
   - Saúde, composta do estado da uazapi, do último inbound e da taxa de erro em `integration_logs`;
   - Cofre restrito ao `RUNTIME_ENVIRONMENT_CATALOG` (`environment-variable.ts:15-22`);
+  - a chave de assinatura do relay (D3): rota que gera, grava no Cofre e devolve uma vez, e o nome `RELAY_SIGNING_SECRET` deixa de ser gravável à mão;
   - rotação do segredo do webhook conforme D13, testada só no ambiente local;
   - `revalidatePath` passa a apontar para `/app/conexao`.
 
@@ -228,7 +246,7 @@ Respondidas em 2026-09-29:
 - **D2:** mudança **compatível**, no mesmo endpoint. O filtro `bot` sai num PR separado (11b), combinado com o dono.
 - **Token da instância repassado:** **não trocar por ora**.
 - **D4 a D14:** recomendações **aceitas** como estão. Qualquer uma pode ser revista no PR correspondente.
-- **D3** (onde ficam a URL e o segredo do agente): **em aberto**. Perguntar antes do PR 11.
+- **D3** (onde ficam a URL e o segredo do agente): respondida em 2026-10-01, **chave no Cofre** (opção b). A URL segue em `app_settings.automation.relay_url`, sem fallback de env.
 
 O texto abaixo é o da análise, com as opções que foram consideradas.
 

@@ -3,6 +3,7 @@ import {
   OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODELS,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
+  RELAY_SIGNING_SECRET_NAME,
   type OpenAiTranscriptionModel,
   type TranscriptionModelConfig,
 } from "@/features/settings/types";
@@ -27,6 +28,7 @@ import {
 export const RUNTIME_ENVIRONMENT_CATALOG = [
   OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
+  RELAY_SIGNING_SECRET_NAME,
 ] as const;
 
 export type RuntimeEnvironmentName = (typeof RUNTIME_ENVIRONMENT_CATALOG)[number];
@@ -85,6 +87,24 @@ export async function getRuntimeEnvironmentVariable(
 ): Promise<RuntimeEnvironmentValue> {
   const value = (await loadCatalog()).get(name) ?? null;
   return value ? { value, source: "vault" } : { value: null, source: "none" };
+}
+
+/**
+ * Uma variável do catálogo lida AGORA, sem o cache: para o que não pode valer
+ * com atraso entre as réplicas. Com o cache, trocar a chave de assinatura do
+ * relay deixaria uma réplica assinando com a antiga (ou sem chave) por até
+ * 60 s. Custa uma ida ao banco por chamada. Falha fechada, como o resto.
+ */
+export async function readRuntimeEnvironmentVariable(
+  name: RuntimeEnvironmentName
+): Promise<string | null> {
+  if (!hasSupabaseServerEnv()) {
+    throw new RuntimeEnvironmentUnavailableError("Supabase não configurado");
+  }
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_app_environment_variable", { p_name: name });
+  if (error) throw new RuntimeEnvironmentUnavailableError(error.message);
+  return typeof data === "string" && data.length > 0 ? data : null;
 }
 
 const transcriptionModelNames = new Set<string>(

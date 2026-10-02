@@ -55,6 +55,8 @@ export const ENVIRONMENT_VARIABLE_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 export const OPENAI_API_KEY_NAME = "OPENAI_API_KEY";
 export const OPENAI_TRANSCRIPTION_MODEL_NAME = "OPENAI_TRANSCRIPTION_MODEL";
 export const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
+/** Chave com que o CRM assina o que repassa ao agente (docs/CONTRATO-RELAY.md). */
+export const RELAY_SIGNING_SECRET_NAME = "RELAY_SIGNING_SECRET";
 
 export const OPENAI_TRANSCRIPTION_MODELS = [
   { value: "whisper-1", label: "Whisper 1 — compatibilidade" },

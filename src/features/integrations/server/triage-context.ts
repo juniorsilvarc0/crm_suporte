@@ -19,9 +19,10 @@ import {
 import { toApiTicket } from "@/lib/api/v1/tickets";
 import type { Database } from "@/lib/supabase/types";
 
-// O contexto da triagem (D11): o /api/v1/context o devolve, e o relay v1 (PR 11)
-// vai mandá-lo à IA a cada mensagem. Só LÊ: não cria contato, não zera as
-// não lidas e não mexe no foco.
+// O contexto da triagem (D11), que o /api/v1/context devolve. O relay v1 manda
+// só um recorte, montado em relay-envelope.ts (pela conversa da mensagem, não
+// pela mais recente do telefone). Só LÊ: não cria contato, não zera as não
+// lidas e não mexe no foco.
 
 type Admin = SupabaseClient<Database>;
 

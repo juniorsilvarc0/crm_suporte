@@ -23,6 +23,10 @@ export function AutomationSettings({ config }: { config: RelayConfig }) {
   }
 
   const dirty = url.trim() !== (config.configuredUrl ?? "");
+  // A leitura falhou: o campo vazio não quer dizer "sem URL". Travado, para o
+  // administrador não gravar por cima de uma URL que ele não chegou a ver (sem
+  // digitar, o Salvar nunca habilita).
+  const unreadable = config.state === "unreadable";
 
   async function save() {
     setSaving(true);
@@ -40,9 +44,7 @@ export function AutomationSettings({ config }: { config: RelayConfig }) {
         toast.error(result.message ?? "Não foi possível salvar.");
         return;
       }
-      toast.success(
-        url.trim() ? "Webhook salvo." : "Campo limpo — usando o fallback do ambiente."
-      );
+      toast.success(url.trim() ? "Webhook salvo." : "Campo limpo: o repasse está desligado.");
       router.refresh();
     } catch {
       toast.error("Não foi possível salvar.");
@@ -63,6 +65,7 @@ export function AutomationSettings({ config }: { config: RelayConfig }) {
           placeholder="https://seu-agente.exemplo.com/webhook"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
+          disabled={unreadable}
           className="h-10"
         />
         <Button onClick={save} disabled={saving || !dirty} className="h-10 shrink-0 sm:w-28">
@@ -74,17 +77,21 @@ export function AutomationSettings({ config }: { config: RelayConfig }) {
       </div>
       <p className="text-xs text-muted-foreground">
         URL para onde o CRM repassa as mensagens enquanto a conversa está no modo
-        IA. Deixe vazio para usar o fallback do ambiente.
+        IA. Deixe vazio para desligar o repasse.
       </p>
-      {config.source === "env" ? (
+      {config.state === "unreadable" ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          Em uso: fallback do ambiente (<code className="font-mono">N8N_WEBHOOK_URL</code>) →{" "}
-          <span className="font-mono break-all">{config.effectiveUrl}</span>. Preencha
-          acima para sobrescrever.
+          Não foi possível ler a configuração agora. Recarregue a página antes de
+          alterar.
         </p>
-      ) : config.source === "none" ? (
+      ) : config.state === "none" ? (
         <p className="text-xs text-rose-600 dark:text-rose-400">
           Nenhuma URL configurada — o CRM não está repassando as mensagens do bot.
+        </p>
+      ) : config.state === "refused" ? (
+        <p className="text-xs text-rose-600 dark:text-rose-400">
+          A URL salva é recusada no envio, e nada está sendo repassado. Motivo:{" "}
+          {config.reason}
         </p>
       ) : (
         <p className="text-xs text-emerald-600 dark:text-emerald-400">
