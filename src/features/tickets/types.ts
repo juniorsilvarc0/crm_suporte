@@ -1,4 +1,5 @@
 import type {
+  ConversationStatus,
   MessageDeliveryStatus,
   MessageDirection,
   MessageType,
@@ -321,7 +322,8 @@ export type TicketErrorField =
 // amigável e nunca repassa error.message do banco. Extras por código:
 // invalid_transition → `allowed` e `current`; version_conflict →
 // `currentVersion` (a rota responde `current_version`; a API v1, 412);
-// already_assigned → `assignedToUserId` (a rota busca o nome).
+// already_assigned → `assignedToUserId` (a rota busca o nome);
+// conversation_not_owned_by_ai → `conversationStatus` (o dono atual da conversa).
 export type TicketError = {
   status: 400 | 403 | 404 | 409 | 422 | 500;
   code: string;
@@ -331,6 +333,7 @@ export type TicketError = {
   current?: TicketStatusKey;
   currentVersion?: number;
   assignedToUserId?: string;
+  conversationStatus?: ConversationStatus;
 };
 
 export type TicketResult<T> = { ok: true; data: T } | { ok: false; error: TicketError };
@@ -358,6 +361,16 @@ export type ActiveTicketData = { active_ticket_id: string | null; changed: boole
 export type TakeOverTicketData = {
   ticket: TicketSummary;
   conversation: { id: string; status: "human" };
+};
+
+// Handoff da IA (conversation_handoff). `changed: false` = a conversa já era de
+// um humano e nada foi gravado. `ticket_id` = o ticket em cuja trilha o pedido
+// entrou (nulo se não houve); `note_id` = a nota interna deixada no chat.
+export type HandoffData = {
+  conversation: { id: string; status: "human" };
+  changed: boolean;
+  ticket_id: string | null;
+  note_id: string | null;
 };
 
 // Corpo de erro de negócio das rotas de ticket (ticketErrorBody), como a tela o

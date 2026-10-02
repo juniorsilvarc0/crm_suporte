@@ -10,6 +10,7 @@ vi.mock("@/features/chat/lib/push-takeover", () => ({
 import {
   assignTicket,
   createTicket,
+  handoffConversation,
   setActiveTicket,
   takeOverTicket,
   transitionTicket,
@@ -544,6 +545,183 @@ describe("takeOverTicket", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.status).toBe(500);
+  });
+});
+
+describe("handoffConversation", () => {
+  const NOTE_ID = "99999999-9999-4999-8999-999999999999";
+
+  function handoffData(overrides: Record<string, unknown> = {}) {
+    return {
+      conversation_id: CONVERSATION_ID,
+      status: "human",
+      changed: true,
+      ticket_id: TICKET_ID,
+      note_id: NOTE_ID,
+      conversation_external_id: EXTERNAL_ID,
+      ...overrides,
+    };
+  }
+
+  it("passa a conversa com o token como ator, avisa o agente e não devolve o telefone", async () => {
+    const { db, rpc } = fakeDb(ok(handoffData()));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, {
+      reason: "Cliente pediu um atendente",
+      summary: "Recebeu dois boletos no mês.",
+      ticket_id: TICKET_ID,
+    });
+
+    expect(sentArgs(rpc)).toStrictEqual({
+      name: "conversation_handoff",
+      args: {
+        p_conversation_id: CONVERSATION_ID,
+        p_actor_token_id: TOKEN_ID,
+        p_reason: "Cliente pediu um atendente",
+        p_summary: "Recebeu dois boletos no mês.",
+        p_ticket_id: TICKET_ID,
+      },
+    });
+    expect(result).toStrictEqual({
+      ok: true,
+      data: {
+        conversation: { id: CONVERSATION_ID, status: "human" },
+        changed: true,
+        ticket_id: TICKET_ID,
+        note_id: NOTE_ID,
+      },
+    });
+    expect(pushTakeoverMock).toHaveBeenCalledTimes(1);
+    expect(pushTakeoverMock).toHaveBeenCalledWith(EXTERNAL_ID, true);
+    expect(JSON.stringify(result)).not.toContain(EXTERNAL_ID);
+  });
+
+  it.each([
+    ["nulos", { summary: null, ticket_id: null }],
+    ["ausentes", {}],
+    ["resumo vazio", { summary: "" }],
+  ])("omite o resumo e o ticket %s (valem os defaults da RPC)", async (_label, extra) => {
+    const { db, rpc } = fakeDb(ok(handoffData({ ticket_id: null })));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, {
+      reason: "Fora do meu alcance",
+      ...extra,
+    });
+
+    expect(sentArgs(rpc).args).toStrictEqual({
+      p_conversation_id: CONVERSATION_ID,
+      p_actor_token_id: TOKEN_ID,
+      p_reason: "Fora do meu alcance",
+    });
+    expect(result).toStrictEqual({
+      ok: true,
+      data: { conversation: { id: CONVERSATION_ID, status: "human" }, changed: true, ticket_id: null, note_id: NOTE_ID },
+    });
+  });
+
+  it("conversa que já era de um humano: changed=false, sem avisar o agente", async () => {
+    const { db } = fakeDb(ok(handoffData({ changed: false, ticket_id: null, note_id: null })));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "De novo" });
+
+    expect(result).toStrictEqual({
+      ok: true,
+      data: { conversation: { id: CONVERSATION_ID, status: "human" }, changed: false, ticket_id: null, note_id: null },
+    });
+    expect(pushTakeoverMock).not.toHaveBeenCalled();
+  });
+
+  it("traduz CONVERSATION_NOT_OWNED_BY_AI em 409 com o dono atual, sem avisar o agente nem logar", async () => {
+    const { db } = fakeDb(dbError("CONVERSATION_NOT_OWNED_BY_AI", { hint: "resolved" }));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo" });
+
+    expect(result).toStrictEqual({
+      ok: false,
+      error: {
+        status: 409,
+        code: "conversation_not_owned_by_ai",
+        message: "A conversa não está com a IA.",
+        conversationStatus: "resolved",
+      },
+    });
+    expect(pushTakeoverMock).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("traduz TICKET_NOT_IN_CONVERSATION em 422 no campo do ticket", async () => {
+    const { db } = fakeDb(dbError("TICKET_NOT_IN_CONVERSATION"));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo", ticket_id: TICKET_ID });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({ status: 422, code: "ticket_not_in_conversation", field: "ticket_id" });
+  });
+
+  it("envelope fora do formato é 500 logado, mas o agente é avisado do handoff já gravado", async () => {
+    const { db } = fakeDb(ok(handoffData({ ticket_id: "não-é-uuid" })));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(500);
+    expect(pushTakeoverMock).toHaveBeenCalledWith(EXTERNAL_ID, true);
+    expect(consoleError).toHaveBeenCalled();
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(EXTERNAL_ID);
+  });
+
+  it("responde 500 quando a conversa não volta como human", async () => {
+    const { db } = fakeDb(ok(handoffData({ status: "bot" })));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(500);
+  });
+
+  it("erro sem TAG é 500 logado com o nome da função, o code e a message, nunca o DETAIL", async () => {
+    const { db } = fakeDb(
+      dbError("permission denied for function conversation_handoff", {
+        code: "42501",
+        details: `Failing row contains (${EXTERNAL_ID})`,
+      })
+    );
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo" });
+
+    expect(result).toStrictEqual({
+      ok: false,
+      error: { status: 500, code: "internal", message: "Não foi possível concluir a operação." },
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      "[ticket-service] handoffConversation",
+      "42501",
+      "permission denied for function conversation_handoff"
+    );
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(EXTERNAL_ID);
+    expect(pushTakeoverMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["conversation_id fora de uuid", { conversation_id: "1024" }, true],
+    ["note_id fora de uuid", { note_id: "1024" }, true],
+    ["changed que não é booleano", { changed: "sim" }, false],
+    // Sem o endereço do canal não há como avisar o agente: 500, nunca um 200 calado.
+    ["sem o endereço do canal", { conversation_external_id: undefined }, false],
+  ])("envelope com %s é 500 logado com o nome da função", async (_label, overrides, warned) => {
+    const { db } = fakeDb(ok(handoffData(overrides)));
+
+    const result = await handoffConversation(db, TOKEN_ID, CONVERSATION_ID, { reason: "Motivo" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.status).toBe(500);
+    expect(pushTakeoverMock).toHaveBeenCalledTimes(warned ? 1 : 0);
+    expect(JSON.stringify(consoleError.mock.calls)).toContain("[ticket-service] handoffConversation");
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(EXTERNAL_ID);
   });
 });
 

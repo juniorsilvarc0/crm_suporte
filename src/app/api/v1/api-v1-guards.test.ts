@@ -2,7 +2,7 @@
 import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { adminClientMock } = vi.hoisted(() => ({ adminClientMock: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: adminClientMock }));
@@ -65,6 +65,42 @@ beforeEach(() => {
     throw new Error("tocou o banco");
   });
 });
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** Banco falso só com o token e o log; devolve as linhas que a rota logou. */
+function tokenWith(scopes: string[]): Record<string, unknown>[] {
+  const logs: Record<string, unknown>[] = [];
+  const row = {
+    id: "tok-varredor",
+    name: "Varredor",
+    token_prefix: "crmsuporte_v",
+    scopes,
+    actor_type: "api",
+    rate_limit_per_min: 6000,
+    expires_at: null,
+    last_used_at: new Date().toISOString(),
+  };
+  adminClientMock.mockReturnValue({
+    from: (table: string) =>
+      table === "api_tokens"
+        ? { select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }) }
+        : {
+            insert: async (values: Record<string, unknown>) => {
+              logs.push(values);
+              return { error: null };
+            },
+          },
+  });
+  return logs;
+}
+
+type Operation = { summary?: string; parameters?: { name: string; in: string; required?: boolean }[] };
+const openApiPath = (route: string) => route.replace(/^\/api\/v1/, "").replace(/\[([^\]]+)\]/g, "{$1}");
+const operationsOf = (route: string) =>
+  (buildOpenApiDocument().paths as Record<string, Record<string, Operation>>)[openApiPath(route)] ?? {};
 
 describe("rotas /api/v1", () => {
   it("encontra as rotas (o teste não pode passar varrendo uma pasta vazia)", () => {
@@ -169,5 +205,79 @@ describe("rotas /api/v1", () => {
     for (const [method] of await exportedHandlers(file)) {
       expect(documented[method.toLowerCase()], `${method} fora do OpenAPI`).toBeDefined();
     }
+  });
+
+  const AUTHENTICATED = cases.filter(([route]) => !PUBLIC_ROUTES.includes(route));
+
+  it.each(AUTHENTICATED)("%s: o log leva o molde da rota (o caminho do arquivo), não a URL", async (route, file) => {
+    for (const [method, handler] of await exportedHandlers(file)) {
+      const logs = tokenWith([]);
+      const response = await handler(
+        new Request(concreteUrl(route), {
+          method,
+          headers: { authorization: "Bearer varredor", "x-forwarded-for": `198.51.103.${files.indexOf(file) + 1}` },
+        }),
+        { params: Promise.resolve({}) }
+      );
+      expect(logs, `${method} não logou`).toHaveLength(1);
+      expect(logs[0], `${method} logou outro molde`).toMatchObject({ route, action: method, http_status: response.status });
+    }
+  });
+
+  it.each(AUTHENTICATED.filter(([route]) => !SCOPELESS_ROUTES.includes(route)))(
+    "%s: o escopo e a Idempotency-Key que o OpenAPI anuncia são os que a rota exige",
+    async (route, file) => {
+      // Depois do guard o banco falso não tem as tabelas: a rota cai em 4xx/5xx. Só o 403 e o 400 da chave importam.
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const operations = operationsOf(route);
+      for (const [method, handler] of await exportedHandlers(file)) {
+        const operation = operations[method.toLowerCase()] ?? {};
+        const scopes = [...(operation.summary ?? "").matchAll(/Escopo: `([a-z]+:[a-z*]+)`/g)].map((match) => match[1]);
+        expect(scopes, `${method}: o resumo não diz "Escopo: \`x\`"`).toHaveLength(1);
+
+        tokenWith(scopes);
+        const response = await handler(
+          new Request(concreteUrl(route), {
+            method,
+            headers: { authorization: "Bearer varredor", "x-forwarded-for": `198.51.104.${files.indexOf(file) + 1}` },
+          }),
+          { params: Promise.resolve({}) }
+        );
+        expect(response.status, `${method}: o escopo do OpenAPI (${scopes[0]}) não basta`).not.toBe(403);
+
+        const body = (await response.json().catch(() => null)) as { error?: { code?: string } } | null;
+        const requiresKey = body?.error?.code === "idempotency_key_required";
+        const documentsKey = (operation.parameters ?? []).some(
+          (parameter) => parameter.in === "header" && parameter.name === "Idempotency-Key" && parameter.required === true
+        );
+        expect(documentsKey, `${method}: Idempotency-Key no OpenAPI ≠ na rota`).toBe(requiresKey);
+      }
+    }
+  );
+
+  it("todo caminho e método do OpenAPI tem rota (o contrato não anuncia o que não existe)", async () => {
+    const paths = buildOpenApiDocument().paths as Record<string, Record<string, unknown>>;
+    const fileOf = new Map(cases.map(([route, file]) => [openApiPath(route), file]));
+    for (const [documented, operations] of Object.entries(paths)) {
+      const file = fileOf.get(documented);
+      expect(file, `${documented} está no OpenAPI e não tem route.ts`).toBeDefined();
+      if (!file) continue;
+      const exported = (await exportedHandlers(file)).map(([method]) => method.toLowerCase()).sort();
+      const announced = Object.keys(operations)
+        .filter((key) => METHODS.some((method) => method.toLowerCase() === key))
+        .sort();
+      expect(announced, documented).toEqual(exported);
+    }
+  });
+
+  it("todo $ref do OpenAPI aponta para um componente que existe", () => {
+    const doc = buildOpenApiDocument();
+    const refs = [...JSON.stringify(doc.paths).matchAll(/"\$ref":"#\/components\/schemas\/([^"]+)"/g)].map((match) => match[1]);
+    const known: Record<string, unknown> = doc.components.schemas;
+
+    expect(refs.length).toBeGreaterThan(20);
+    expect([...new Set(refs)].filter((name) => !(name in known))).toEqual([]);
+    // E o inverso: componente que nenhuma operação usa é sobra (ou um $ref trocado).
+    expect(Object.keys(known).filter((name) => !refs.includes(name))).toEqual([]);
   });
 });

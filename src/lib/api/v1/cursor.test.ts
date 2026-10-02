@@ -6,14 +6,19 @@ import {
   afterCursorFilter,
   cursorPage,
   decodeCursor,
+  decodeMessageCursor,
   DEFAULT_PAGE_LIMIT,
   encodeCursor,
+  encodeMessageCursor,
   listQueryShape,
   MAX_PAGE_LIMIT,
+  messageListQuerySchema,
 } from "@/lib/api/v1/cursor";
 
 const ID = "0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b";
 const TS = "2026-09-29T12:34:56.123456+00:00";
+// Sem fração: a chave tem 65 bytes, e o base64 COMUM dela termina em "=".
+const TS_WHOLE = "2026-09-29T12:34:56+00:00";
 const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64url");
 const list = z.strictObject(listQueryShape);
 
@@ -121,5 +126,74 @@ describe("parâmetros comuns das listas", () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].path).toEqual(["cursor"]);
+  });
+});
+
+describe("cursor das mensagens (m1)", () => {
+  it("ida e volta preserva o microssegundo, no formato m1|created_at|id", () => {
+    const cursor = encodeMessageCursor({ created_at: TS, id: ID });
+
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    // O formato é contrato: cursor já entregue a um integrador tem de continuar valendo.
+    expect(Buffer.from(cursor, "base64url").toString("utf8")).toBe(`m1|${TS}|${ID}`);
+    expect(decodeMessageCursor(cursor)).toEqual({ createdAt: TS, id: ID });
+  });
+
+  it("instante sem fração continua base64url puro (o base64 comum teria '=')", () => {
+    for (const encoded of [
+      encodeMessageCursor({ created_at: TS_WHOLE, id: ID }),
+      encodeCursor({ updated_at: TS_WHOLE, id: ID }),
+    ]) {
+      expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
+    }
+    expect(decodeMessageCursor(encodeMessageCursor({ created_at: TS_WHOLE, id: ID }))).toEqual({ createdAt: TS_WHOLE, id: ID });
+  });
+
+  it("cada lista só aceita o próprio cursor, nas duas direções", () => {
+    const messages = encodeMessageCursor({ created_at: TS, id: ID });
+    const cadastros = encodeCursor({ updated_at: TS, id: ID });
+
+    expect(decodeMessageCursor(cadastros)).toBeNull();
+    expect(decodeCursor(messages)).toBeNull();
+    expect(list.safeParse({ cursor: messages }).success).toBe(false);
+    expect(messageListQuerySchema.safeParse({ cursor: cadastros }).success).toBe(false);
+  });
+
+  it.each([
+    ["vazio", ""],
+    ["versão desconhecida", b64(`m2|${TS}|${ID}`)],
+    ["partes a mais", b64(`m1|${TS}|${ID}|x`)],
+    ["id fora de UUID", b64(`m1|${TS}|1`)],
+    ["timestamp com vírgula (injeção no .or())", b64(`m1|${TS},id.lt.0|${ID}`)],
+    ["timestamp sem fuso", b64(`m1|2026-09-29T12:34:56|${ID}`)],
+    ["30 de fevereiro", b64(`m1|2026-02-30T00:00:00Z|${ID}`)],
+    // Chave VÁLIDA em base64 comum: sem a regex do base64url, o Buffer a decodificaria.
+    ["chave válida em base64 comum (com =)", Buffer.from(`m1|${TS_WHOLE}|${ID}`, "utf8").toString("base64")],
+    ["chave válida com espaço no meio", `${b64(`m1|${TS}|${ID}`).slice(0, 8)} ${b64(`m1|${TS}|${ID}`).slice(8)}`],
+  ])("recusa cursor %s", (_label, value) => {
+    expect(decodeMessageCursor(value)).toBeNull();
+  });
+
+  it("a mesma chave válida em base64 comum também não vale nas listas de cadastro", () => {
+    const padded = Buffer.from(`v1|${TS_WHOLE}|${ID}`, "utf8").toString("base64");
+
+    expect(padded).toContain("=");
+    expect(decodeCursor(padded)).toBeNull();
+  });
+
+  it("query das mensagens: só cursor e limit, com o padrão das outras listas", () => {
+    expect(messageListQuerySchema.parse({})).toEqual({ limit: DEFAULT_PAGE_LIMIT });
+    expect(messageListQuerySchema.parse({ cursor: encodeMessageCursor({ created_at: TS, id: ID }), limit: "200" })).toEqual({
+      cursor: { createdAt: TS, id: ID },
+      limit: 200,
+    });
+    for (const [name, value] of [["include_archived", "true"], ["updated_since", "2026-09-29T12:00:00Z"], ["q", "oi"]]) {
+      expect(messageListQuerySchema.safeParse({ [name]: value }).success, name).toBe(false);
+    }
+    const invalid = messageListQuerySchema.safeParse({ cursor: "lixo" });
+    expect(invalid.error?.issues[0]).toMatchObject({
+      path: ["cursor"],
+      message: "Cursor inválido. Use o next_cursor da página anterior.",
+    });
   });
 });

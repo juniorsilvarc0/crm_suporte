@@ -18,6 +18,14 @@ import {
   ticketStatusSchema,
 } from "@/lib/api/v1/catalog";
 import { triageContextSchema } from "@/lib/api/v1/context";
+import {
+  activeTicketBodySchema,
+  activeTicketResultSchema,
+  conversationDetailSchema,
+  conversationMessageSchema,
+  handoffBodySchema,
+  handoffResultSchema,
+} from "@/lib/api/v1/conversations";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import {
   attachmentLinkSchema,
@@ -88,7 +96,10 @@ const defaultError = errorResponse("Erro no envelope padrão, ex.: 500 `internal
 /** Os erros de toda rota com token. */
 const authErrors = {
   "401": errorResponse("Sem token, token inválido, revogado (`unauthorized`) ou vencido (`token_expired`)."),
-  "403": errorResponse("O token não tem o escopo (`insufficient_scope`, com `required`)."),
+  "403": errorResponse(
+    "O token não tem o escopo (`insufficient_scope`, com `required`); ou, numa escrita, foi revogado ou venceu " +
+      "durante a chamada (`forbidden`)."
+  ),
   "429": errorResponse("Limite do token ou do IP (`rate_limited`, com `Retry-After`)."),
   default: defaultError,
 };
@@ -206,6 +217,16 @@ const ticketWriteErrors = {
   "503": errorResponse("A escrita pode ter valido, mas o ticket não pôde ser relido (`unavailable`). Repetir é seguro."),
 };
 
+const conversationNotFoundError = errorResponse("A conversa não existe, ou o id não é um UUID (`not_found`).");
+
+/** Os erros que o ticket informado numa escrita de conversa pode dar. */
+const conversationTicketErrors = {
+  "409": errorResponse("O ticket informado está encerrado (`ticket_terminal`)."),
+  "422": errorResponse(
+    "O ticket não é desta conversa, ou não existe (`ticket_not_in_conversation`, com `fields.ticket_id`)."
+  ),
+};
+
 const PAGE_DESCRIPTION =
   "Página em ordem de `updated_at` crescente (desempate por `id`). `meta.next_cursor: null` = acabou. " +
   "`updated_at` não é estritamente monotônico: a mesma linha pode reaparecer numa página seguinte.";
@@ -263,6 +284,12 @@ export function buildOpenApiDocument() {
         Attachment: z.toJSONSchema(itemOf(attachmentSchema)),
         AttachmentLink: z.toJSONSchema(itemOf(attachmentLinkSchema)),
         TimelinePage: z.toJSONSchema(pageOf(timelineItemSchema)),
+        Conversation: z.toJSONSchema(itemOf(conversationDetailSchema)),
+        ConversationMessagePage: z.toJSONSchema(pageOf(conversationMessageSchema)),
+        Handoff: z.toJSONSchema(handoffBodySchema, { io: "input" }),
+        HandoffResult: z.toJSONSchema(itemOf(handoffResultSchema)),
+        ActiveTicket: z.toJSONSchema(activeTicketBodySchema, { io: "input" }),
+        ActiveTicketResult: z.toJSONSchema(itemOf(activeTicketResultSchema)),
       },
     },
     paths: {
@@ -682,6 +709,109 @@ export function buildOpenApiDocument() {
             "400": validationError,
             "404": ticketNotFoundError,
             "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/conversations/{id}": {
+        get: {
+          summary:
+            "A conversa: quem conduz (`status`: bot = a IA; human = um analista; resolved = encerrada), o ticket em " +
+            "foco e o contato. Só lê: não marca como lida. O telefone do canal não sai aqui. Escopo: " +
+            "`conversations:read`.",
+          parameters: [idParam("da conversa")],
+          responses: {
+            "200": { description: "A conversa.", content: json("Conversation") },
+            "404": conversationNotFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/conversations/{id}/messages": {
+        get: {
+          summary:
+            "As mensagens da conversa, da MAIS NOVA para a mais antiga (ao contrário das listas de cadastro). A " +
+            "ordem é pelo `created_at` da mensagem (na entrada, a hora do provedor; na saída, a do servidor), não " +
+            "pela chegada: uma mensagem do cliente pode entrar abaixo de uma saída mais recente. A nota interna " +
+            "(`type: note`) é do time e só entra com `comments:read`; sem o escopo ela não aparece (não é erro), e " +
+            "nunca deve ser repetida ao cliente. Sem mídia por URL: só `media_mime_type`. Escopo: " +
+            "`conversations:read`.",
+          parameters: [
+            idParam("da conversa"),
+            queryParam(
+              "cursor",
+              "O `meta.next_cursor` da resposta anterior: leva à página seguinte, com mensagens mais ANTIGAS. " +
+                "Opaco: não monte à mão. Para ver o que chegou depois, leia de novo sem cursor e deduplique por " +
+                "`id` (não pare na primeira mensagem conhecida)."
+            ),
+            queryParam("limit", "Mensagens por página.", {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_PAGE_LIMIT,
+              default: DEFAULT_PAGE_LIMIT,
+            }),
+          ],
+          responses: {
+            "200": {
+              description: "Uma página, da mais nova para a mais antiga. `meta.next_cursor: null` = chegou ao início.",
+              content: json("ConversationMessagePage"),
+            },
+            "400": validationError,
+            "404": conversationNotFoundError,
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/conversations/{id}/handoff": {
+        post: {
+          summary:
+            "Passa a conversa da IA (`bot`) para um humano (`human`). O `reason` e o `summary` ficam numa nota " +
+            "interna no chat, que o analista lê ao assumir e que nunca vai ao cliente; o pedido entra na trilha do " +
+            "ticket informado ou, sem ele, do ticket em foco (só com o `reason`). Conversa arquivada volta para a " +
+            "caixa de entrada. Conversa que já está com um humano: 200 com `changed: false`, sem gravar nada (e " +
+            "`ticket_id` e `note_id` nulos); mas um `ticket_id` errado é erro mesmo assim. Depois do handoff a IA " +
+            "não envia mais nesta conversa: despeça-se do cliente antes. A volta para `bot` é só pela tela. Use " +
+            "uma Idempotency-Key nova a cada pedido: a mesma chave repete a resposta guardada por 24 h, mesmo que " +
+            "a conversa já tenha voltado para `bot`. A resposta é o resultado do pedido, não a conversa (para " +
+            "lê-la, `GET /conversations/{id}`). Escopo: `conversations:handoff`.",
+          parameters: [idParam("da conversa"), idempotencyKeyParam],
+          requestBody: { required: true, content: json("Handoff") },
+          responses: {
+            "200": { description: "O resultado do pedido.", content: json("HandoffResult") },
+            "400": errorResponse(
+              "Corpo inválido (`validation_error`), JSON inválido (`invalid_json`) ou Idempotency-Key ausente/malformada."
+            ),
+            "404": conversationNotFoundError,
+            "409": errorResponse(
+              "A conversa está resolvida (`conversation_not_owned_by_ai`, com `current`): quem a devolve à IA é uma " +
+                "mensagem nova do cliente. Ou o ticket informado está encerrado (`ticket_terminal`), ou a mesma " +
+                "Idempotency-Key ainda está em andamento (`idempotency_in_progress`)."
+            ),
+            "413": errorResponse("Corpo acima de 1 MB (`payload_too_large`)."),
+            "415": errorResponse("Corpo fora de JSON (`unsupported_media_type`)."),
+            "422": errorResponse(
+              "O ticket não é desta conversa, ou não existe (`ticket_not_in_conversation`, com `fields.ticket_id`); " +
+                "ou a Idempotency-Key já foi usada com outra requisição (`idempotency_key_reused`)."
+            ),
+            ...authErrors,
+          },
+        },
+      },
+      "/conversations/{id}/active-ticket": {
+        put: {
+          summary:
+            "Escolhe o ticket em foco da conversa: é ele que recebe as mensagens novas. `ticket_id: null` tira o " +
+            "foco. O mesmo foco de novo é no-op (`changed: false`). A resposta é o foco que ficou, não a conversa. " +
+            "Escopo: `tickets:write`.",
+          parameters: [idParam("da conversa")],
+          requestBody: { required: true, content: json("ActiveTicket") },
+          responses: {
+            "200": { description: "O foco da conversa depois do pedido.", content: json("ActiveTicketResult") },
+            "400": errorResponse("Corpo inválido (`validation_error`) ou JSON inválido (`invalid_json`)."),
+            "404": conversationNotFoundError,
+            ...conversationTicketErrors,
             ...authErrors,
           },
         },

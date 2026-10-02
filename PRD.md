@@ -71,7 +71,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Configurações | `/app/configuracoes` | **admin** | Variáveis (cofre), tokens de API, agente de IA (relay e assinatura do bot) |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 
-**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) e tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline). Conversas e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
+**API pública em construção (Fase 5):** a API de integração antiga (`/api/integracao/*`) e os webhooks do n8n saíram na Fase 1. A API v1 (`/api/v1/*`, contrato em `/api/v1/openapi.json`) já tem catálogos, empresas (leitura), contatos (leitura e escrita), o contexto da triagem (`/context`) tickets (ler, abrir, editar, mudar status, atribuir, comentar, anexar e ler a timeline) e conversas (ler a conversa e as mensagens, passar para um humano e escolher o ticket em foco). O envio de mensagem pela IA e o relay vêm nos PRs seguintes de `docs/PLANO-FASE-5.md`.
 
 **Tickets (Fase 4, em andamento):** o banco e as rotas de sessão já existem:
 - `/api/tickets`: abrir e listar por conversa;
@@ -102,6 +102,12 @@ As telas (lista, detalhe, quadro, chat, Início, Configurações › Atendimento
 ### 7.2 Atendimento humano (takeover)
 
 Conversa tem status `bot` / `human` / `resolved`. Assumir muda para `human`, avisa o agente e para o relay. Liberar devolve para `bot`.
+
+**Handoff (a IA pede um humano, pela API v1).** Só no sentido `bot` → `human`; a volta é pela tela.
+- A IA informa um motivo e, se quiser, um resumo. Os dois ficam numa **nota interna no chat**, assinada pelo token: é o que o analista lê ao assumir, e nunca vai ao cliente.
+- O pedido entra na trilha do ticket informado ou do ticket em foco, só com o motivo. A trilha não se apaga, e por isso o resumo não fica nela.
+- A conversa arquivada ou removida volta para a caixa de entrada.
+- Conversa que já está com um humano: nada muda. Conversa resolvida: a API recusa; quem a devolve à IA é uma mensagem nova do cliente.
 
 ### 7.3 Ticket (Fase 4)
 
@@ -229,6 +235,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 - **Contato** — a pessoa do outro lado do WhatsApp, única por telefone normalizado (tabela `contacts`; o telefone é imutável). Nasce só por `resolve_contact_identity`.
 - **Conversa** — thread de WhatsApp com um contato. Status `bot` | `human` | `resolved`.
 - **Takeover** — humano assume a conversa; o relay ao agente para.
+- **Handoff** — a IA (ou uma integração) passa a conversa para um humano pela API, com motivo e resumo numa nota interna.
 - **Etiqueta** — marcação livre de conversa, do vocabulário único `tags`.
 - **Token de API** — credencial gerada na tela, para integradores. O banco guarda **hash**, nunca o valor. Volta a ter uso com a API v1 (Fase 5).
 - **Empresa (cliente)** — pessoa jurídica atendida (`customers`), com N contatos e no máximo 1 contrato vigente. Arquiva, nunca apaga.

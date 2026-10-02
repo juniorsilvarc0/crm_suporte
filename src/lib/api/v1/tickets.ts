@@ -351,5 +351,7 @@ export function ticketApiError(requestId: string, error: TicketError, context: {
     ...(error.field ? { fields: { [error.field]: error.message } } : {}),
     ...(error.allowed ? { allowed: error.allowed } : {}),
     ...(error.current ? { current: error.current } : {}),
+    // conversation_not_owned_by_ai: o estado que decidiu o erro é o da conversa.
+    ...(error.conversationStatus ? { current: error.conversationStatus } : {}),
   });
 }
