@@ -136,4 +136,22 @@ describe("ApiTokensManager", () => {
       rate_limit_per_min: 300,
     });
   });
+
+  it("Editar abre o formulário do token da linha; token revogado não tem Editar", async () => {
+    const user = userEvent.setup();
+    render(
+      <ApiTokensManager
+        tokens={[...TOKENS, token({ id: "4", name: "Revogado", revoked_at: "2026-09-30T00:00:00Z" })]}
+      />
+    );
+
+    expect(screen.queryAllByRole("button", { name: "Editar o token Revogado" })).toHaveLength(0);
+    // Vencido ainda se edita: é como se estende a validade.
+    expect(screen.getAllByRole("button", { name: "Editar o token Token velho" }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getAllByRole("button", { name: "Editar o token n8n antigo" })[0]!);
+
+    expect(await screen.findByRole("heading", { name: "Editar token" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Nome" })).toHaveValue("n8n antigo");
+  });
 });

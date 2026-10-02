@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  apiTokenEditFormSchema,
   createApiTokenSchema,
   isKnownScope,
+  isPastExpiry,
   updateApiTokenSchema,
 } from "@/features/settings/schemas/api-token-actions";
 
@@ -67,5 +69,53 @@ describe("updateApiTokenSchema", () => {
   it("aceita só o que mudou, e null para tirar a validade", () => {
     expect(updateApiTokenSchema.parse({ expires_at: null })).toEqual({ expires_at: null });
     expect(updateApiTokenSchema.parse({ scopes: ["context:read"] })).toEqual({ scopes: ["context:read"] });
+  });
+});
+
+describe("apiTokenEditFormSchema", () => {
+  const form = { name: "n8n", scopes: ["tickets:read"], actor_type: "api", rate_limit_per_min: "120", expires_on: "" };
+
+  it("converte o que se digita no corpo do PATCH, e a rota aceita o resultado", () => {
+    const parsed = apiTokenEditFormSchema.parse({ ...form, rate_limit_per_min: " 300 ", expires_on: "2099-06-15" });
+
+    expect(parsed).toEqual({
+      name: "n8n",
+      scopes: ["tickets:read"],
+      actor_type: "api",
+      rate_limit_per_min: 300,
+      // Fim do dia no fuso do app (-03:00), em UTC.
+      expires_on: "2099-06-16T02:59:59.000Z",
+    });
+    const { expires_on: expires_at, ...rest } = parsed;
+    expect(updateApiTokenSchema.safeParse({ ...rest, expires_at }).success).toBe(true);
+  });
+
+  it("validade vazia é sem validade", () => {
+    expect(apiTokenEditFormSchema.parse(form).expires_on).toBeNull();
+  });
+
+  it("usa as mesmas regras de campo da rota", () => {
+    const issues = (input: object) =>
+      apiTokenEditFormSchema.safeParse({ ...form, ...input }).error?.issues.map((issue) => issue.message);
+
+    expect(issues({ name: " " })).toEqual(["Informe um nome."]);
+    expect(issues({ scopes: ["tickets:apagar"] })).toEqual(["Escopo desconhecido."]);
+    expect(issues({ rate_limit_per_min: "0" })).toEqual(["Mínimo de 1 por minuto."]);
+    expect(issues({ rate_limit_per_min: "6001" })).toEqual(["Máximo de 6000 por minuto."]);
+    expect(issues({ rate_limit_per_min: "1,5" })).toEqual(["Informe um número de 1 a 6000."]);
+    expect(issues({ expires_on: "2099-02-30" })).toEqual(["Data inválida."]);
+  });
+
+  it("aceita uma data já passada: a regra do futuro só vale quando a validade é mexida", () => {
+    expect(apiTokenEditFormSchema.safeParse({ ...form, expires_on: "2020-01-01" }).success).toBe(true);
+  });
+});
+
+describe("isPastExpiry", () => {
+  it("sem validade nunca passou; o instante exato já conta como passado", () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    expect(isPastExpiry(null, now)).toBe(false);
+    expect(isPastExpiry("2026-10-02T12:00:00.000Z", now)).toBe(true);
+    expect(isPastExpiry("2026-10-02T12:00:00.001Z", now)).toBe(false);
   });
 });
