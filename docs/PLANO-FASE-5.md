@@ -267,6 +267,8 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 - **Arquivos:** reescrita de `docs/API.md` e `docs/GUIA-AGENTE-IA.md`; roteiro curl do PLANO:357-365 executado contra o app local.
 - **Pronto quando:** os 8 passos do roteiro curl passam, com a saída anotada no PROGRESS.
 
+> **Documentos feitos (2026-10-02):** `docs/API.md` e `docs/GUIA-AGENTE-IA.md` reescritos a partir do código. O roteiro curl está no guia, §6, com a saída esperada de cada passo; **rodar o roteiro ainda falta** (pede o stack local com Docker). Diferenças do roteiro do plano: o handoff vem antes do envio recusado, e resolver o ticket leva duas transições.
+
 ## 3. Decisões do dono
 
 Respondidas em 2026-09-29:

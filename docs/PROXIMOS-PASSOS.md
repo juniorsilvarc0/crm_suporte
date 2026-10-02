@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #43 (o 13c, §5.1). Aberto: o PR do 13d (§5.1). |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4410 testes em 233 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 13d da Fase 5 **pronto**, à espera do merge: com ele o PR 13 fecha. Depois, o PR 14 (§5.2). |
+| `main` | até o PR #44 (o 13d: o PR 13 fecha, §5.1). Aberto: o PR dos documentos do PR 14 (§5.2). |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4417 testes em 234 arquivos) e `build` verdes. |
+| Trabalho em curso | Documentos do PR 14 **prontos**, à espera do merge. Falta rodar o roteiro curl com Docker (§5.2). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -31,7 +31,7 @@
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
 | 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 · Registros e Saúde #42 · editar token #43 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 · Registros e Saúde #42 · editar token #43 · catálogo em Variáveis #44 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
@@ -94,14 +94,20 @@ Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". O PR foi dividido
 
 **13c, feito (#43): editar token na API do CRM.** Nome, escopos um a um (com "Aplicar IA de triagem" e "Limpar"), quem usa, limite por minuto e validade, sobre o `PATCH /api/api-tokens/[id]` que já existia. Como ficou está em `UI.md` §5.19.
 
-**13d, feito (no PR aberto, à espera do merge): Variáveis.** "Adicionar" escolhe num `FormSelect` só as chaves do catálogo sem valor. Saíram a coluna Origem e os rótulos "Servidor" e "Sobrescrever", e variável fora do catálogo só tem "Remover". Com ele, o PR 13 fecha.
+**13d, feito (#44): Variáveis.** "Adicionar" escolhe num `FormSelect` só as chaves do catálogo sem valor. Saíram a coluna Origem e os rótulos "Servidor" e "Sobrescrever", e variável fora do catálogo só tem "Remover". Com ele, o PR 13 fecha.
 
 ### 5.2 PR 14 da Fase 5: documentação da API e guia do agente
 
-- Reescrever `docs/API.md` e `docs/GUIA-AGENTE-IA.md`.
-- Rodar contra o app local o roteiro curl de 8 passos de [`PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md) §Verificação e anotar a saída no `PROGRESS.md`. É o "pronto quando" da Fase 5.
-- Decidir e documentar: respostas publicadas com `additionalProperties: false` quebram quem valida a cada campo novo; o `pattern` de uuid do OpenAPI não aceita maiúsculas e a API aceita; os limites de texto contam unidades UTF-16.
-- No guia: despedir-se do cliente **antes** do handoff (depois dele o envio responde 409); `changed: false` não traz o ticket; cliente .NET no upload de anexo (ver PROGRESS do PR 8b).
+**Documentos, feito (no PR aberto, à espera do merge):** `docs/API.md` e `docs/GUIA-AGENTE-IA.md` reescritos a partir do código. Neles ficaram decididos e documentados:
+- **o contrato é aditivo:** o OpenAPI publica `additionalProperties: false` e uuid só em minúsculas, mas a API aceita maiúsculas e pode ganhar campos. O cliente não deve validar a resposta de forma estrita e deve ignorar o que não conhece;
+- **os limites de texto contam unidades UTF-16;**
+- **despedir-se antes do handoff:** depois dele o envio responde 409;
+- **o `changed: false` do handoff vem sem `ticket_id` e sem `note_id`.** Os PATCH, as transições e a atribuição devolvem o ticket mesmo assim. O texto antigo deste item dizia "não traz o ticket", e o código mostrou que isso só vale no handoff;
+- **o cliente .NET no upload de anexo.**
+
+**Falta: rodar o roteiro curl de 8 passos** (`GUIA-AGENTE-IA.md` §6) contra o app local e anotar a saída no `PROGRESS.md`. É o "pronto quando" da Fase 5, e pede Docker. A ordem difere da do plano em dois pontos:
+- o handoff vem antes do envio recusado (409), o que dispensa uma sessão de analista;
+- resolver o ticket leva duas transições (`novo` → `em_atendimento` → `resolvido`), porque a matriz de estados não permite pular.
 
 ### 5.3 PR 11b da Fase 5: tirar o filtro `bot` do repasse
 

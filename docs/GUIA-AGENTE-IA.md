@@ -1,471 +1,505 @@
-# Guia de Integração para Agentes de IA
+# Guia do agente de triagem — CRM Suporte
 
-> ⚠️ **Desatualizado desde 2026-09-25 (Fase 1).** As rotas de leads, funil, agenda, follow-ups e métricas usadas nos exemplos foram **removidas**. O guia é reescrito sobre a API v1 (`/api/v1/*`) na Fase 5 de [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md).
->
-> **O que já vale (2026-10-01):** o que o CRM envia ao agente a cada mensagem, e como o agente responde, está em [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md). A IA responde **pela API do CRM**, e não direto na uazapi como este guia descreve abaixo.
+Este guia é para quem implementa o **agente de triagem**: uma IA externa, um fluxo no n8n ou código próprio que atende o cliente pelo WhatsApp junto com o CRM. Ele descreve o ciclo completo, as regras que evitam os erros mais comuns e exemplos prontos.
 
-Como um **agente de IA** (n8n, Python, LangChain, Agno, Claude, etc.) opera o CRM
-de ponta a ponta: **atender pelo WhatsApp, salvar/editar leads, mover no funil,
-agendar, dar follow-up, ler métricas e monitorar** — tudo por HTTP, autenticado
-por um **token de API**.
+Documentos de apoio:
 
-> **Base URL — configure por instância, nunca no código.** Neste guia usamos o
-> placeholder `https://SEU-CRM`. Cada cópia deste CRM roda num domínio próprio,
-> então a URL e o token do CRM devem ser **passados na configuração do agente**
-> (variável de ambiente / painel do agente — ex.: `CRM_BASE_URL`, `CRM_TOKEN`),
-> **sem nenhum valor embutido ou de fallback**. O mesmo agente-template atende
-> várias cópias do CRM em domínios diferentes; amarrar uma URL fixa quebraria as
-> outras. Use sempre **HTTPS**.
+- [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md): o pedido que o CRM envia ao agente a cada mensagem do cliente, e como conferir a assinatura. Este guia não repete o contrato.
+- [`API.md`](API.md): as regras gerais da API v1 (autenticação, escopos, erros, idempotência, paginação).
+- `GET /api/v1/openapi.json`: a referência completa de cada rota, campo e resposta.
 
----
+Nos exemplos, `BASE` é o endereço do CRM (sem barra no fim) e `TOKEN` é o token de API do agente. Nenhum dos dois vai escrito no código do agente: guarde-os na configuração segura dele.
 
-## 1. Autenticação (obrigatório)
+## 1. Antes de começar
 
-Toda chamada de integração usa um **token de API**, gerado no painel do CRM em
-**Integrações → API do CRM** por um usuário **administrador** (aparece
-**uma única vez** — copie e guarde). Esse token é uma das credenciais que você
-passa na configuração do agente (junto com a base URL); nunca embuta no código.
+1. **Token.** Um administrador cria o token em **Integrações › API do CRM** (`/app/conexao?aba=api`), com o acesso **IA de triagem**. O preset grava o tipo `ai`, 300 requisições por minuto e os escopos de que o agente precisa. O token aparece uma vez só: copie na hora.
+2. **Endereço do agente.** Em **Integrações › Agente de IA** (`/app/conexao?aba=agente`), campo *Webhook do agente de IA*. É para onde o CRM repassa as mensagens.
+3. **Chave de assinatura.** No mesmo lugar, **Gerar chave**. Ela aparece uma vez só. Configure-a no agente e recuse todo pedido sem assinatura válida.
+4. **Teste.** O botão **Testar conexão** envia um `webhook.ping` ao endereço salvo. O agente responde `2xx` e não faz mais nada.
 
-Envie o token em **um** destes headers:
+Confira o token assim que o receber:
 
-```
-Authorization: Bearer SEU_TOKEN
-```
-ou
-```
-x-webhook-secret: SEU_TOKEN
-```
-
-- Sem token válido → **`401`**.
-- O mesmo token vale para os **webhooks do n8n** (`/api/webhooks/n8n/*`) e para a
-  **API de Integração** (`/api/integracao/*`).
-- Revogue um token a qualquer momento no painel (para de funcionar na hora).
-
-**Resposta padrão:** `{ "ok": true, ... }` em sucesso; `{ "ok": false, "error": "..." }` em erro.
-**Códigos:** `200` ok · `400` JSON inválido · `401` sem token · `404` não achado · `422` payload inválido · `500` erro.
-
----
-
-## 2. Bot de atendimento (WhatsApp)
-
-O WhatsApp é conectado ao CRM via **uazapi** (tela **Conexão**). O fluxo do bot:
-
-```
-Cliente no WhatsApp
-      │  (mensagem)
-      ▼
-uazapi ──► CRM (webhook) ──► repassa o payload cru para o WEBHOOK DO AGENTE
-                                     │   enquanto a conversa está em status "bot"
-                                     ▼
-                          SEU AGENTE decide a resposta
-                                     │
-                                     ▼
-                          responde enviando pela uazapi  (POST {uazapi}/send/text, header token)
-                                     │
-                                     ▼
-      a resposta volta como "fromMe" e o CRM registra sozinho na conversa
-```
-
-> **Onde configurar o webhook do agente:** no painel, em **Integrações →
-> Agente de IA** ("Integração do agente"). Aponte para o endpoint do
-> seu agente/n8n/make e salve. **Enquanto esse campo estiver vazio, o CRM não
-> repassa as mensagens do bot** (o indicador na própria tela avisa). Sem editar
-> `.env` nem redeploy.
-
-Pontos-chave:
-- **Receber:** o CRM já repassa cada mensagem que entra para o **webhook do agente**
-  configurado na UI (enquanto a conversa está em modo **bot**). Sem polling.
-- **Responder:** o agente envia pela **uazapi** (`POST {apiUrl}/send/text`, header `token`);
-  a resposta aparece no chat e é gravada automaticamente. O `token` é o da credencial
-  da uazapi **configurada no agente**: o CRM não repassa o token da instância.
-- **Humano assume:** quando um atendente clica em **Assumir** no painel, a conversa
-  vira **human** e o CRM **para** de repassar (o bot silencia). Ao **Devolver à IA**,
-  volta a repassar.
-- **Lead automático:** toda mensagem que entra já **cria/atualiza um lead** (nome + telefone).
-
-> Detalhes do formato do webhook de entrada e do envio pela uazapi estão em
-> [`API.md`](API.md) (seção "Chat e Conexão").
-
----
-
-## 3. O que o agente consegue fazer (mapa rápido)
-
-| Quero… | Como |
-|---|---|
-| **Criar/atualizar um lead** | `POST /api/integracao/leads` |
-| **Buscar/listar leads** | `GET /api/integracao/leads?q=&status=&source=` |
-| **Ver um lead (com agenda e follow-ups)** | `GET /api/integracao/leads/{telefone}` |
-| **Editar um lead** | `PATCH /api/integracao/leads/{telefone}` |
-| **Mudar a etapa geral do contato** | `PATCH /api/integracao/leads/{telefone}` com `{ "status": "qualificado" }` |
-| **Excluir um lead** | `DELETE /api/integracao/leads/{telefone}` |
-| **Ver o funil (colunas + nº de cards)** | `GET /api/integracao/board` |
-| **Criar um card no funil** | `POST /api/integracao/deals` |
-| **Mover um card de etapa** | `PATCH /api/integracao/deals/{id}` com `{ "stage": "agendado" }` |
-| **Listar cards do funil** | `GET /api/integracao/deals?phone=&stage=` |
-| **Excluir um card** | `DELETE /api/integracao/deals/{id}` |
-| **Criar/atualizar agendamento** (também cria card) | `POST /api/integracao/appointments` |
-| **Listar agendamentos** | `GET /api/integracao/appointments?from=&to=&status=&phone=` |
-| **Reagendar / cancelar agendamento** | `PATCH` / `DELETE /api/integracao/appointments/{id}` |
-| **Criar/agendar follow-up** | `POST /api/integracao/followups` |
-| **Listar / concluir / cancelar follow-up** | `GET` / `PATCH` / `DELETE /api/integracao/followups/{id}` |
-| **Coletar métricas / monitorar** | `GET /api/integracao/metrics?period=30d` |
-| **Listar tags** | `GET /api/integracao/tags` |
-
-**Lead × card:** o **lead é o contato único** (dono do telefone/chat, upsert que
-nunca duplica). O **card do funil é um `deal`** (agendamento/oportunidade), e há
-**N deals por lead** — cada agendamento é um card próprio. Assim um cliente
-recorrente aparece com **vários cards** sem duplicar o contato. "Criar card" =
-`POST /deals`; "mover o card" = `PATCH /deals/{id}` com `stage`; "ver o quadro" =
-`GET /board`.
-
----
-
-## 4. Leads
-
-### Criar ou atualizar (upsert pelo telefone — nunca duplica)
-`POST /api/integracao/leads`
-```json
-{
-  "phone": "5511987654321",
-  "name": "Maria Silva",
-  "source": "anuncio",
-  "status": "novo",
-  "valor_estimado": 1200,
-  "notes": "Veio pelo anúncio do Instagram"
-}
-```
-Campos: `phone`* (DDI+DDD), `name`, `instagram_user`, `email`, `source`
-(`agencia|anuncio|particular|indicacao|whatsapp|importado|outro`), `status`
-(etapas do funil — ver §5), `tipo_ensaio`, `agencia_nome`, `modelo_nome`,
-`interesse`, `valor_estimado`, `is_recorrente`, `memoria_contexto`, `notes`.
-→ `200 { ok, lead }`.
-
-> **`tipo_ensaio` é texto livre** — o nome da coluna é legado, mas o valor é
-> definido por cada instância (ex.: `"consulta"`, `"reuniao"`, `"orçamento"`).
-> `agencia_nome`/`modelo_nome` também são campos livres e opcionais. Não há
-> lista fixa: use os rótulos que fizerem sentido para o CRM que você está
-> operando.
-
-### Buscar / listar
-`GET /api/integracao/leads?q=maria&status=qualificado&source=anuncio&limit=50&page=1`
-→ `{ ok, leads: [...], page, pageSize, total }`. `q` busca por nome ou telefone.
-
-### Detalhe (com agenda + follow-ups)
-`GET /api/integracao/leads/5511987654321`
-→ `{ ok, lead: {..., tags}, appointments: [...], followups: [...] }`. `404` se não existir.
-
-### Editar / mover de etapa
-`PATCH /api/integracao/leads/5511987654321`
-```json
-{ "status": "agendado", "valor_estimado": 1500 }
-```
-Só os campos enviados são alterados. Mudar `status` já **carimba o timestamp**
-da etapa (qualificado/agendado/compareceu/cliente). → `{ ok, lead }`.
-
-### Excluir
-`DELETE /api/integracao/leads/5511987654321` → `{ ok, deleted: true }`.
-(Tags e follow-ups do lead saem junto; agenda/financeiro são desvinculados.)
-
----
-
-## 5. Funil (etapas e cards = deals)
-
-O funil é feito de **cards**, e cada card é um **`deal`** (agendamento/oportunidade),
-não um lead. Há **N deals por lead** → um cliente recorrente tem vários cards sem
-duplicar o contato. Todo lead novo já nasce com **1 deal** na etapa atual (para
-nada sumir do funil); os cards extras você cria por agendamento.
-
-### Ver o quadro
-`GET /api/integracao/board`
-```json
-{
-  "ok": true,
-  "totalDeals": 168,
-  "stages": [
-    { "key": "novo", "label": "Novo", "color": "violet", "position": 0,
-      "stage_type": "open", "probability": 10, "deals": 26 },
-    { "key": "qualificado", "label": "Qualificado", "deals": 16, "probability": 40, "...": "..." }
-  ]
-}
-```
-As **etapas** (colunas) vêm em ordem, com a contagem de **cards (deals)** em cada.
-Etapas padrão: `novo`, `em_atendimento`, `qualificado`, `agendado`, `compareceu`,
-`cliente`, `recorrente`, `perdido`.
-
-### Criar um card (deal)
-`POST /api/integracao/deals`
-```json
-{
-  "phone": "5511987654321",
-  "stage": "agendado",
-  "tipo_ensaio": "consulta",
-  "valor": 1200,
-  "scheduled_at": "2026-07-20T13:00:00.000Z",
-  "idempotency_key": "deal-5511987654321-2026-07-20"
-}
-```
-`phone`* resolve o cliente (o lead precisa existir → `404 lead_not_found`).
-`stage` é opcional (default `novo`; precisa existir em board_columns). **Cada
-chamada cria um card novo** — é assim que o recorrente ganha vários cards. Use
-`idempotency_key` para não duplicar em retry. → `{ ok, deal }`.
-
-### Mover / editar um card
-`PATCH /api/integracao/deals/{id}`
-```json
-{ "stage": "compareceu", "valor": 1500 }
-```
-Move de etapa (`stage` = `key` da coluna) e/ou edita `tipo_ensaio`, `valor`,
-`scheduled_at`, `notes`. Ao cair numa etapa de situação **ganho/perdido**, o card
-carimba `won_at`/`lost_at`. → `{ ok, deal }`.
-
-### Listar / excluir cards
-- `GET /api/integracao/deals?phone=5511987654321` (ou `?stage=agendado`) → `{ ok, deals: [...] }`
-- `DELETE /api/integracao/deals/{id}` → `{ ok, deleted: true }`
-
-> **Não confunda** `PATCH /leads/{telefone}` `{ status }` (muda a etapa **geral do
-> contato**, para filtros/métricas) com `PATCH /deals/{id}` `{ stage }` (move um
-> **card** no quadro). Para o funil visual, é sempre **deal**.
-
----
-
-## 6. Agendamentos (calendário)
-
-### Criar / atualizar
-`POST /api/integracao/appointments`
-```json
-{
-  "phone": "5511987654321",
-  "scheduled_at": "2026-07-20T13:00:00.000Z",
-  "duration_min": 60,
-  "status": "agendado",
-  "idempotency_key": "appt-5511987654321-2026-07-20"
-}
-```
-`status`: `agendado|confirmado|compareceu|faltou|cancelado`. Use `idempotency_key`
-para não duplicar em retries. → `{ ok, appointment, deal }`.
-
-> **Cria também um card no funil** (etapa `agendado`), vinculado ao agendamento —
-> por isso a resposta traz `deal`. Se você já cria o card por `POST /deals`, **não**
-> chame os dois para o mesmo ato (evita 2 cards). Escolha **um** caminho por
-> agendamento.
-
-### Listar
-`GET /api/integracao/appointments?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z&status=agendado`
-(ou `?phone=` para os de um cliente) → `{ ok, appointments: [...] }`.
-
-### Reagendar / editar / cancelar
-- `PATCH /api/integracao/appointments/{id}` → `{ "scheduled_at": "...", "status": "confirmado" }`
-- `DELETE /api/integracao/appointments/{id}` → remove.
-
----
-
-## 7. Follow-ups
-
-- **Agendar/registrar:** `POST /api/integracao/followups`
-  ```json
-  { "phone": "5511987654321", "scheduled_for": "2026-07-22T14:00:00Z", "message": "Retornar sobre o orçamento", "status": "pendente" }
-  ```
-- **Listar:** `GET /api/integracao/followups?status=pendente&phone=...`
-- **Concluir/cancelar/reagendar:** `PATCH /api/integracao/followups/{id}` com
-  `{ "status": "enviado" }` (ou `cancelado`, ou novo `scheduled_for`). `DELETE` remove.
-
----
-
-## 8. Métricas e monitoramento
-
-`GET /api/integracao/metrics?period=30d`  (`7d | 30d | 90d | all`)
-→ `{ ok, dashboard: { kpis, pipeline, daily, where, funnel, salesByWeekday, ltv, bySource, byState, ... } }`.
-
-Traz **tudo do dashboard em JSON**: KPIs (total de leads, receita, conversão,
-ticket médio — com variação % vs período anterior), pipeline atual, série por dia,
-"onde estão os leads", funil, vendas por dia da semana, LTV & recompra, por origem
-e por estado. Ideal para o agente **monitorar** (ex.: alertar se a conversão cair).
-
-> **Métricas são por CONTATO (lead), não por card.** O dashboard (inclusive o
-> "funil" daqui) conta **leads** por `status`, enquanto o board visual conta
-> **cards (deals)** — por isso os números podem divergir (um recorrente é 1 lead,
-> mas vários cards). Para contagem de cards por etapa use `GET /board` (§5).
-
----
-
-## 9. Exemplos por ferramenta
-
-### 9.1 curl
 ```bash
-# criar/atualizar lead
-curl -X POST https://SEU-CRM/api/integracao/leads \
-  -H "Authorization: Bearer SEU_TOKEN" -H "Content-Type: application/json" \
-  -d '{"phone":"5511987654321","name":"Maria","status":"novo","source":"anuncio"}'
-
-# mover para "qualificado"
-curl -X PATCH https://SEU-CRM/api/integracao/leads/5511987654321 \
-  -H "Authorization: Bearer SEU_TOKEN" -H "Content-Type: application/json" \
-  -d '{"status":"qualificado"}'
-
-# métricas dos últimos 30 dias
-curl "https://SEU-CRM/api/integracao/metrics?period=30d" -H "Authorization: Bearer SEU_TOKEN"
+curl -sS "$BASE/api/v1/me" -H "Authorization: Bearer $TOKEN"
 ```
 
-### 9.2 n8n (nó **HTTP Request**)
-- **Method/URL:** conforme a tabela (§3).
-- **Authentication:** `Generic Credential Type → Header Auth` → Name `Authorization`, Value `Bearer SEU_TOKEN`.
-  (ou header `x-webhook-secret` = `SEU_TOKEN`.)
-- **Send Body:** JSON (para POST/PATCH).
-- Guarde o token como **credencial** do n8n, nunca escrito no nó.
+A resposta traz `data.token.scopes`, `data.token.actor_type` (deve ser `ai`) e `data.token.rate_limit_per_min`. Guarde o `data.token.id`: é o `sent_by_token_id` das mensagens que o agente enviar.
 
-### 9.3 Python (`requests`) — client reutilizável
-```python
-import requests
+## 2. O ciclo completo
 
-class CRM:
-    def __init__(self, base, token):
-        self.base = base.rstrip("/")
-        self.s = requests.Session()
-        self.s.headers["Authorization"] = f"Bearer {token}"
-
-    def salvar_lead(self, phone, **campos):
-        return self.s.post(f"{self.base}/api/integracao/leads",
-                           json={"phone": phone, **campos}).json()
-
-    def buscar_leads(self, **q):
-        return self.s.get(f"{self.base}/api/integracao/leads", params=q).json()
-
-    def mover_etapa_contato(self, phone, status):
-        """Muda a etapa GERAL do contato (leads.status) — não move card do funil."""
-        return self.s.patch(f"{self.base}/api/integracao/leads/{phone}",
-                            json={"status": status}).json()
-
-    # --- Funil = cards (deals): N por lead, cada agendamento é um card ---
-    def criar_card(self, phone, stage="novo", **kw):
-        """Cria um card no funil (deal) para o cliente. Cada chamada = card novo."""
-        return self.s.post(f"{self.base}/api/integracao/deals",
-                           json={"phone": phone, "stage": stage, **kw}).json()
-
-    def mover_card(self, deal_id, stage):
-        """Move um card do funil para outra etapa (pelo id do deal)."""
-        return self.s.patch(f"{self.base}/api/integracao/deals/{deal_id}",
-                            json={"stage": stage}).json()
-
-    def listar_cards(self, **q):
-        return self.s.get(f"{self.base}/api/integracao/deals", params=q).json()
-
-    def agendar(self, phone, scheduled_at, **kw):
-        """Cria um agendamento (e também um card no funil, etapa 'agendado')."""
-        return self.s.post(f"{self.base}/api/integracao/appointments",
-                           json={"phone": phone, "scheduled_at": scheduled_at, **kw}).json()
-
-    def metricas(self, period="30d"):
-        return self.s.get(f"{self.base}/api/integracao/metrics",
-                          params={"period": period}).json()
-
-crm = CRM("https://SEU-CRM", "SEU_TOKEN")
-crm.salvar_lead("5511987654321", name="Maria", status="novo", source="anuncio")
-card = crm.criar_card("5511987654321", stage="agendado", tipo_ensaio="consulta", valor=1200)
-crm.mover_card(card["deal"]["id"], "compareceu")
-print(crm.metricas("30d")["dashboard"]["kpis"])
+```
+cliente escreve no WhatsApp
+        │
+        ▼
+CRM grava a mensagem ──► POST no agente (repasse assinado)
+                               │
+                               ├─ 1. confere a assinatura e responde 2xx
+                               ├─ 2. separa teste (webhook.ping) de mensagem
+                               ├─ 3. confere conversation_status == "bot"
+                               ├─ 4. GET /context?phone=
+                               ├─ 5. decide
+                               ├─ 6. abre ou atualiza o ticket
+                               ├─ 7. escolhe o ticket em foco, se precisar
+                               ├─ 8. responde: POST /conversations/{id}/messages
+                               └─ 9. ou passa para um humano: POST /conversations/{id}/handoff
 ```
 
-### 9.4 LangChain / Agno (tools)
-Cada capacidade vira uma **tool** que chama o HTTP acima. Exemplo (LangChain):
-```python
-from langchain_core.tools import tool
+### 2.1 Receber o repasse
 
-@tool
-def salvar_lead(phone: str, name: str = "", status: str = "novo", source: str = "whatsapp") -> dict:
-    """Cria ou atualiza o CONTATO (lead) no CRM pelo telefone (não duplica)."""
-    return crm.salvar_lead(phone, name=name, status=status, source=source)
+O formato do pedido está em [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md). O essencial:
 
-@tool
-def criar_card_no_funil(phone: str, stage: str = "novo", tipo_ensaio: str = "", valor: float = 0) -> dict:
-    """Cria um CARD (deal) no funil para o cliente. Cada agendamento vira um card
-    próprio — um cliente recorrente tem vários cards, sem duplicar o contato."""
-    extra = {k: v for k, v in {"tipo_ensaio": tipo_ensaio, "valor": valor}.items() if v}
-    return crm.criar_card(phone, stage=stage, **extra)
+- **Confira a assinatura antes de tudo** (seção 4 do contrato): `X-CRM-Signature` é `v1=` mais o HMAC-SHA256 em hexadecimal de `<X-CRM-Timestamp>.<corpo cru>`, com a chave como texto. Recuse se o instante estiver a mais de 5 minutos do relógio do agente, se o cabeçalho faltar ou se a chave estiver vazia. Use os bytes recebidos, nunca o JSON reconvertido. O contrato traz código em Node.js e Python e um exemplo para conferir a conta.
+- **Responda `2xx` logo.** O CRM espera no máximo 10 segundos e não tenta de novo. Processe depois de responder.
+- **Separe o teste da mensagem pelo corpo.** O teste tem `"event": "webhook.ping"`. A mensagem do cliente nunca tem o campo `event`. Não confie no cabeçalho `X-CRM-Event` para isso: a assinatura não o cobre.
+- **Descarte repetição pelo `message_id`** do corpo.
+- **Ordene pelo `message.messageTimestamp`.** Mensagens em sequência chegam em paralelo, sem ordem garantida.
+- **Confira `message.messageType`.** O CRM repassa também reação, enquete, localização e, conforme o provedor, a edição de uma mensagem como se fosse outra.
 
-@tool
-def mover_card_no_funil(deal_id: str, stage: str) -> dict:
-    """Move um card do funil para outra etapa (novo, qualificado, agendado,
-    compareceu, cliente, perdido...), pelo id do deal."""
-    return crm.mover_card(deal_id, stage)
+### 2.2 Só responda em conversa `bot`
 
-@tool
-def agendar_visita(phone: str, scheduled_at_iso: str, duration_min: int = 60) -> dict:
-    """Agenda um compromisso para o cliente (ISO 8601) — cria também um card no funil."""
-    return crm.agendar(phone, scheduled_at_iso, duration_min=duration_min)
-```
-No **Agno** é o mesmo: registre funções que chamam esses endpoints como `tools` do agente.
+O campo `conversation_status` do repasse diz quem conduz a conversa:
 
-> **Regra de ouro para o agente:** o funil é feito de **deals (cards)**. Para mexer
-> no quadro, use `criar_card_no_funil` / `mover_card_no_funil`. `mover_etapa_contato`
-> (`PATCH /leads`) só muda a etapa "geral" do contato (filtros/métricas), **não** o card.
+| Valor | Significado | O que o agente faz |
+|---|---|---|
+| `bot` | a IA conduz | pode responder |
+| `human` | um analista assumiu | não responde |
+| `resolved` | encerrada | não responde |
 
----
+Campo ausente ou valor desconhecido é o mesmo que "não é minha".
 
-## 10. MCP — ferramentas nativas (recomendado para Claude/agentes)
+Hoje o CRM só repassa conversa em `bot`. Numa próxima versão ele vai repassar também as que estão com um analista, para a IA acompanhar sem responder. Um agente que responde a tudo o que recebe vai falar por cima do analista. Por isso a regra é decidir pelo campo, e não por "se chegou, é minha".
 
-**MCP (Model Context Protocol)** é o jeito padrão de dar *tools* a um agente
-(Claude Desktop, Claude Code, etc.). Em vez de o agente montar HTTP na mão, ele
-"enxerga" ferramentas como `lead_salvar`, `deal_criar`, `funil_quadro`, `agendamento_criar`.
+O `GET /context` traz a mesma regra pronta: `ai_may_reply` é `true` só com a conversa em `bot`.
 
-> O servidor MCP que existia neste repositório (tools de lead, funil e agendamento
-> do CRM de origem) foi **removido**. Um MCP novo, sobre a API v1 de tickets, está
-> previsto para a v1.1 — ver [`docs/PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md).
-> Os princípios abaixo continuam valendo.
-### Como criar um MCP **da melhor forma** (princípios)
-1. **Tools finas sobre uma API estável.** Não reimplemente regra de negócio no MCP —
-   cada tool só chama um endpoint `/api/integracao/*`. Assim o MCP nunca fica
-   "desalinhado" do CRM.
-2. **Agrupe por módulo e nomeie `modulo_acao`.** `lead_buscar`, `lead_mover_etapa`,
-   `funil_quadro`, `agendamento_criar`. Nomes previsíveis ajudam o LLM a escolher.
-3. **Descrições ricas** — o modelo escolhe a tool **pela descrição**. Descreva o que
-   faz e **quando usar**, e use `.describe()` em cada parâmetro (ex.: formato do telefone).
-4. **Valide com zod** e use **enums** onde houver domínio fechado (etapas do funil,
-   status de agendamento) — o agente erra menos.
-5. **Exponha só o necessário.** Menos tools, mais certeiras = melhor escolha do LLM.
-   Aqui: lead, funil e agendamento (não jogue 30 tools no agente).
-6. **Erros estruturados.** Devolva `isError: true` + o corpo do CRM, para o agente se
-   auto-corrigir (ex.: `422` → ajustar o payload).
-7. **Config por env + transporte certo.** `CRM_BASE_URL` + `CRM_TOKEN` por env; **stdio**
-   para uso local (Desktop/Code). Para um MCP remoto/compartilhado, use transporte
-   **HTTP/SSE** (mesmo código de tools, só troca o transporte).
-8. **Segurança:** um **token por integração**, revogável no painel; HTTPS sempre.
+### 2.3 Consultar o contexto
 
-### Esqueleto de uma tool (referência)
-```js
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-
-const server = new McpServer({ name: "crm-suporte", version: "1.0.0" });
-
-server.tool(
-  "lead_mover_etapa",
-  "Move o lead para outra etapa do funil.",
-  { phone: z.string(), status: z.enum(["novo","qualificado","agendado","cliente","perdido"]) },
-  async ({ phone, status }) => {
-    const r = await fetch(`${process.env.CRM_BASE_URL}/api/integracao/leads/${phone}`, {
-      method: "PATCH",
-      headers: { Authorization: `Bearer ${process.env.CRM_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    return { content: [{ type: "text", text: await r.text() }], isError: r.status >= 400 };
-  }
-);
-
-await server.connect(new StdioServerTransport());
+```bash
+curl -sS "$BASE/api/v1/context?phone=5527999990000" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
----
+- `phone`: com DDD, com ou sem o 55, com ou sem máscara. A busca é por igualdade exata (números antigos da pessoa inclusos), sem tolerância ao nono dígito.
+- Telefone desconhecido também é `200`, com `contact: null` e o resto vazio. O `GET` nunca cria nada.
+- Falha de leitura é `503 unavailable` com `Retry-After`. O contexto nunca vem pela metade.
 
-## 11. Boas práticas
+O que vem em `data`:
 
-- **Telefone:** sempre com DDI+DDD, só dígitos (ex.: `5511987654321`). O CRM
-  normaliza (WhatsApp `5511…` e cadastro `11…` viram o mesmo lead).
-- **Idempotência:** use `idempotency_key` em agendamentos para não duplicar em retries.
-- **Segurança:** um **token por integração** (dá para revogar individualmente);
-  nunca exponha o token em logs/repos; use HTTPS.
-- **Não duplica leads:** `POST /leads` é upsert pelo telefone — pode reenviar à vontade.
-- **Rate/erros:** trate `429`/`5xx` com retry exponencial; o `POST /leads` é seguro para repetir.
+| Campo | O que é |
+|---|---|
+| `contact`, `customer` | quem escreveu e a empresa dele |
+| `contract` | o contrato atual, sem valor nem dia de vencimento |
+| `contract_alert` | `null` com contrato ativo; senão `sem_empresa`, `sem_contrato`, `suspenso` ou `encerrado` |
+| `conversation` | a conversa mais recente do contato; confira se `conversation.id` é o `conversation_id` do repasse |
+| `open_tickets` | tickets não encerrados da conversa (até 20), cada um com `allowed_transitions` |
+| `open_tickets_truncated` | `true` se havia mais |
+| `recent_tickets` | os últimos 5 tickets encerrados do contato |
+| `messages` | as últimas mensagens da conversa, da mais antiga para a mais nova, sem notas internas |
+| `ai_may_reply` | `true` só com a conversa em `bot` |
 
-> Referência técnica completa de todos os endpoints (inclusive os webhooks do n8n
-> e o chat) em [`API.md`](API.md).
+`allowed_transitions: null` quer dizer que a matriz de status não pôde ser lida agora, e não que não há destino.
+
+### 2.4 Abrir um ticket
+
+```bash
+curl -sS -X POST "$BASE/api/v1/tickets" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "conversation_id": "<conversation_id do repasse>",
+    "title": "Nota fiscal não sai",
+    "priority": "alta",
+    "status": "em_triagem",
+    "description": "Cliente relata erro ao emitir nota desde hoje cedo.",
+    "ai_triage": { "categoria_sugerida": "fiscal", "confianca": 0.8 }
+  }'
+```
+
+- Obrigatórios: `conversation_id` e `title` (3 a 200).
+- `priority`: `baixa`, `media` (padrão), `alta` ou `critica`.
+- `status` inicial: `novo` (padrão) ou `em_triagem`.
+- Opcionais: `description` (até 10.000), `product_id`, `category_id`, `assignee_id` (ids de `GET /products`, `/ticket-categories` e `/users`), `external_id` (o id do ticket no seu sistema, único por token) e `ai_triage` (objeto livre, até 16 KB).
+- `201` aberto; `200` já existia (o ticket como está). O ticket novo vira o foco da conversa.
+- A resposta traz `ETag: W/"<version>"`. Guarde-o para alterar o ticket depois.
+- Repetir com a mesma `Idempotency-Key` devolve a mesma resposta, com `Idempotent-Replayed: true` e sem `ETag` (a versão está em `data.version`).
+
+### 2.5 Atualizar o ticket
+
+Toda alteração num ticket existente exige `If-Match` com o `ETag` mais recente.
+
+Alterar campos:
+
+```bash
+curl -sS -X PATCH "$BASE/api/v1/tickets/<ref>" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: W/"3"' \
+  -d '{ "priority": "critica", "description": "Atinge todas as filiais." }'
+```
+
+Mudar o status:
+
+```bash
+curl -sS -X POST "$BASE/api/v1/tickets/<ref>/transitions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: W/"4"' \
+  -d '{ "to": "aguardando_cliente" }'
+```
+
+Comentário interno (nunca vai ao cliente):
+
+```bash
+curl -sS -X POST "$BASE/api/v1/tickets/<ref>/comments" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{ "body": "Cliente informou o número da nota: 1234." }'
+```
+
+Anexo (só o campo `file`, até 50 MB):
+
+```bash
+curl -sS -X POST "$BASE/api/v1/tickets/<ref>/attachments" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -F "file=@print-do-erro.png"
+```
+
+- `<ref>` é o `id` do ticket ou o protocolo (`number`), só o número.
+- `PATCH` altera `title`, `description`, `priority`, `product_id`, `category_id` e `customer_id`. Ausente não mexe; `null` tira.
+- `GET /ticket-statuses` mostra a matriz. Destino fora dela: `409 invalid_transition`, com `allowed` e `current`. Cancelar exige `reason`.
+- A resposta de `PATCH`, `transitions` e `assign` é `{ "ticket": {...}, "changed": true|false }` (mais `from` e `to` na transição), com o `ETag` novo.
+- `412 version_conflict`: alguém alterou o ticket. Leia de novo (`GET /tickets/<ref>`) e decida se ainda faz sentido repetir.
+- O mesmo valor de novo é no-op: `200` com `changed: false`, mesmo com versão velha.
+
+### 2.6 Escolher o ticket em foco
+
+A conversa tem um ticket em foco: é ele que recebe as mensagens novas. Abrir um ticket já o põe em foco. Para trocar:
+
+```bash
+curl -sS -X PUT "$BASE/api/v1/conversations/<conversation_id>/active-ticket" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ticket_id": "<id do ticket>" }'
+```
+
+- `ticket_id: null` tira o foco.
+- A resposta é `{ "conversation_id", "active_ticket_id", "changed" }`, e não a conversa.
+- Ticket de outra conversa, ou que não existe: `422 ticket_not_in_conversation`. Ticket encerrado: `409 ticket_terminal`.
+
+### 2.7 Responder ao cliente
+
+Sempre pelo CRM, nunca direto no provedor de WhatsApp:
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/messages" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{ "text": "Olá! Já registrei o seu chamado. Pode me mandar um print do erro?" }'
+```
+
+- Só texto, até 4.096 unidades. O CRM não acrescenta assinatura nem altera o texto, só tira o espaço das pontas. Se a empresa quer o nome da IA na mensagem, o agente o escreve.
+- Evite `{{...}}` no texto: o provedor do WhatsApp troca marcadores como `{{name}}` antes de entregar, e o cliente receberia um texto diferente do gravado.
+- `201`: a mensagem saiu, gravada com `sender_type: "ai"` e o token como autor.
+- `200`: esta `Idempotency-Key` já tinha enviado esta mensagem. Nada foi reenviado.
+- `409 conversation_not_owned_by_ai`: a conversa não está mais com a IA (`error.current` diz o status). O CRM confere isso na hora do envio, então um analista que assumiu um segundo antes já barra a mensagem.
+- `409 channel_unavailable`: a conversa não tem canal de WhatsApp ativo.
+- `429 rate_limited`: além do limite do token, há um teto de 20 envios por minuto e 100 por hora por conversa.
+- `502 whatsapp_unavailable`: a mensagem **não saiu**. Repita com a **mesma** chave, que tenta de novo sem duplicar.
+- `504 delivery_unknown`: o WhatsApp não confirmou, e a mensagem **pode ter saído**. Repita com a **mesma** chave para saber o desfecho: nada é reenviado enquanto não se souber. Uma chave nova pode fazer o cliente receber em dobro.
+
+### 2.8 Passar para um humano (handoff)
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/handoff" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{
+    "reason": "Cliente pediu para falar com um analista.",
+    "summary": "Erro na emissão de nota fiscal desde hoje cedo. Já enviou print.",
+    "ticket_id": "<id do ticket>"
+  }'
+```
+
+- `reason` é obrigatório (até 500). Vai para a trilha do ticket e para uma nota interna no chat.
+- `summary` é opcional (até 4.000). Vai só para a nota interna, que o analista lê ao assumir e que nunca vai ao cliente.
+- `ticket_id` é opcional. Sem ele, vale o ticket em foco.
+- A conversa passa de `bot` para `human`. Se estava arquivada, volta para a caixa de entrada.
+- A resposta é `{ "conversation_id", "status": "human", "changed", "ticket_id", "note_id" }`, e não a conversa.
+- A volta para `bot` é só pela tela.
+
+**Despeça-se do cliente antes do handoff.** Depois dele a conversa é `human`, e todo envio da IA responde `409 conversation_not_owned_by_ai`. A ordem certa é: enviar a mensagem de despedida ("vou transferir você para um analista"), conferir o `201`, e só então chamar o handoff.
+
+## 3. Regras que pegam quem começa
+
+- **`changed: false` no handoff não traz o ticket.** Se a conversa já estava com um humano, o handoff responde `200` com `changed: false`, não grava nada, e `ticket_id` e `note_id` vêm `null`. Não leia o ticket de lá: use o `ticket_id` que você enviou, ou `GET /conversations/{id}` para ver o foco.
+- **Ticket errado é erro mesmo com a conversa já humana.** Um `ticket_id` de outra conversa (`422`) ou encerrado (`409`) falha no handoff mesmo quando nada mudaria.
+- **Conversa encerrada não aceita handoff:** `409 conversation_not_owned_by_ai`. Quem a devolve à IA é uma mensagem nova do cliente.
+- **Uma `Idempotency-Key` nova a cada pedido.** A mesma chave repete a resposta guardada por 24 horas, inclusive um `changed: false`. Uma chave derivada da conversa (por exemplo, `handoff-<conversation_id>`) faria o segundo handoff do dia, depois de a conversa voltar para `bot`, receber a resposta antiga e não fazer nada.
+- **A IA não lê o que é só do time.** O preset não tem `comments:read`: comentários internos não aparecem na timeline do ticket, e notas internas não aparecem nas mensagens da conversa nem no `/context`. É de propósito, para a IA não repetir ao cliente o que o time escreveu para o time. O motivo do handoff fica visível na trilha do ticket; o resumo, não.
+- **Mídia.** A API não entrega mídia de mensagem por URL; ela traz só `media_mime_type`. A mídia da mensagem que acabou de chegar vem no `media_url` do repasse, válido por 10 minutos: baixe ao receber. `media_url` nulo numa mensagem de mídia quer dizer que o CRM não tem o arquivo; peça o texto ao cliente ou passe para um analista.
+- **Limites de texto contam unidades UTF-16,** e não caracteres. Um emoji comum conta 2. Um motivo de handoff com 251 emojis passa de 500 e é recusado. Os limites:
+
+  | Campo | Limite |
+  |---|---|
+  | `title` do ticket | 3 a 200 |
+  | `description` do ticket | até 10.000 |
+  | `reason` de transição e de handoff | até 500 |
+  | `summary` do handoff | até 4.000 |
+  | `body` do comentário | 1 a 5.000 |
+  | `text` da mensagem | 1 a 4.096 |
+  | `external_id` do ticket | 1 a 200 |
+  | `ai_triage` | 16 KB, medidos como o banco guarda o JSON |
+
+  Texto com o caractere NUL, ou com metade de um par UTF-16, é recusado.
+- **UUID em qualquer caixa.** A API aceita UUID em maiúsculas ou minúsculas e sempre devolve em minúsculas. O `pattern` de UUID do OpenAPI só tem minúsculas: se você gera validação a partir dele, normalize para minúsculas antes de enviar.
+- **Campos novos podem aparecer.** As respostas da v1 só mudam de forma aditiva, mas os schemas de resposta do OpenAPI saem com `additionalProperties: false`. Não valide a resposta contra eles em modo estrito, ou o agente vai recusar uma resposta válida no dia em que um campo novo entrar. Ignore o que não conhece.
+- **Anexo a partir de .NET.** O CRM lê o multipart pelo parser do Node, que exige, no `Content-Disposition` da parte, `name="file"` e `filename="..."` entre aspas, sem `filename*`. O `HttpClient` do .NET, no padrão, manda sem aspas e acrescenta `filename*`, e recebe `400 invalid_multipart`. Monte o cabeçalho da parte à mão, com as aspas e sem `filename*`. curl, `requests` do Python e n8n já mandam no formato certo.
+- **O telefone do contato é imutável.** `PATCH /contacts/{id}` com `phone` é `422 phone_immutable`.
+
+## 4. Boas práticas
+
+- **`Idempotency-Key` sempre** que a rota pedir, gerada uma vez por operação (um UUID novo) e guardada até a resposta definitiva. Numa falha de rede, repita com a **mesma** chave.
+- **Trate `429` e `503` com espera.** Os dois trazem `Retry-After` em segundos: espere pelo menos isso antes de repetir. Não repita em laço apertado.
+- **Logue o `X-Request-Id`** de toda resposta. É por ele que o suporte acha a chamada no registro do CRM.
+- **Decida pelo `error.code`**, nunca pela `error.message`.
+- **Não confie em campo não documentado.** O que não está no OpenAPI pode mudar sem aviso.
+- **Releia antes de alterar** quando o `ETag` guardado for antigo. Num `412`, leia de novo em vez de forçar.
+- **Não guarde URL assinada** (mídia do repasse, link de anexo). Peça outra quando precisar.
+- **Não repita ao cliente** o conteúdo de comentário ou nota interna, mesmo que um token com mais escopos os leia.
+
+## 5. Avisos fora da API v1
+
+Dois avisos antigos do CRM ao agente ainda existem, configurados por variável de ambiente do servidor, e saem na Fase 6:
+
+- **Assumir e liberar:** quando um analista assume a conversa (ou a IA faz o handoff), e quando a conversa volta para `bot`, o CRM pode fazer um `POST` com `{ "phone", "assumed" }` num endereço definido em `TAKEOVER_AGENT_URL`. Sem a variável, nada sai. O agente não deve depender dele: `conversation_status` no repasse e `ai_may_reply` no `/context` já dizem quem conduz.
+- **Assinatura da IA:** a configuração "assinar mensagens da IA" da tela é enviada ao agente por um aviso próprio ([`CONTRATO-ASSINATURA-BOT.md`](CONTRATO-ASSINATURA-BOT.md), parcialmente desatualizado). Quem aplica a assinatura no texto é o agente.
+
+## 6. Roteiro de verificação local (Fase 5)
+
+Este roteiro cobre o "pronto quando" da Fase 5 ([`PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md), seção Verificação, "Roteiro curl da API v1"). Ele roda contra o app **local** e não toca em nada real: o WhatsApp é um servidor de mentira em `127.0.0.1`.
+
+### 6.1 Preparação
+
+Pré-requisitos:
+
+- o banco local de pé, com as migrations aplicadas: `docker compose up -d db rest realtime storage gateway` e `./scripts/db-local-apply.sh` (ver o topo do `docker-compose.yml`);
+- o app rodando **na máquina**, em modo de desenvolvimento: `pnpm dev`, em `http://localhost:3000`;
+- um administrador no banco local;
+- a integração local do WhatsApp (a de [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md) §9.2), com token e segredo de webhook no cofre do banco local;
+- `curl`, `jq`, `python3` e `uuidgen`, e os comandos rodados da raiz do repositório.
+
+Dois motivos para o `pnpm dev` na máquina, e não o serviço `web` do compose: só em desenvolvimento o CRM aceita um provedor em `127.0.0.1`; e, de dentro do container, `127.0.0.1` seria o próprio container, e não o provedor de mentira.
+
+**a) Variáveis do roteiro**
+
+```bash
+BASE=http://localhost:3000
+PHONE=5527999990000            # número fictício
+JAR=$(mktemp)                  # cookies da sessão de administrador
+ADMIN_EMAIL='<e-mail do admin local>'
+ADMIN_SENHA='<senha do admin local>'
+PSQL="docker compose exec -T db psql -U postgres -d postgres -At"
+```
+
+**b) Provedor de WhatsApp de mentira**, num terminal à parte. Ele responde `200` a qualquer `POST`, com um id novo por envio:
+
+```bash
+python3 - <<'EOF'
+import json, uuid
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Falso(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        print("provedor recebeu:", self.path, flush=True)
+        corpo = json.dumps({"id": str(uuid.uuid4()), "messageid": "FALSO" + uuid.uuid4().hex[:16].upper()}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(corpo)))
+        self.end_headers()
+        self.wfile.write(corpo)
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("127.0.0.1", 4010), Falso).serve_forever()
+EOF
+```
+
+**c) Apontar a integração local para ele.** Confira antes que ela aponta para `https://demo.invalid` ([`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md) §9.2); se apontar para outro lugar, pare:
+
+```bash
+$PSQL -c "select config->>'apiUrl' from public.chat_integrations where provider = 'uazapi';"
+$PSQL -c "update public.chat_integrations set config = jsonb_set(config, '{apiUrl}', '\"http://127.0.0.1:4010\"') where provider = 'uazapi';"
+```
+
+Deixe vazio o endereço do agente em Integrações › Agente de IA, ou aponte-o para um receptor de mentira em `127.0.0.1`.
+
+**d) Sessão de administrador e tokens.** Um token de IA (preset), um sem escopo e um que vence em 2 minutos:
+
+```bash
+curl -sS -c "$JAR" -X POST "$BASE/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_SENHA\"}" | jq .ok
+
+criar_token() {
+  curl -sS -b "$JAR" -X POST "$BASE/api/api-tokens" -H "Content-Type: application/json" -d "$1"
+}
+
+IA=$(criar_token '{"name":"roteiro-ia","actor_type":"ai","rate_limit_per_min":300,"scopes":["context:read","contacts:read","contacts:write","customers:read","catalog:read","tickets:read","tickets:write","comments:write","attachments:write","conversations:read","messages:send","conversations:handoff"]}')
+TOKEN=$(echo "$IA" | jq -r .token);  TOKEN_ID=$(echo "$IA" | jq -r .item.id)
+
+SEM=$(criar_token '{"name":"roteiro-sem-escopo"}')
+TOKEN_SEM=$(echo "$SEM" | jq -r .token);  TOKEN_SEM_ID=$(echo "$SEM" | jq -r .item.id)
+
+VENCE=$(criar_token "{\"name\":\"roteiro-vence\",\"scopes\":[\"context:read\"],\"expires_at\":\"$(date -u -d '+2 minutes' +%Y-%m-%dT%H:%M:%SZ)\"}")
+TOKEN_VENCE=$(echo "$VENCE" | jq -r .token);  TOKEN_VENCE_ID=$(echo "$VENCE" | jq -r .item.id)
+```
+
+Saída esperada: `true` no login, e os três tokens começando por `crmsuporte_`.
+
+**e) Uma mensagem do cliente.** Simula o webhook do provedor, com o segredo da integração local:
+
+```bash
+SEGREDO=$($PSQL -c "select public.get_chat_integration_secret(id, 'webhook_secret') from public.chat_integrations where provider = 'uazapi';")
+
+curl -sS -X POST "$BASE/api/chat/webhook/uazapi?s=$SEGREDO" \
+  -H "Content-Type: application/json" \
+  -d "{\"EventType\":\"messages\",\"chat\":{\"name\":\"Cliente Teste\"},\"message\":{\"messageid\":\"ROTEIRO$(date +%s)\",\"chatid\":\"$PHONE@s.whatsapp.net\",\"sender_pn\":\"$PHONE@s.whatsapp.net\",\"senderName\":\"Cliente Teste\",\"fromMe\":false,\"isGroup\":false,\"messageType\":\"Conversation\",\"text\":\"O sistema voltou a travar\",\"messageTimestamp\":$(date +%s)}}"
+```
+
+Saída esperada: `{"ok":true}`. A conversa aparece no chat do CRM. Se `SEGREDO` vier vazio, a resposta é `401`: a integração local não tem segredo de webhook. Grave um só para o roteiro e repita:
+
+```bash
+$PSQL -c "select public.set_chat_integration_secret(id, 'webhook_secret', replace(gen_random_uuid()::text, '-', '')) from public.chat_integrations where provider = 'uazapi';"
+```
+
+### 6.2 Os oito passos
+
+**Passo 1. Contexto pelo telefone.**
+
+```bash
+curl -sS "$BASE/api/v1/context?phone=$PHONE" -H "Authorization: Bearer $TOKEN" \
+  | jq '{ok, contato: .data.contact.normalized_phone, conversa: .data.conversation.id, status: .data.conversation.status, ai_may_reply: .data.ai_may_reply}'
+CONV=$(curl -sS "$BASE/api/v1/context?phone=$PHONE" -H "Authorization: Bearer $TOKEN" | jq -r .data.conversation.id)
+```
+
+Esperado: `200`, `ok: true`, o telefone sem o 55 (`27999990000`), um id de conversa, `status: "bot"` e `ai_may_reply: true`.
+
+**Passo 2. Abrir ticket com `Idempotency-Key`; repetir não cria outro.**
+
+```bash
+CHAVE=$(uuidgen)
+abrir() {
+  curl -sS -D - -X POST "$BASE/api/v1/tickets" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $CHAVE" \
+    -d "{\"conversation_id\":\"$CONV\",\"title\":\"Sistema travando\",\"priority\":\"alta\"}"
+}
+abrir                      # 1ª vez
+abrir                      # repetição
+TICKET=$(curl -sS "$BASE/api/v1/tickets?conversation_id=$CONV" -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].id')
+curl -sS "$BASE/api/v1/tickets?conversation_id=$CONV" -H "Authorization: Bearer $TOKEN" | jq '.data | length'
+```
+
+Esperado:
+
+- 1ª chamada: `HTTP/1.1 201`, cabeçalho `ETag: W/"<n>"`, `data.status: "novo"`, `data.source: "ai"`;
+- repetição: `HTTP/1.1 201`, cabeçalho `Idempotent-Replayed: true`, o mesmo `data.id`, sem `ETag`;
+- a contagem final: `1`.
+
+**Passo 3. Transição inválida.**
+
+```bash
+ETAG=$(curl -sS -D - -o /dev/null "$BASE/api/v1/tickets/$TICKET" -H "Authorization: Bearer $TOKEN" | grep -i '^etag:' | cut -d' ' -f2- | tr -d '\r')
+curl -sS -X POST "$BASE/api/v1/tickets/$TICKET/transitions" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -H "If-Match: $ETAG" \
+  -d '{"to":"resolvido"}' | jq .error
+```
+
+Esperado: `409`, `code: "invalid_transition"`, `current: "novo"` e `allowed` com `em_triagem`, `em_atendimento`, `aguardando_cliente`, `aguardando_interno` e `cancelado`.
+
+**Passo 4. A IA responde; a mensagem fica como "IA".**
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/$CONV/messages" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"text":"Olá! Registrei o seu chamado e já estou verificando."}' \
+  | jq '{ok, sender_type: .data.sender_type, autor: .data.sent_by_token_id, entrega: .data.delivery_status}'
+echo "esperado como autor: $TOKEN_ID"
+```
+
+Esperado: `201`, `sender_type: "ai"`, `autor` igual ao `TOKEN_ID`, `entrega: "sent"`. O terminal do provedor de mentira mostra `provedor recebeu: /send/text`. No chat do CRM a mensagem aparece como da IA.
+
+**Passo 5. Handoff.**
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/$CONV/handoff" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"reason":"Cliente pediu um analista.","summary":"Sistema travando desde hoje cedo."}' | jq .data
+```
+
+Esperado: `200`, `status: "human"`, `changed: true`, `ticket_id` igual ao `TICKET` (é o ticket em foco) e um `note_id`. No chat, a conversa passa para "humano" e a nota interna aparece.
+
+**Passo 6. Com a conversa em `human`, o envio da IA é recusado.**
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/$CONV/messages" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"text":"Esta mensagem não pode sair."}' | jq .error
+curl -sS "$BASE/api/v1/context?phone=$PHONE" -H "Authorization: Bearer $TOKEN" | jq .data.ai_may_reply
+```
+
+Esperado: `409`, `code: "conversation_not_owned_by_ai"`, `current: "human"`. O provedor de mentira não recebe nada. O `/context` responde `ai_may_reply: false`.
+
+**Passo 7. Resolver o ticket.** A matriz não vai de `novo` direto a `resolvido`: passa por `em_atendimento`.
+
+```bash
+mover() {
+  local etag
+  etag=$(curl -sS -D - -o /dev/null "$BASE/api/v1/tickets/$TICKET" -H "Authorization: Bearer $TOKEN" | grep -i '^etag:' | cut -d' ' -f2- | tr -d '\r')
+  curl -sS -X POST "$BASE/api/v1/tickets/$TICKET/transitions" \
+    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -H "If-Match: $etag" \
+    -d "{\"to\":\"$1\"}" | jq '{ok, from: .data.from, to: .data.to, changed: .data.changed, resolved_at: .data.ticket.resolved_at}'
+}
+mover em_atendimento
+mover resolvido
+```
+
+Esperado: `200` nas duas; `novo → em_atendimento` e depois `em_atendimento → resolvido`, `changed: true`, e `resolved_at` preenchido na segunda.
+
+**Passo 8. Falta de escopo e token vencido.**
+
+```bash
+curl -sS "$BASE/api/v1/me" -H "Authorization: Bearer $TOKEN_SEM" | jq .data.token.scopes
+curl -sS "$BASE/api/v1/context?phone=$PHONE" -H "Authorization: Bearer $TOKEN_SEM" | jq .error
+# o token "roteiro-vence" foi criado com 2 minutos de validade; espere passar, se preciso
+curl -sS "$BASE/api/v1/me" -H "Authorization: Bearer $TOKEN_VENCE" | jq .error
+```
+
+Esperado:
+
+- `/me` com o token sem escopo: `200` e `[]`;
+- `/context` com ele: `403`, `code: "insufficient_scope"`, `required: ["context:read"]`;
+- `/me` com o token vencido: `401`, `code: "token_expired"`.
+
+### 6.3 Limpeza
+
+```bash
+for id in "$TOKEN_ID" "$TOKEN_SEM_ID" "$TOKEN_VENCE_ID"; do
+  curl -sS -b "$JAR" -X DELETE "$BASE/api/api-tokens/$id" | jq .ok
+done
+$PSQL -c "update public.chat_integrations set config = jsonb_set(config, '{apiUrl}', '\"https://demo.invalid\"') where provider = 'uazapi';"
+rm -f "$JAR"
+```
+
+Depois, pare o provedor de mentira. O ticket e a conversa de teste ficam no banco local: ticket não se apaga, e conversa com ticket também não.
+
+Anote no `PROGRESS.md` a saída de cada passo, como ela saiu.
