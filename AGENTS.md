@@ -210,7 +210,7 @@ src/lib/
   auth/                  # session, route-guard, require-dashboard-session
   supabase/              # server (service role), admin, client (anon/Realtime), types
   api/v1/                # withApi, escopos, envelope de erro, idempotência, OpenAPI
-  security/              # api-token, hmac, rate-limit, verify-webhook
+  security/              # api-token, hmac, rate-limit, ssrf-guard, verify-webhook
   formatters/            # phone, date, money, numbers, percentage, clean-name
 src/config/              # navigation.ts (menu + allowedRoles), site.ts (marca)
 supabase/migrations/     # fonte da verdade do schema

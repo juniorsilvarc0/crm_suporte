@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import { recordIntegrationLog } from "@/features/integrations/queries/record-integration-log";
 import {
   buildRelayFields,

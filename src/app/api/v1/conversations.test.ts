@@ -21,7 +21,7 @@ import { PUT as putActiveTicket } from "@/app/api/v1/conversations/[id]/active-t
 import { POST as postHandoff } from "@/app/api/v1/conversations/[id]/handoff/route";
 import { GET as getMessages, POST as postMessage } from "@/app/api/v1/conversations/[id]/messages/route";
 import { GET as getConversation } from "@/app/api/v1/conversations/[id]/route";
-import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import { olderThanFilter } from "@/features/chat/lib/messages-page";
 import { UazapiHttpError } from "@/features/chat/lib/senders/uazapi";
 import { itemOf, pageOf } from "@/lib/api/v1/cadastros";

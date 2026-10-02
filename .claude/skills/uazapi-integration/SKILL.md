@@ -39,7 +39,7 @@ OUTBOUND (nós → WhatsApp)
 | Camada | Arquivo | Papel |
 |---|---|---|
 | Conexão | `connection/uazapi.ts` | `connectUazapi`(QR) · `getUazapiStatus` · `registerUazapiWebhook` · **`disconnectUazapi`** |
-| Conexão | `connection/ssrf-guard.ts` | `assertSafeUrl`/`safeBaseUrl` — bloqueia URL interna/ofuscada |
+| Segurança | `src/lib/security/ssrf-guard.ts` | `assertSafeUrl`/`safeBaseUrl` — bloqueia URL interna/ofuscada (apiUrl, mídia e URL do agente) |
 | Conexão | `connection/integration.ts` | `getUazapiIntegration` / `getIntegrationCredentials` — a linha uazapi com o token lido do **Vault**; `get/setChatIntegrationSecret` |
 | Envio | `senders/uazapi.ts` | `sendUazapiText` · `sendUazapiMedia` · `sendUazapiAudio` · `toUazapiNumber` · **`deleteUazapiMessage`** · **`editUazapiMessage`** · `UazapiHttpError` · `uazapiSendDefinitelyFailed` (a falha prova que NÃO saiu?) |
 | Envio | `lib/send-outbound.ts` | `sendOutboundText` — o envio de TEXTO, único para a tela e para a API v1: `clientId`, linha `pending`, provedor, resultado. Muda quem assina e o que se faz quando o provedor não confirma |
@@ -220,7 +220,7 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 ## 9. Segurança
 
 - **Secret do webhook via `?s=`** (a uazapi não manda headers custom): gerado por integração no `persist`, guardado no Vault, comparado em tempo constante (`safeEqual`) **antes** de ler o corpo. Sem integração, sem segredo ou errado → a mesma 401 (não revela se há instância).
-- **SSRF guard** (`assertSafeUrl`) em toda URL externa (apiUrl, URL de mídia): exige http(s), bloqueia loopback/privados (inclui IPv4-mapped IPv6 `::ffff:` e decimal/hex ofuscado); produção exige HTTPS. Download de mídia: `redirect:"error"` + `token` só p/ o mesmo host da instância (não vaza a credencial).
+- **SSRF guard** (`assertSafeUrl`, em `src/lib/security/ssrf-guard.ts`) em toda URL externa (apiUrl, URL de mídia, URL do agente): exige http(s); produção exige HTTPS. Recusa, pelo host literal: loopback, faixas privadas e reservadas (CGNAT, link-local com o metadata da cloud, multicast), as formas de IPv6 que levam a elas (mapeado, compatível, NAT64, 6to4, unique-local, link-local), os nomes que só existem em rede interna (`localhost`, `.local`, `.internal`, `.home.arpa`, com ou sem ponto final) e, em produção, nome de um rótulo só (`db`, `gateway`: resolvem na rede do Docker). As faixas vêm do `BlockList` do Node, e as grafias de IP (decimal, hex, octal) chegam normalizadas pelo `new URL`. **Não resolve DNS:** nome público que aponte para endereço interno passa. Em dev, `localhost` e `127.0.0.1` são liberados. Download de mídia: `redirect:"error"` + `token` só p/ o mesmo host da instância (não vaza a credencial).
 - Conexão (`/api/connection/*`) sob sessão; webhook público com secret próprio.
 - **Realtime:** `anon` não lê nada; `authenticated` lê só as tabelas de chat, com policy por `app_role`. O navegador assina **só por `subscribeAuthenticated`** — assinar antes de o token chegar grava a assinatura como `anon` e todo evento vem vazio com 401.
 - **Mídia:** bucket privado; `/api/chat/media/<id>` confere a sessão e redireciona para URL assinada curta. A transcrição baixa pelo `service_role`.

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { assertSafeUrl, UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { assertSafeUrl, UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import {
   createSupabaseServerClient,
   hasSupabaseServerEnv,

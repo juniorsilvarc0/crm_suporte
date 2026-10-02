@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: clientMock,
 }));
 
-import { UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import { assertRelayUrl, getRelayConfig, readRelayUrl } from "@/features/settings/lib/get-relay-url";
 
 const URL_OK = "https://agente.exemplo.com/webhook";

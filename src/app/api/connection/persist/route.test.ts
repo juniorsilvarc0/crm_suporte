@@ -29,7 +29,7 @@ vi.mock("@/lib/auth/require-dashboard-session", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: adminClientMock,
 }));
-vi.mock("@/features/chat/lib/connection/ssrf-guard", () => ({
+vi.mock("@/lib/security/ssrf-guard", () => ({
   safeBaseUrl: (u: string) => u.replace(/\/+$/, ""),
 }));
 vi.mock("@/features/chat/lib/connection/uazapi", () => ({

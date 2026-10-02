@@ -237,7 +237,7 @@ Uma mensagem que não chegou ao agente continua no CRM: `GET /api/v1/conversatio
 | Situação | O que acontece |
 |---|---|
 | Nenhum endereço configurado | O CRM não repassa nada. |
-| Endereço recusado: sem HTTPS em produção, IP de rede interna ou `localhost`, ou com usuário e senha | Nada é enviado, e o motivo fica no registro e na tela de configuração. |
+| Endereço recusado: sem HTTPS em produção, endereço de rede interna (IP privado ou reservado, `localhost`, nome sem domínio), ou com usuário e senha | Nada é enviado, e o motivo fica no registro e na tela de configuração. |
 | O CRM não consegue ler os dados do envelope, ou a chave de assinatura | O CRM tenta de novo uma vez, 1 segundo depois. Se falhar de novo, nada é enviado e fica no registro. Ele não manda um envelope pela metade, nem sem assinatura quando não sabe se há chave. |
 | O agente não responde em 10 s, ou responde fora de `2xx` | Fica no registro como erro, com o status e o tempo. O CRM não envia de novo. |
 

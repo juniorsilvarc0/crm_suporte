@@ -16,7 +16,7 @@
 // status (messages_update) e p/ deduplicar o echo `fromMe` no webhook.
 
 import { siteConfig } from "@/config/site";
-import { safeBaseUrl, UnsafeUrlError } from "@/features/chat/lib/connection/ssrf-guard";
+import { safeBaseUrl, UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import {
   buildMessageLinkPreview,
   type MessageLinkPreview,
