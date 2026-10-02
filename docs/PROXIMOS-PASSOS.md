@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #38. Nenhum PR de código aberto. |
+| `main` | até o PR #39. Aberto: PR #40 (o 12b, §4). |
 | Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4198 testes em 220 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 12b da Fase 5, **pela metade**, na branch `feat/conexao-registros-e-saude` (§4). |
+| Trabalho em curso | PR 12b da Fase 5 **pronto**, no PR #40, à espera do merge. Depois, o PR 13 (§5.1). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -42,48 +42,19 @@ Correções fora do plano que já entraram: testes de tela instáveis (#16, #32)
 
 O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e na descrição do próprio PR no GitHub, na seção "Decisões que tomei e você deveria revisar".
 
-## 4. Próximo passo: terminar o PR 12b
+## 4. PR 12b: pronto, no PR #40
 
-**O que é:** o back das abas Registros e Saúde da tela de Conexão ([plano da Fase 5](PLANO-FASE-5.md), PR 12). Só leitura, só administrador, sem migration. A tela vem no PR 13.
+**O que é:** o back das abas Registros e Saúde da tela de Conexão ([plano da Fase 5](PLANO-FASE-5.md), PR 12): `GET /api/connection/logs` e `GET /api/connection/health`. Só leitura, só administrador, sem migration. A tela vem no PR 13.
 
-**Onde está:** branch `feat/conexao-registros-e-saude`, um commit `wip` em cima da `main`. **Não está pronto para merge:** 41 testes falham e o `typecheck` acusa dois arquivos de teste.
+**Como terminou (2026-10-02):** o código da branch `feat/conexao-registros-e-saude` entrou como estava. Os dois testes que falhavam foram reescritos de acordo com o código, e os docs do item 5 da lista antiga foram atualizados. A branch `wip` pode ser apagada depois do merge do #40.
 
-### 4.1 O que já está escrito
+**Não feito:** a conferência por HTTP contra o stack local (item 4 da lista antiga). O ambiente em que o PR foi terminado não tinha Docker. Vale fazer antes de publicar, com o roteiro de §9.2:
+- filtros e paginação, inclusive a segunda página com filtros e linhas de mesmo `created_at` atravessando o corte;
+- `pedido` com caractere inválido é ignorado (200), e cursor inventado dá 400;
+- os números da Saúde batem com a conta feita em SQL;
+- dois pedidos seguidos à Saúde trazem o mesmo `generatedAt`.
 
-| Arquivo | O que faz | Teste |
-|---|---|---|
-| `src/lib/http/search-params.ts` | `firstParam` e `searchParamsRecord` (parâmetro repetido: vale o primeiro) | passa |
-| `src/features/integrations/types.ts` | tipos dos registros e da Saúde; `INTEGRATION_LOG_PROVIDERS`, `INTEGRATION_LOG_ACTIONS`, `INTEGRATION_LOG_PERIODS` | — |
-| `src/features/integrations/lib/log-filters.ts` | **neutro** (serve à página, à rota e ao componente client): `parseIntegrationLogFilters`, `integrationLogSearch`, `DEFAULT_INTEGRATION_LOG_FILTERS` | passa; inclui o teste que confere a lista de ações contra quem grava |
-| `src/features/integrations/queries/get-integration-logs.ts` | `getIntegrationLogs(filters, cursor, now)` | passa |
-| `src/lib/api/v1/cursor.ts` | par novo `encodeLogCursor` / `decodeLogCursor` (versão `l1`) | passa |
-| `src/features/integrations/queries/get-integration-health.ts` | `readIntegrationHealth(now)` e `getIntegrationHealth(now)`, que guarda o resultado por 10 s | **falha: teste no formato antigo** |
-| `src/app/api/connection/logs/route.ts` | `GET`, só admin | **falha: teste no formato antigo** |
-| `src/app/api/connection/health/route.ts` | `GET`, só admin | passa |
-
-### 4.2 O que falta
-
-1. **Reescrever `get-integration-health.test.ts`** para o código atual:
-   - os testes da lógica chamam `readIntegrationHealth(NOW)`. `getIntegrationHealth` guarda estado no módulo entre um teste e outro;
-   - WhatsApp: `unavailable` agora leva `cause` (`crm` = o CRM não leu a integração; `provider` = o provedor não respondeu) e `instance`;
-   - `relay` ganhou `reason`; sem o Supabase configurado, `config` é `unreadable`;
-   - última mensagem recebida, em um passo só: nenhuma conversa; menos de 50 conversas (exato); 50 conversas e mensagem achada a partir da atividade da última (exato); 50 e nada achado (segunda consulta, `exact: false`); erro em cada leitura;
-   - as datas do último repasse também têm a janela de 24 h;
-   - o log da falha leva código, mensagem e status HTTP;
-   - cada contagem que falha (três da API, quatro leituras do repasse) deixa só a parte dela `unavailable`;
-   - parte que **lança** não derruba as outras;
-   - o resultado guardado: dois pedidos em 10 s fazem uma leitura só; depois de 10 s lê de novo; pedidos simultâneos dividem a mesma leitura.
-2. **Atualizar `src/app/api/connection/logs/route.test.ts`:** as chaves dos filtros são os nomes da URL; `getIntegrationLogs(filters, cursor)` recebe o cursor à parte; a resposta devolve `filters`; cursor vazio é "sem cursor"; cursor inválido é 400.
-3. **Rodar** `pnpm typecheck`, `pnpm lint`, `pnpm test` e `pnpm build`.
-4. **Conferir por HTTP contra o stack local** (§9.2), com linhas de teste em `integration_logs` criadas e apagadas pelo próprio roteiro:
-   - filtros e paginação, inclusive a segunda página com filtros e linhas de mesmo `created_at` atravessando o corte da página;
-   - `pedido` com caractere inválido é ignorado (200), cursor inventado é 400;
-   - os números da Saúde batem com a conta feita em SQL;
-   - dois pedidos seguidos à Saúde trazem o mesmo `generatedAt`.
-5. **Documentação:** `docs/API.md` (§Conexão: as duas rotas), `docs/PLANO-FASE-5.md` (12b feito), `PRD.md`, a skill `uazapi-integration` (tabela de rotas e o item "Registro"), o mapa do `AGENTS.md` §4.1 (`src/lib/http/`, saúde em `integrations`), `PROGRESS.md` e este arquivo.
-6. **Commits por camada** antes do PR: o commit `wip` não entra como está. Caminho simples: branch nova a partir da `main`, trazer os arquivos (`git checkout origin/feat/conexao-registros-e-saude -- src`) e commitar por camada.
-
-### 4.3 Decisões já tomadas (não refazer)
+### 4.1 Decisões tomadas (não refazer)
 
 - **Leitura que falha não vira vazio nem zero.** A lista devolve `unavailable` (a rota responde 500) e cada parte da Saúde tem o seu `unavailable`. É de propósito o contrário do padrão das outras listagens: numa tela de diagnóstico, "nenhum registro" com o banco fora do ar é mentira.
 - **As chaves do filtro são os nomes da URL** (`integracao`, `status`, `acao`, `token`, `pedido`, `periodo`), como nas listas de tickets, clientes e contatos. O cursor não é filtro.
@@ -97,7 +68,7 @@ O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e n
 - **Última mensagem recebida, sem migration:** procura nas 50 conversas mais recentes. É o horário da mensagem, informado pelo provedor, e não o da chegada. Mensagem apagada e conversa limpa não contam. `exact: false` quer dizer piso.
 - **A Saúde guarda o resultado por 10 s por processo.** A rota é GET, e GET fica fora da trava de origem: sem isso, uma aba em laço chamaria o provedor em laço.
 
-### 4.4 Limites conhecidos, para dizer no PR
+### 4.2 Limites conhecidos
 
 - Filtro raro (`status=error` com tudo saudável) lê o período inteiro: `status` e `action` não têm índice. Um índice parcial resolve, e pede migration.
 - A última mensagem recebida teria uma consulta só, e exata, com um índice em `chat_messages (created_at) where direction = 'inbound'`. Também é migration.

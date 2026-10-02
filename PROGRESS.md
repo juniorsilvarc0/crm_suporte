@@ -27,6 +27,44 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 12b: registros de integração e Saúde (back), terminado
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Terminar o PR 12b que ficou pela metade na branch `feat/conexao-registros-e-saude`: as rotas de leitura dos registros de integração e da Saúde, para as abas do PR 13.
+**Arquivos alterados:**
+- código, vindo da branch `wip` sem mudança: `src/app/api/connection/{logs,health}/route.ts`, `src/features/integrations/{types.ts,lib/log-filters.ts}`, `src/features/integrations/queries/get-integration-{logs,health}.ts`, `src/lib/api/v1/cursor.ts` (`encodeLogCursor`/`decodeLogCursor`), `src/lib/http/search-params.ts`, e os testes de cada um;
+- testes reescritos: `get-integration-health.test.ts` e `api/connection/logs/route.test.ts`; um import sem uso a menos em `get-integration-logs.test.ts`;
+- docs: `docs/API.md` (as duas rotas), `PRD.md` §7.1, a skill `uazapi-integration`, `AGENTS.md` §4.1, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` e este PROGRESS.
+
+**O que foi feito:**
+- **O código da `wip` entrou como estava,** com as decisões que o `docs/PROXIMOS-PASSOS.md` §4.1 registra (falha não vira vazio, cursor sem `count`, filtros com os nomes da URL, `payload` só como `actor`, repasse contado pela ação, Saúde guardada 10 s).
+- **`get-integration-health.test.ts` reescrito para o código atual** (47 testes):
+  - a lógica é testada por `readIntegrationHealth`. `getIntegrationHealth` guarda o resultado no módulo, e por isso ganhou bloco próprio: uma leitura só em 10 s, leitura nova depois disso, pedidos simultâneos na mesma leitura, e relógio que volta atrás lê de novo;
+  - WhatsApp com `cause` (`crm`/`provider`) e `instance`;
+  - repasse com `reason`, e sem banco `config` é `unreadable`;
+  - as datas do último repasse também têm a janela;
+  - o log da falha leva código e mensagem;
+  - cada contagem que falha deixa só a parte dela `unavailable`;
+  - a última mensagem recebida em um passo só: nenhuma conversa; menos de 50 (exato, sem data mínima); 50 com mensagem achada a partir da atividade da 50ª (exato); 50 sem nada a partir dela (segunda consulta, `exact: false`); e falha em cada uma das três leituras.
+- **`logs/route.test.ts`:** as chaves dos filtros são os nomes da URL, `getIntegrationLogs(filters, cursor)` recebe o cursor à parte, a resposta devolve `filters`, filtro desconhecido é ignorado e aparece assim na resposta, vale a 1ª ocorrência do parâmetro, cursor vazio ou só espaço é "sem cursor", e cursor inválido é 400.
+
+**Decisões tomadas:**
+- **Esta versão substitui a que eu tinha aberto no mesmo PR #40.** Eu tinha feito outra implementação do 12b sem saber da `wip`: só consultas, sem rotas, sem paginação, lista que falha virando "vazia marcada". Quando o #39 entrou com o `docs/PROXIMOS-PASSOS.md`, as decisões dele passaram a valer (`AGENTS.md` §1: o que está documentado vale mais que a opinião do agente). A branch do #40 foi refeita a partir da `main` com o código da `wip`. A versão anterior não chegou à `main`.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4334 em 226 arquivos) · `build` ✓ (`/api/connection/logs` e `/api/connection/health` no build).
+- **Não feito:** a conferência por HTTP contra o stack local (`PROXIMOS-PASSOS.md` §4). O ambiente não tinha Docker. Também não houve rodada de mutação nem revisor independente.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente.
+
+**Pendências / próximos passos:**
+- Conferência por HTTP antes de publicar (a lista está em `PROXIMOS-PASSOS.md` §4).
+- Apagar a branch `feat/conexao-registros-e-saude` depois do merge.
+- PR 13: as abas. O 13a (estrutura, aba na URL, `/app/configuracoes` só com o Atendimento) já está pronto localmente e vem em seguida.
+
+**Armadilhas descobertas:**
+- **Duas sessões, duas implementações do mesmo PR.** Antes de começar um PR do plano, olhar `docs/PROXIMOS-PASSOS.md` §2 e as branches do remoto (`git branch -r`): o trabalho em curso pode estar numa branch sem PR.
+- **Estado guardado no módulo atravessa os testes.** O cache de `getIntegrationHealth` faz o 2º teste receber a leitura do 1º. Teste de lógica chama a função sem cache, e o do cache usa instantes distantes entre si.
+
 ## [2026-10-02] Documento de continuidade: onde o projeto está e o que falta
 
 **Agente/Modelo:** Claude Opus 5.5.
