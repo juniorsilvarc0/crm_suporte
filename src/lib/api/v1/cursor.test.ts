@@ -6,9 +6,11 @@ import {
   afterCursorFilter,
   cursorPage,
   decodeCursor,
+  decodeLogCursor,
   decodeMessageCursor,
   DEFAULT_PAGE_LIMIT,
   encodeCursor,
+  encodeLogCursor,
   encodeMessageCursor,
   listQueryShape,
   MAX_PAGE_LIMIT,
@@ -196,4 +198,30 @@ describe("cursor das mensagens (m1)", () => {
       message: "Cursor inválido. Use o next_cursor da página anterior.",
     });
   });
+});
+
+describe("cursor dos registros de integração (l1)", () => {
+  it("ida e volta preserva o microssegundo, no formato l1|created_at|id", () => {
+    const cursor = encodeLogCursor({ created_at: TS, id: ID });
+
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(Buffer.from(cursor, "base64url").toString("utf8")).toBe(`l1|${TS}|${ID}`);
+    expect(decodeLogCursor(cursor)).toEqual({ createdAt: TS, id: ID });
+  });
+
+  it("só aceita o próprio cursor: o das mensagens e o dos cadastros são de outras listas", () => {
+    const logs = encodeLogCursor({ created_at: TS, id: ID });
+
+    expect(decodeLogCursor(encodeMessageCursor({ created_at: TS, id: ID }))).toBeNull();
+    expect(decodeLogCursor(encodeCursor({ updated_at: TS, id: ID }))).toBeNull();
+    expect(decodeMessageCursor(logs)).toBeNull();
+    expect(decodeCursor(logs)).toBeNull();
+  });
+
+  it.each(["", "lixo", "created_at.gt.2020,id.neq.x", Buffer.from(`l1|não é data|${ID}`).toString("base64url"), Buffer.from(`l1|${TS}|não-é-uuid`).toString("base64url")])(
+    "recusa o que não saiu de encodeLogCursor (%s)",
+    (value) => {
+      expect(decodeLogCursor(value)).toBeNull();
+    }
+  );
 });

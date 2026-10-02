@@ -99,6 +99,21 @@ export function decodeMessageCursor(value: string): MessageCursor | null {
   return key ? { createdAt: key.timestamp, id: key.id } : null;
 }
 
+// Registros de integração: `(created_at, id)`, do mais NOVO para o mais antigo,
+// como as mensagens. Versão própria, pelo mesmo motivo. É a única lista deste
+// módulo que não é da API v1: serve a aba Registros da Conexão (rota de sessão).
+const LOG_CURSOR_VERSION = "l1";
+
+export function encodeLogCursor(row: { created_at: string; id: string }): string {
+  return encodeKey(LOG_CURSOR_VERSION, row.created_at, row.id);
+}
+
+/** `null` quando o cursor não saiu de `encodeLogCursor` (ou é o de outra lista). */
+export function decodeLogCursor(value: string): MessageCursor | null {
+  const key = decodeKey(LOG_CURSOR_VERSION, value);
+  return key ? { createdAt: key.timestamp, id: key.id } : null;
+}
+
 /**
  * Filtro PostgREST "depois do cursor", na mesma ordem da consulta:
  * `updated_at > ts OR (updated_at = ts AND id > id)`. Só recebe um Cursor que
