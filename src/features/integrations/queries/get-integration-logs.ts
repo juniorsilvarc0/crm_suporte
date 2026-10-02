@@ -1,119 +1,163 @@
-import {
-  INTEGRATION_LOG_STATUSES,
-  type IntegrationLogFilters,
-  type IntegrationLogsResult,
+import { olderThanFilter, takePage } from "@/features/chat/lib/messages-page";
+import { isIntegrationStatus } from "@/features/integrations/lib/log-filters";
+import type {
+  IntegrationLogFilters,
+  IntegrationLogItem,
+  IntegrationLogPeriod,
+  IntegrationLogsPage,
 } from "@/features/integrations/types";
+import { decodeLogCursor, encodeLogCursor } from "@/lib/api/v1/cursor";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
-import type { IntegrationStatus } from "@/lib/supabase/types";
+import { isUuid } from "@/lib/validation/uuid";
 
-/** Teto de linhas por leitura. A tela estreita pelos filtros, não pagina. */
-export const INTEGRATION_LOGS_LIMIT = 200;
+export const INTEGRATION_LOGS_PAGE_SIZE = 50;
 
-// As colunas de `IntegrationLog`, sem `payload`.
-export const INTEGRATION_LOG_SELECT =
-  "id, provider, direction, action, status, error, api_token_id, request_id, route, http_status, latency_ms, created_at";
+const PERIOD_HOURS: Record<IntegrationLogPeriod, number> = {
+  "24h": 24,
+  "7d": 7 * 24,
+  "30d": 30 * 24,
+  "90d": 90 * 24,
+};
 
-// Formas que as colunas têm de fato: provider (`relay`, `api_v1`), action
-// (`conversation.message_received`, `signing_secret.rotated`, `GET`) e o
-// request_id (uuid, ou o id da mensagem do provedor). Valor fora disso não
-// casa com linha nenhuma, e vira "sem filtro" em vez de erro: link velho ou
-// editado à mão abre a lista inteira.
-const PROVIDER_RE = /^[a-z0-9_]{1,40}$/;
-const ACTION_RE = /^[A-Za-z0-9_.-]{1,80}$/;
-const REQUEST_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+// Colunas explícitas: o `payload` não vem. Dele só interessa quem fez a ação
+// (`payload.by`, que a trilha da chave de assinatura grava), e o PostgREST o
+// extrai. Do token, o nome e o prefixo: nunca o hash.
+const LOG_LIST_SELECT =
+  "id, created_at, provider, direction, action, status, http_status, latency_ms, route, request_id, error, actor_id:payload->>by, token:api_tokens!integration_logs_api_token_id_fkey(id, name, token_prefix)" as const;
 
-type SearchParams = Record<string, string | string[] | undefined>;
+type LogListRow = {
+  id: string;
+  created_at: string;
+  provider: string;
+  direction: string | null;
+  action: string | null;
+  status: string | null;
+  http_status: number | null;
+  latency_ms: number | null;
+  route: string | null;
+  request_id: string | null;
+  error: string | null;
+  actor_id: string | null;
+  token: { id: string; name: string; token_prefix: string } | null;
+};
 
-function firstParam(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function matching(value: string | undefined, pattern: RegExp): string | null {
-  const trimmed = value?.trim() ?? "";
-  return pattern.test(trimmed) ? trimmed : null;
-}
-
-function isIntegrationStatus(value: unknown): value is IntegrationStatus {
-  return INTEGRATION_LOG_STATUSES.some((status) => status === value);
-}
-
-/** Lê os filtros da URL da aba Logs (`integracao`, `acao`, `status`, `request_id`). */
-export function parseIntegrationLogFilters(searchParams: SearchParams): IntegrationLogFilters {
-  const status = firstParam(searchParams.status);
+function toItem(row: LogListRow, actors: Map<string, string>): IntegrationLogItem {
   return {
-    provider: matching(firstParam(searchParams.integracao), PROVIDER_RE),
-    action: matching(firstParam(searchParams.acao), ACTION_RE),
-    status: isIntegrationStatus(status) ? status : null,
-    requestId: matching(firstParam(searchParams.request_id), REQUEST_ID_RE),
+    id: row.id,
+    created_at: row.created_at,
+    provider: row.provider,
+    direction: row.direction === "inbound" || row.direction === "outbound" ? row.direction : null,
+    action: row.action,
+    status: isIntegrationStatus(row.status) ? row.status : null,
+    http_status: row.http_status,
+    latency_ms: row.latency_ms,
+    route: row.route,
+    request_id: row.request_id,
+    error: row.error,
+    token: row.token
+      ? { id: row.token.id, name: row.token.name, prefix: row.token.token_prefix }
+      : null,
+    // `payload.by` é texto livre no banco: só um uuid é tratado como usuário.
+    actor: isUuid(row.actor_id)
+      ? { id: row.actor_id, name: actors.get(row.actor_id) ?? null }
+      : null,
   };
 }
 
-export const NO_INTEGRATION_LOG_FILTERS: IntegrationLogFilters = {
-  provider: null,
-  action: null,
-  status: null,
-  requestId: null,
-};
-
 /**
- * Os registros mais recentes que casam com os filtros, do mais novo para o mais
- * antigo, até `INTEGRATION_LOGS_LIMIT`. Pede uma linha a mais: ela diz que há
- * mais registros sem um `count` sobre a tabela inteira.
+ * Uma página dos registros de integração, do mais novo para o mais antigo.
  *
- * Filtro por igualdade (`eq`), nunca `ilike` nem `.or()`: o valor já passou
- * pela forma da coluna e não tem nada a escapar. Integração + data usa o índice
- * `integration_logs_provider_created_at_idx`, e o request_id, o dele.
+ * Paginação por cursor (`created_at`, `id`), sem `count`: a tabela ganha uma
+ * linha a cada chamada da API, e contar a cada página custaria uma varredura.
+ * `cursor` é o `nextCursor` da página anterior, e não faz parte dos filtros.
  *
- * Leitura resiliente (AGENTS §4), com `failed` para a tela distinguir a falha
- * da lista vazia.
+ * Quem procura por id de pedido quer aquela linha: o período é ignorado, como o
+ * protocolo ignora o status na lista de tickets. Os outros filtros valem.
+ *
+ * A leitura que falha devolve `unavailable`, e não uma lista vazia: numa tela
+ * de diagnóstico, "nenhum registro" quando o banco não respondeu é mentira.
+ * Nunca rejeita.
  */
 export async function getIntegrationLogs(
-  filters: IntegrationLogFilters = NO_INTEGRATION_LOG_FILTERS
-): Promise<IntegrationLogsResult> {
-  const failed: IntegrationLogsResult = { logs: [], truncated: false, failed: true };
-  if (!hasSupabaseAdminEnv()) return failed;
+  filters: IntegrationLogFilters,
+  cursor: string | null = null,
+  now: Date = new Date()
+): Promise<IntegrationLogsPage> {
+  if (!hasSupabaseAdminEnv()) return { state: "unavailable" };
+
+  const after = cursor === null ? null : decodeLogCursor(cursor);
+  if (cursor !== null && after === null) return { state: "invalid_cursor" };
 
   try {
     const supabase = createSupabaseAdminClient();
-    let query = supabase.from("integration_logs").select(INTEGRATION_LOG_SELECT);
-    if (filters.provider) query = query.eq("provider", filters.provider);
-    if (filters.action) query = query.eq("action", filters.action);
-    if (filters.status) query = query.eq("status", filters.status);
-    if (filters.requestId) query = query.eq("request_id", filters.requestId);
-
-    const { data, error } = await query
+    let query = supabase
+      .from("integration_logs")
+      .select(LOG_LIST_SELECT)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
-      .limit(INTEGRATION_LOGS_LIMIT + 1);
+      .limit(INTEGRATION_LOGS_PAGE_SIZE + 1);
 
-    if (error) {
-      console.error("getIntegrationLogs failed", error.message);
-      return failed;
+    if (filters.pedido) {
+      query = query.eq("request_id", filters.pedido);
+    } else {
+      const since = new Date(now.getTime() - PERIOD_HOURS[filters.periodo] * 3_600_000);
+      query = query.gte("created_at", since.toISOString());
+    }
+    if (filters.integracao) query = query.eq("provider", filters.integracao);
+    if (filters.status) query = query.eq("status", filters.status);
+    if (filters.acao) query = query.eq("action", filters.acao);
+    if (filters.token) query = query.eq("api_token_id", filters.token);
+    if (after) {
+      // O `lte` é redundante com o `.or()`, e é ele que o índice usa como limite:
+      // sem ele, cada página releria do topo do período até o cursor. O cursor
+      // passou por `decodeLogCursor` (instante e uuid conferidos): nada a escapar.
+      query = query.lte("created_at", after.createdAt).or(olderThanFilter(after));
     }
 
-    const rows = data ?? [];
+    const { data, error } = await query;
+    if (error) {
+      console.error("getIntegrationLogs failed", error.code, error.message);
+      return { state: "unavailable" };
+    }
+
+    const rows: LogListRow[] = data ?? [];
+    const { page, hasMore } = takePage(rows, INTEGRATION_LOGS_PAGE_SIZE);
+    const actors = await actorNames(
+      supabase,
+      page.map((row) => row.actor_id)
+    );
+
     return {
-      // Campo a campo, nunca com spread: coluna a mais que a consulta traga
-      // não chega ao payload da página.
-      logs: rows.slice(0, INTEGRATION_LOGS_LIMIT).map((row) => ({
-        id: row.id,
-        provider: row.provider,
-        direction: row.direction,
-        action: row.action,
-        status: row.status,
-        error: row.error,
-        api_token_id: row.api_token_id,
-        request_id: row.request_id,
-        route: row.route,
-        http_status: row.http_status,
-        latency_ms: row.latency_ms,
-        created_at: row.created_at,
-      })),
-      truncated: rows.length > INTEGRATION_LOGS_LIMIT,
-      failed: false,
+      state: "ok",
+      items: page.map((row) => toItem(row, actors)),
+      nextCursor: hasMore ? encodeLogCursor(page[page.length - 1]) : null,
     };
   } catch (error) {
-    console.error("getIntegrationLogs threw", error);
-    return failed;
+    console.error("getIntegrationLogs failed", error instanceof Error ? error.message : error);
+    return { state: "unavailable" };
+  }
+}
+
+/**
+ * Nome de quem fez cada ação da página. Se a leitura falhar, a página sai sem
+ * os nomes (o id continua lá): o registro vale mais que o rótulo.
+ */
+async function actorNames(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  ids: (string | null)[]
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter(isUuid))];
+  if (unique.length === 0) return new Map();
+
+  try {
+    const { data, error } = await supabase.from("app_users").select("id, name").in("id", unique);
+    if (error) {
+      console.error("getIntegrationLogs: nomes dos usuários", error.code, error.message);
+      return new Map();
+    }
+    return new Map((data ?? []).map((user) => [user.id, user.name]));
+  } catch (error) {
+    console.error("getIntegrationLogs: nomes dos usuários", error instanceof Error ? error.message : error);
+    return new Map();
   }
 }
