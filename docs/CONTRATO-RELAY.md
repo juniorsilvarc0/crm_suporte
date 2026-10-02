@@ -255,7 +255,7 @@ Um registro `ok` quer dizer que o endereço respondeu `2xx`, e não que o agente
 
 ## 9. Configuração no CRM
 
-Tudo em Configurações → Agente de IA.
+Tudo em Integrações → Agente de IA (`/app/conexao?aba=agente`).
 
 - **Endereço do agente:** *Webhook do agente de IA*. Vazio desliga o repasse. Não existe mais endereço por variável de ambiente.
 - **Chave de assinatura:** *Chave de assinatura do webhook* → **Gerar chave**.

@@ -190,8 +190,8 @@ Skill relacionada: nunca invoque `nextjs-supabase-auth` (ver `SKILLS.md` §Não 
 
 ```
 src/app/
-  (dashboard)/app/*      # telas autenticadas: início (notas), chat, conexao,
-                         #   equipe, configuracoes, perfil
+  (dashboard)/app/*      # telas autenticadas: início (notas), chat, conexao (Integrações),
+                         #   equipe, configuracoes/atendimento, perfil
   api/                   # route handlers, agrupados por finalidade:
     auth/                #   login/logout/definir-senha (cookie de sessão)
     chat/webhook/uazapi/ #   entrada de mensagem, auth PRÓPRIA

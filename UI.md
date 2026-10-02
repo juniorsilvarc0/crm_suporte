@@ -133,7 +133,7 @@ ponta**, com a logo branca. No celular, barra inferior na mesma faixa + gaveta.
   (`0 1px 3px`, a dos cards da Ticbox) em cartões e painéis · `panel-float`
   para painel de tela inteira. **Sombra dentro de sombra é proibida**.
   `bg-brand-gradient` ficou com o nome, mas pinta a cor sólida `--brand-solid`
-  (aba ativa das Configurações). ⚠️ Quem põe texto sobre ela precisa vencer o
+  (aba ativa das telas de ajustes). ⚠️ Quem põe texto sobre ela precisa vencer o
   `dark:data-active:text-foreground` do primitivo `Tabs`: use
   `data-active:text-primary-foreground!` — sem o `!`, no escuro o texto sai
   claro sobre lima (1,29:1). A barra do celular usa o lima do `sidebar-primary`.
@@ -1238,9 +1238,13 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
 - O menu do avatar preserva identidade, tema e logout. Não oferece link para Perfil.
 - A seleção do papel usa o `FormSelect` existente. Campos exclusivos do atendimento ficam ocultos para `paid_traffic`; email, senha e troca obrigatória continuam disponíveis.
 
-### §5.19 Configurações (`/app/configuracoes`)
+### §5.19 Integrações (`/app/conexao`)
 
-- A tela administrativa usa três abas lineares: **Variáveis**, **API do CRM** e **Agente de IA**. Tokens e webhook permanecem visíveis, mas não disputam altura com credenciais de provedores.
+> Até o PR 13a (2026-10-02) Variáveis, API do CRM e Agente de IA moravam em `/app/configuracoes`, numa tela própria. Hoje esse endereço só redireciona (307) para `/app/conexao?aba=variaveis`, e o menu não tem mais o item Configurações.
+
+- **Um lugar só para o que liga o CRM a outro sistema.** Quatro abas, com a aba na URL (`UrlTabs`, `src/components/layout/url-tabs.tsx`): **WhatsApp** (a padrão, fora da URL), **API do CRM** (`?aba=api`), **Agente de IA** (`?aba=agente`) e **Variáveis** (`?aba=variaveis`). Recarregar ou mandar o link abre a mesma aba; valor desconhecido cai em WhatsApp. **Registros** e **Saúde** entram no PR 13b.
+- **Abas na URL são o padrão das telas de ajustes.** Integrações e Atendimento usam o mesmo `UrlTabs`: mesma pílula, mesmo trilho e mesma troca otimista. Tela nova com abas usa ele, e não um `Tabs` com `defaultValue`.
+- Só a aba aberta fica montada, salvo a marcada com `keepMounted` na lista de abas (`src/features/connection/lib/connection-tabs.ts`). Hoje só a do Agente de IA. Ao sair da aba WhatsApp, o painel desmonta e para de consultar o estado.
 - Variáveis são uma lista operacional única, não um card por chave. Desktop usa tabela; mobile usa linhas empilhadas. A página nunca mostra o valor já salvo.
 - A origem de toda variável é o **Cofre**: desde a Fase 2 o app não lê variável de integração do ambiente do servidor, e remover uma chave não "restaura" nada.
 - Criar ou substituir usa `ModalShell`; valor começa oculto, pode ser revelado durante a digitação e desaparece da memória visual ao fechar.
@@ -1253,7 +1257,7 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
     - "IA de triagem" traz os escopos do agente, o tipo `ai` e 300/min.
   - A lista ganha a coluna **Acesso** ("IA de triagem", "Sem escopo" ou "N escopos").
   - O status ganha **Vencido** ao lado de Ativo e Revogado, sempre com texto (§1.4). O mesmo status decide o filtro (que ganhou "Vencidos") e o esmaecimento da linha.
-  - Editar escopos um a um fica para a aba API da Conexão (PR 13).
+  - Editar escopos um a um fica para a aba API do CRM de Integrações (PR 13c).
 - **Webhook do agente de IA (Fase 5, PR 11):** a linha de estado abaixo do campo diz o que o servidor conferiu, sempre com texto, em quatro casos:
   - **Ativo** (verde): há URL e o envio a aceita;
   - **Nenhuma URL configurada** (vermelho): o CRM não repassa. Campo vazio desliga o repasse; não existe mais reserva em variável de ambiente;
@@ -1288,11 +1292,11 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - **A aba Agente de IA fica montada ao trocar de aba** (`keepMounted`): o teste de conexão em curso e a URL digitada não se perdem.
 - **Cofre restrito ao catálogo (Fase 5, PR 12a):** o servidor só grava os nomes que o app lê, e a chave de assinatura não aparece na lista nem se grava ou apaga por ali.
   - Os textos da aba dizem o que vale desde a Fase 2: o CRM lê estas chaves só do cofre, **sem reserva no ambiente do servidor**. Remover uma chave para o que depende dela.
-  - Ficou para a aba Cofre da Conexão (PR 13): o campo de nome ainda é livre (o servidor recusa com o motivo; falta o `FormSelect` do catálogo), a coluna **Origem** e os rótulos "Servidor"/"Sobrescrever" ainda existem no código sem caso que os mostre, e "Substituir" numa variável antiga, de fora do catálogo, leva a uma recusa.
+  - Ficou para a aba Variáveis de Integrações (PR 13c): o campo de nome ainda é livre (o servidor recusa com o motivo; falta o `FormSelect` do catálogo), a coluna **Origem** e os rótulos "Servidor"/"Sobrescrever" ainda existem no código sem caso que os mostre, e "Substituir" numa variável antiga, de fora do catálogo, leva a uma recusa.
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 
-- **Quatro abas, com a aba na URL** (`?aba=filas|categorias|sla|status`): Filas, Categorias, SLA e Status. A aba padrão (Filas) fica fora da URL, recarregar mantém a aba, e valor desconhecido cai em Filas. O trilho de pílulas é o mesmo das Configurações: **44 px de toque no celular** (`h-11`) e 36 px a partir de `sm`, nas duas telas.
+- **Quatro abas, com a aba na URL** (`?aba=filas|categorias|sla|status`): Filas, Categorias, SLA e Status. A aba padrão (Filas) fica fora da URL, recarregar mantém a aba, e valor desconhecido cai em Filas. O trilho de pílulas é o mesmo de Integrações (os dois usam `UrlTabs`): **44 px de toque no celular** (`h-11`) e 36 px a partir de `sm`, nas duas telas.
 - **Grades com trilha declarada** (`grid-cols-[minmax(0,1fr)]`): um nome longo trunca em vez de alargar a página no celular (§9).
 - **Leitura de admin** (`getServiceSettings`): traz **as arquivadas também**, ao contrário do catálogo de quem abre ticket. Cada parte que falha vem `null`, e a aba mostra "Não foi possível carregar…" com "Tentar de novo", nunca uma lista vazia falsa.
 - **Filas** (`products-manager`):

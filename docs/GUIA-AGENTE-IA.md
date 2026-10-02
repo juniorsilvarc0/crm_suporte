@@ -22,7 +22,7 @@ por um **token de API**.
 ## 1. Autenticação (obrigatório)
 
 Toda chamada de integração usa um **token de API**, gerado no painel do CRM em
-**Configurações → Tokens de API** por um usuário **administrador** (aparece
+**Integrações → API do CRM** por um usuário **administrador** (aparece
 **uma única vez** — copie e guarde). Esse token é uma das credenciais que você
 passa na configuração do agente (junto com a base URL); nunca embuta no código.
 
@@ -66,8 +66,8 @@ uazapi ──► CRM (webhook) ──► repassa o payload cru para o WEBHOOK DO
       a resposta volta como "fromMe" e o CRM registra sozinho na conversa
 ```
 
-> **Onde configurar o webhook do agente:** no painel, em **Configurações →
-> Automação/Integração** ("Webhook do agente de IA"). Aponte para o endpoint do
+> **Onde configurar o webhook do agente:** no painel, em **Integrações →
+> Agente de IA** ("Integração do agente"). Aponte para o endpoint do
 > seu agente/n8n/make e salve. **Enquanto esse campo estiver vazio, o CRM não
 > repassa as mensagens do bot** (o indicador na própria tela avisa). Sem editar
 > `.env` nem redeploy.

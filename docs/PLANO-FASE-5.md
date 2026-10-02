@@ -257,6 +257,11 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 - **Conteúdo das abas:** WhatsApp (`ConnectionPanel` intacto + rotação), API (escopos, preset, validade, limite, edição, "sem escopo" e "Expirado"), Agente (`AutomationSettings` + `BotSignatureSettings` + testar), Cofre (select do catálogo), Logs (`IntegrationLogsTable` com as colunas novas) e Saúde.
 - **Também:** `configuracoes/page.tsx` e `navigation.ts`, conforme D14, e `UI.md`.
 
+> **PR 13 dividido em três** (2026-10-02), para caber numa revisão:
+> - **13a, feito:** a estrutura. `/app/conexao` vira **Integrações**, com as abas na URL (`?aba=`) pelo `UrlTabs` (`src/components/layout/url-tabs.tsx`; o Atendimento passou a usar o mesmo). WhatsApp (a padrão), API do CRM, Agente de IA (`keepMounted`) e Variáveis, com os blocos de antes, sem mudança. `/app/configuracoes` só redireciona (307) para `/app/conexao?aba=variaveis`, e o item Configurações saiu do menu; o Atendimento segue em `/app/configuracoes/atendimento`. O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
+> - **13b, a fazer:** as abas Registros (`IntegrationLogsTable` refeita, os filtros na URL e "carregar mais", sobre `GET /api/connection/logs`) e Saúde (sobre `GET /api/connection/health`, pedida só com a aba aberta). As rotas já estão na `main` (PR 12b, #40).
+> - **13c, a fazer:** a edição de token (escopos, preset, validade, limite), o `FormSelect` do catálogo em Variáveis e a limpeza da coluna Origem e de "Substituir" em variável antiga.
+
 **PR 14: `docs`, API e guia do agente** · docs · M · depende dos PRs 6 a 11
 - **Arquivos:** reescrita de `docs/API.md` e `docs/GUIA-AGENTE-IA.md`; roteiro curl do PLANO:357-365 executado contra o app local.
 - **Pronto quando:** os 8 passos do roteiro curl passam, com a saída anotada no PROGRESS.
@@ -322,7 +327,7 @@ O texto abaixo é o da análise, com as opções que foram consideradas.
     - **Recomendação:** (b), ou adiar a rotação. Nunca testar na produção (PROGRESS.md:74).
 14. **D14. `/health` e `/openapi.json` públicos?** **Recomendação:** os dois públicos, sem dado, numa allowlist explícita do varredor; `/me` exige token.
     - **Tokens existentes:** ficam inertes e são reemitidos, sem UPDATE em produção.
-    - **O que sobra em `/app/configuracoes`:** decidir antes do PR 13.
+    - **O que sobra em `/app/configuracoes`:** decidir antes do PR 13. **Decidido (2026-10-02, PR 13a):** só o Atendimento (`/app/configuracoes/atendimento`). O resto foi para Integrações, e `/app/configuracoes` redireciona para `/app/conexao?aba=variaveis`.
 
 ## 4. Riscos principais e mitigação
 
