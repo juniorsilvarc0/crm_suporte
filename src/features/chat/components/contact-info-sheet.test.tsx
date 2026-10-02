@@ -206,6 +206,20 @@ function renderSheet(initialView?: ContactInfoInitialView, conversation = CONVER
   return { onClose };
 }
 
+/**
+ * Abre o painel já no "Novo ticket" e espera ele assumir o foco.
+ *
+ * O painel leva o foco para si ao abrir (`initialFocus`), um instante DEPOIS da
+ * montagem. Digitar antes disso perde todas as teclas: o foco sai do campo no
+ * meio, o formulário fica limpo, e o "toque fora" fecha o painel em vez de
+ * perguntar. Com a máquina carregada isso acontecia em 1 de cada 10 execuções.
+ */
+async function renderNewTicket(conversation = CONVERSATION) {
+  const view = renderSheet("ticket-new", conversation);
+  await waitFor(() => expect(document.querySelector('[data-chat-sheet="info"]')).toHaveFocus());
+  return view;
+}
+
 function title() {
   return screen.getByRole("heading", { level: 2, name: /Dados do contato|Novo ticket|Tickets/ });
 }
@@ -245,7 +259,7 @@ describe("ContactInfoSheet · tickets", () => {
   it("Esc no Novo ticket sujo pergunta \"Descartar?\" na própria vista; cada Esc desfaz uma coisa", async () => {
     const user = userEvent.setup();
     routeFetch({ tickets: [ticketsOk] });
-    const { onClose } = renderSheet("ticket-new");
+    const { onClose } = await renderNewTicket();
 
     expect(title()).toHaveTextContent("Novo ticket");
     await user.type(screen.getByLabelText("Título"), "Rascunho do ticket");
@@ -270,7 +284,7 @@ describe("ContactInfoSheet · tickets", () => {
   it("Esc no Novo ticket limpo volta direto para os dados do contato", async () => {
     const user = userEvent.setup();
     routeFetch({ tickets: [ticketsOk] });
-    renderSheet("ticket-new");
+    await renderNewTicket();
 
     await user.keyboard("{Escape}");
 
@@ -281,7 +295,7 @@ describe("ContactInfoSheet · tickets", () => {
   it("toque fora com o Novo ticket limpo fecha o painel", async () => {
     const user = userEvent.setup();
     routeFetch({ tickets: [ticketsOk] });
-    const { onClose } = renderSheet("ticket-new");
+    const { onClose } = await renderNewTicket();
 
     await user.click(document.body);
 
@@ -291,7 +305,7 @@ describe("ContactInfoSheet · tickets", () => {
   it("toque fora com o Novo ticket sujo pergunta \"Descartar?\" e não fecha", async () => {
     const user = userEvent.setup();
     routeFetch({ tickets: [ticketsOk] });
-    const { onClose } = renderSheet("ticket-new");
+    const { onClose } = await renderNewTicket();
     await user.type(screen.getByLabelText("Título"), "Rascunho do ticket");
 
     await user.click(document.body);

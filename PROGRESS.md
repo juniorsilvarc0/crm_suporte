@@ -27,6 +27,36 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Testes de tela instáveis: a causa era a pressa do teste, não o produto
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** Os dois testes de tela que falhavam com a máquina carregada passam sempre, e a suíte local roda os mesmos arquivos do CI.
+**Arquivos alterados:** `src/features/chat/components/contact-info-sheet.test.tsx`, `src/features/tickets/components/ticket-detail.test.tsx`, `vitest.config.ts` e este PROGRESS. Nenhum código de produto mudou.
+
+**O que foi feito:**
+- **`contact-info-sheet` › "toque fora com o Novo ticket sujo…"** (aberto desde 2026-09-29, sem causa raiz): o teste digitava no título antes de o painel assumir o foco. O painel leva o foco para si ao abrir (`initialFocus`), um instante depois da montagem. Quando isso caía no meio da digitação, o foco saía do campo, nenhuma tecla entrava, o formulário ficava limpo e o toque fora fechava o painel. Os quatro testes que abrem no "Novo ticket" agora esperam o painel assumir o foco (`renderNewTicket`).
+- **`ticket-detail` › "Atender recusado por já ter dono…"**: o teste clicava em "Assumir mesmo assim" com o botão ainda desabilitado. O 409 dispara uma releitura, que é uma transição do React, e o botão só habilita quando ela termina. O clique em botão desabilitado não faz nada, e o 2º pedido nunca saía. O teste agora espera o botão habilitar.
+- **`vitest.config.ts`:** `.next/**` fora da suíte. O `next build` deixa em `.next/standalone` uma cópia de arquivos do projeto com um teste junto, e a suíte local rodava 1 arquivo e 3 testes a mais que o CI.
+
+**Decisões tomadas:**
+- **Não mexi no produto.** A pergunta deixada em 2026-09-29 era se o rascunho do ticket se perdia. Não se perde: nos casos que falharam, o campo estava vazio porque nada tinha sido digitado.
+- **Só aumentar o tempo de espera não resolvia o do ticket.** Com 3 s no lugar de 1 s ainda falhou 1 vez em 48. O pedido não estava atrasado; ele não tinha saído.
+
+**Verificação:**
+- **Antes, medido:** o arquivo do painel falhou em 6 de 64 execuções (8 em paralelo). Nas 6, o diagnóstico gravou o campo vazio e o foco no painel; nas 58 que passaram, o texto inteiro e o foco no campo. O do ticket falhou em 2 de 36 (12 em paralelo, com cobertura), sempre na espera do 2º pedido.
+- **Depois:** o do painel, 80 de 80; o do ticket, 72 de 72, com a mesma carga.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (3431, a mesma contagem do CI) · build ✓.
+
+**Pendências / próximos passos:**
+- **Proposta de produto, para o dono decidir:** o painel do contato não deveria tirar o foco de um campo em que a pessoa já clicou. Num aparelho lento, quem toca no título logo depois de abrir pode ter o foco levado para o painel. A regra já está no UI.md ("foco automático nunca rouba de outro campo"), e a biblioteca aceita uma função em `initialFocus`. Não fiz porque mexe em foco no celular, e isso não se confere sem navegador.
+
+**Armadilhas descobertas:**
+- **Teste que age logo depois de abrir um diálogo corre contra o foco inicial dele.** O `userEvent.type` clica no campo e digita tecla por tecla; se o foco sair no meio, as teclas vão para outro elemento, sem erro nenhum. Espere o diálogo assumir o foco antes de digitar.
+- **Botão ligado a `useTransition` nasce desabilitado.** `getByRole` acha o botão, e o clique nele não faz nada. Espere `toBeEnabled()` antes de clicar.
+- **Aumentar o tempo de espera não conserta ação que não aconteceu.** Antes de mexer no tempo, confira se o clique ou a digitação chegou ao destino.
+- **Para achar teste instável, rode o arquivo inteiro, não só o caso.** Sozinho (`it.only`), o do painel passou 40 de 40; o arquivo inteiro falhou em 6 de 64.
+- **Carga de verdade vem de rodar em paralelo.** Oito a doze execuções ao mesmo tempo (o do ticket, só com cobertura ligada) reproduziram o que uma execução por vez nunca mostrou.
+
 ## [2026-10-01] Fase 5 · PR 10c: a IA e as integrações aparecem na tela
 
 **Agente/Modelo:** Claude Opus 5.5.

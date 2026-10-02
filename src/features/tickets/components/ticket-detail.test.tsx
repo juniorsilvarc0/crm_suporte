@@ -514,9 +514,14 @@ describe("TicketDetailView — conflitos", () => {
     // A tela está velha (lateral "Sem responsável", "Atender" oferecido): relê.
     expect(refreshMock).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: "Assumir mesmo assim" }));
+    // O botão nasce desabilitado: a releitura que o 409 dispara é uma transição,
+    // e ele só habilita quando ela termina. Clicar antes não faz nada, e com a
+    // máquina carregada a transição demora: o 2º pedido nunca saía.
+    const reassign = screen.getByRole("button", { name: "Assumir mesmo assim" });
+    await waitFor(() => expect(reassign).toBeEnabled(), { timeout: 3000 });
+    await user.click(reassign);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
     expect(requestOf(fetchMock, 1).body).toEqual({ reassign: true });
     expect(toastMock.success).toHaveBeenCalledWith("Você assumiu SUP-1024.");
   });
