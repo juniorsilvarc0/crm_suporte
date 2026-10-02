@@ -27,42 +27,43 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
-## [2026-10-02] Fase 5, PR 12b: leitura real dos registros de integração e a Saúde
+## [2026-10-02] Fase 5, PR 12b: registros de integração e Saúde (back), terminado
 
 **Agente/Modelo:** Claude Opus 5.5.
-**Objetivo:** O back das abas Logs e Saúde: os registros de `integration_logs` lidos de verdade, com filtros, e uma Saúde que junta o estado do WhatsApp, a última mensagem recebida e a taxa de erro do repasse ao agente.
-**Arquivos alterados:** `src/features/integrations/types.ts`, `src/features/integrations/queries/get-integration-logs.ts` (era um stub que devolvia `[]`), os novos `src/features/integrations/queries/get-integration-health.ts` e os testes `get-integration-logs.test.ts` e `get-integration-health.test.ts`, e os docs `docs/PLANO-FASE-5.md` e este PROGRESS.
+**Objetivo:** Terminar o PR 12b que ficou pela metade na branch `feat/conexao-registros-e-saude`: as rotas de leitura dos registros de integração e da Saúde, para as abas do PR 13.
+**Arquivos alterados:**
+- código, vindo da branch `wip` sem mudança: `src/app/api/connection/{logs,health}/route.ts`, `src/features/integrations/{types.ts,lib/log-filters.ts}`, `src/features/integrations/queries/get-integration-{logs,health}.ts`, `src/lib/api/v1/cursor.ts` (`encodeLogCursor`/`decodeLogCursor`), `src/lib/http/search-params.ts`, e os testes de cada um;
+- testes reescritos: `get-integration-health.test.ts` e `api/connection/logs/route.test.ts`; um import sem uso a menos em `get-integration-logs.test.ts`;
+- docs: `docs/API.md` (as duas rotas), `PRD.md` §7.1, a skill `uazapi-integration`, `AGENTS.md` §4.1, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` e este PROGRESS.
 
 **O que foi feito:**
-- **`getIntegrationLogs(filtros)`:** devolve os registros mais recentes, do mais novo ao mais antigo, até 200 (`INTEGRATION_LOGS_LIMIT`). Pede uma linha a mais para saber se passou do teto (`truncated`), sem `count` na tabela inteira. Os filtros são integração, ação, status e `request_id`, todos por igualdade. Se a leitura falha, devolve `failed: true`, para a tela não dizer "nenhum registro".
-- **`parseIntegrationLogFilters(searchParams)`:** lê da URL `integracao`, `acao`, `status` e `request_id`. Valor fora da forma da coluna vira "sem filtro" em vez de erro, como em `parseContactListParams`.
-- **`IntegrationLog` passa a ser só as colunas que a lista lê.** O `payload` fica de fora.
-- **`getIntegrationHealth()`:** lê três partes em paralelo, e a que falhar vira `unreadable` sem derrubar as outras:
-  - **WhatsApp:** `not_configured`, `unreadable` (o banco ou o cofre não responderam), `unreachable` (a uazapi não respondeu) ou o estado da instância. Usa só `/instance/status`;
-  - **último inbound:** o `created_at` da mensagem mais recente com `direction = 'inbound'`, ou `null` se nenhuma chegou;
-  - **relay:** total e erros das últimas 24 h, só da ação `conversation.message_received`, com `errorRate` de 0 a 1 (`null` quando não houve repasse).
+- **O código da `wip` entrou como estava,** com as decisões que o `docs/PROXIMOS-PASSOS.md` §4.1 registra (falha não vira vazio, cursor sem `count`, filtros com os nomes da URL, `payload` só como `actor`, repasse contado pela ação, Saúde guardada 10 s).
+- **`get-integration-health.test.ts` reescrito para o código atual** (47 testes):
+  - a lógica é testada por `readIntegrationHealth`. `getIntegrationHealth` guarda o resultado no módulo, e por isso ganhou bloco próprio: uma leitura só em 10 s, leitura nova depois disso, pedidos simultâneos na mesma leitura, e relógio que volta atrás lê de novo;
+  - WhatsApp com `cause` (`crm`/`provider`) e `instance`;
+  - repasse com `reason`, e sem banco `config` é `unreadable`;
+  - as datas do último repasse também têm a janela;
+  - o log da falha leva código e mensagem;
+  - cada contagem que falha deixa só a parte dela `unavailable`;
+  - a última mensagem recebida em um passo só: nenhuma conversa; menos de 50 (exato, sem data mínima); 50 com mensagem achada a partir da atividade da 50ª (exato); 50 sem nada a partir dela (segunda consulta, `exact: false`); e falha em cada uma das três leituras.
+- **`logs/route.test.ts`:** as chaves dos filtros são os nomes da URL, `getIntegrationLogs(filters, cursor)` recebe o cursor à parte, a resposta devolve `filters`, filtro desconhecido é ignorado e aparece assim na resposta, vale a 1ª ocorrência do parâmetro, cursor vazio ou só espaço é "sem cursor", e cursor inválido é 400.
 
 **Decisões tomadas:**
-- **Consultas de servidor, e não rotas.** As abas são server components de administrador (PR 13), como Configurações já é. Nenhuma rota nova: sem guard novo e nada que mude estado por GET.
-- **Sem paginação, com teto e filtros.** Os logs são append-only, ficam 90 dias e são estreitados pelos filtros. Mais de 200 linhas aparece como `truncated`. Se o PR 13 precisar de "carregar mais", o caminho é o cursor `(created_at, id)`, como o das mensagens em `src/lib/api/v1/cursor.ts`.
-- **Sem `payload` na lista.** Ele leva dado interno do evento (o `by` da trilha da chave, por exemplo). Se a aba Logs quiser mostrar quem trocou a chave, o PR 13 lê o `payload` só dessa ação.
-- **A Saúde não repete a gravação de `GET /api/connection/state`:** só lê o estado, e não grava o telefone do dono. O texto do erro da uazapi não sai da consulta, porque traz o corpo da resposta do provedor.
-- **As duas contagens do relay não são um instante só.** Um erro gravado entre elas daria taxa acima de 100%, então os erros são limitados pelo total.
+- **Esta versão substitui a que eu tinha aberto no mesmo PR #40.** Eu tinha feito outra implementação do 12b sem saber da `wip`: só consultas, sem rotas, sem paginação, lista que falha virando "vazia marcada". Quando o #39 entrou com o `docs/PROXIMOS-PASSOS.md`, as decisões dele passaram a valer (`AGENTS.md` §1: o que está documentado vale mais que a opinião do agente). A branch do #40 foi refeita a partir da `main` com o código da `wip`. A versão anterior não chegou à `main`.
 
 **Verificação:**
-- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos, nenhum nos arquivos tocados) · `test` ✓ (4224 em 222 arquivos; eram 4198 em 220) · `build` ✓.
-- Os testes conferem a consulta montada (colunas, filtros por `eq`, ordem e teto + 1), o recorte da ação do relay e da janela, a taxa nula sem repasse, o limite de 100%, e o isolamento de cada parte da Saúde quando outra falha.
-- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. No lugar: a releitura do diff e os quatro comandos acima.
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4334 em 226 arquivos) · `build` ✓ (`/api/connection/logs` e `/api/connection/health` no build).
+- **Não feito:** a conferência por HTTP contra o stack local (`PROXIMOS-PASSOS.md` §4). O ambiente não tinha Docker. Também não houve rodada de mutação nem revisor independente.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente.
 
 **Pendências / próximos passos:**
-- **PR 13 (front):** ligar `IntegrationLogsTable` a `getIntegrationLogs` (os filtros vão para a URL, e a tabela deixa de filtrar no cliente) e montar a aba Saúde. A uazapi pode levar até 12 s para responder (`getUazapiStatus`), então a Saúde vai num `Suspense` próprio, para não segurar a página.
-- **Último inbound sem índice:** `chat_messages` não tem índice que sirva a `direction = 'inbound' order by created_at desc`. Com o volume de hoje (milhares de linhas) não pesa. Se a Saúde ficar lenta, o caminho é um índice parcial `(created_at desc) where direction = 'inbound'`, em migration própria.
-- **Taxa de erro da API v1 na Saúde:** não entrou, porque o plano só pede a do relay. Mesma consulta com `provider = 'api_v1'`, se o dono quiser.
+- Conferência por HTTP antes de publicar (a lista está em `PROXIMOS-PASSOS.md` §4).
+- Apagar a branch `feat/conexao-registros-e-saude` depois do merge.
+- PR 13: as abas. O 13a (estrutura, aba na URL, `/app/configuracoes` só com o Atendimento) já está pronto localmente e vem em seguida.
 
 **Armadilhas descobertas:**
-- **`select()` do supabase-js precisa de string literal para tipar a linha.** Um `columns.join(", ")` vira `string` e a linha perde o tipo. Por isso `INTEGRATION_LOG_SELECT` é literal, e um teste confere que ele bate com as chaves de `IntegrationLog`.
-- **`provider = 'relay'` não basta para medir o repasse:** o teste de conexão (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider.
-- **`pnpm build` reescreve o `next-env.d.ts`.** Não entra no commit.
+- **Duas sessões, duas implementações do mesmo PR.** Antes de começar um PR do plano, olhar `docs/PROXIMOS-PASSOS.md` §2 e as branches do remoto (`git branch -r`): o trabalho em curso pode estar numa branch sem PR.
+- **Estado guardado no módulo atravessa os testes.** O cache de `getIntegrationHealth` faz o 2º teste receber a leitura do 1º. Teste de lógica chama a função sem cache, e o do cache usa instantes distantes entre si.
 
 ## [2026-10-02] Documento de continuidade: onde o projeto está e o que falta
 
