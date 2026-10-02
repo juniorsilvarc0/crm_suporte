@@ -27,6 +27,96 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-01] Fase 5 · PR 9: banco das conversas da IA (autoria por token e handoff)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O banco passa a saber qual token escreveu cada mensagem e ganha a operação que passa a conversa da IA para um humano. Nenhuma rota nem tela muda neste PR.
+**Arquivos alterados:**
+- `supabase/migrations/20261001120000_conversas_ia.sql` (nova);
+- `supabase/tests/conversas.sql` (novo);
+- `supabase/tests/api.sql`, `baseline.sql`, `cadastros.sql`, `segredo_integracao.sql` e `tickets.sql` (só a linha do portão final);
+- `src/lib/supabase/database.types.ts` (gerado);
+- `docs/PLANO-FASE-5.md`, este PROGRESS.
+
+**O que foi feito:**
+- **`chat_messages.sent_by_token_id`:** o token que escreveu a mensagem. FK para `api_tokens` com restrict, índice parcial, no máximo um autor por mensagem, e fora do UPDATE do app (a autoria não muda depois do INSERT).
+- **Remetente amarrado ao tipo do token** (trigger `trg_chat_messages_guard_token_author`): token `ai` escreve como `ai`; token `api`, como `system`. Qualquer outro par é `INVALID_SENDER`.
+- **RPC `conversation_handoff(conversa, token, motivo, resumo?, ticket?)`:**
+  - trava a conversa e passa de `bot` para `human`;
+  - conversa já `human` devolve `changed=false` e não grava nada;
+  - conversa `resolved` é `CONVERSATION_NOT_OWNED_BY_AI`, com o status no HINT;
+  - o ticket informado tem de ser da conversa e não terminal; sem ele, vale o ticket em foco;
+  - deixa uma nota interna no chat, assinada pelo token, com o motivo e o resumo;
+  - registra `ticket.handoff_requested` na trilha do ticket, só com o motivo e o id da nota. A nota e o evento ficam no mesmo ticket;
+  - traz a conversa de volta para a caixa de entrada, se estava arquivada ou removida.
+- **`create_ticket`** deixou de contar nota da IA como 1ª resposta da IA ao vincular as mensagens soltas. É a mesma função de `20260929170000`, com uma linha a mais.
+- **`set local lock_timeout = '5s'`** no topo da migration: se algo estiver segurando `chat_messages`, ela desiste sem mudar nada, em vez de deixar o chat na fila atrás do `ALTER TABLE`.
+- **Portão dos testes SQL:** `where not ok` virou `where ok is not true` nos seis arquivos (ver Armadilhas).
+
+**Decisões tomadas:**
+- **O resumo não vai para a trilha do ticket.** O plano dizia "grava `ticket_event`", e a 1ª versão guardava motivo e resumo no `metadata`. A revisão mostrou o problema: a trilha é append-only (nem o dono apaga) e sai inteira para quem tem `tickets:read`. Um resumo que cite um CPF colado pelo cliente ficaria para sempre, mesmo depois de a mensagem ser apagada. `ticket_update` já seguia essa regra: registra a troca de descrição só como `{"changed": true}`. O motivo curto fica na trilha, como o motivo de uma mudança de status.
+- **Nota interna como lugar do motivo e do resumo.** É onde o analista lê ao assumir, vale com ou sem ticket, não vai ao cliente, não vira prévia nem não-lida, e o banco permite apagá-la (`is_deleted` zera o texto). A nota também é o registro de quem pediu o handoff numa conversa sem ticket (o `integration_logs` guarda só o molde da rota, sem o id da conversa).
+- **O handoff desarquiva e restaura a conversa.** A lista da tela só mostra arquivada na caixa "Arquivadas", e mensagem do cliente não desarquiva. Sem isso, a IA parava de responder e o pedido ficava onde ninguém olha. O no-op (conversa já humana) não mexe: se está arquivada, foi o time que arquivou.
+- **Com ticket informado, a nota vai para ele,** e não para o ticket em foco: quem abre o ticket vê o pedido e o resumo juntos. É a única mensagem que não nasce no foco.
+- **O motivo fica também na trilha, apesar de ser texto livre.** É curto (500), da mesma classe do motivo de uma mudança de status, e é o que a própria IA relê depois: o preset dela não lê notas.
+- **Handoff em conversa já humana é sucesso sem efeito, não erro.** O que a IA queria já aconteceu. Em conversa resolvida é erro: quem a devolve à IA é uma mensagem nova do cliente.
+- **Entrada errada é erro em qualquer estado:** ticket de outra conversa ou encerrado falha mesmo com a conversa já humana.
+- **`'ai'` sem token continua aceito.** Exigir o token barraria um dia classificar como `ai` o eco de uma IA que ainda envia direto pela uazapi (D2). O envio pela API (PR 10) tem um caminho só, e ele grava o token.
+- **A coluna nova sai no Realtime para o operador logado,** como `ticket_id`: o SELECT de `authenticated` em `chat_messages` é de tabela. É só o id do token; `api_tokens` não tem grant nem policy para `authenticated` (caso P06).
+- **O portão dos outros cinco arquivos de teste entrou neste PR,** fora do escopo original: é uma linha por arquivo, e os cinco seguem verdes com o portão estrito.
+
+**Verificação:**
+- **SQL:** 70 casos novos em `conversas.sql`. Com o portão estrito: `tickets.sql` 164, `api.sql` 44, `cadastros.sql` 63, `baseline.sql` 52 e `segredo_integracao.sql` 7. Os dois últimos exigem banco sem integração: no banco local rodaram com a integração de dev apagada dentro da própria transação, que termina em ROLLBACK.
+- **Migration:** aplicada no banco local; o arquivo rodado uma 2ª vez inteiro não muda nada; o script reaplicado dá "0 migration(s)"; `lock_timeout` não vaza da transação.
+- **`create_ticket`:** diff programático contra o corpo de `20260929170000`: uma linha. O corpo daquele arquivo é igual ao que estava no banco.
+- **Mutação:** 79 mutantes da migration (entrada, ordem das checagens, ticket, estado, caixa de entrada, evento, nota, resposta, privilégios, trigger, constraints, `create_ticket`). Nenhum sobreviveu, todos pegos pelo código de saída do arquivo, como o CI vê. Na 1ª versão, um sobrevivente (`updated_at`) virou teste.
+- **Corrida, com duas sessões psql** (A segura a transação 3 s; B entra 1 s depois):
+
+  | Corrida | Resultado |
+  |---|---|
+  | dois handoffs na mesma conversa | B espera 2 s e sai com `changed=false`; 1 nota e 1 evento |
+  | conversa resolvida: mensagem do cliente (A) × handoff (B) | B espera; a conversa já voltou para `bot`; `changed=true` |
+  | handoff (A) × mensagem do cliente (B) | a mensagem espera, cai no ticket em foco, e a conversa segue `human` |
+  | handoff (A) × Assumir (B) | Assumir devolve `conversation_changed=false` |
+  | Assumir (A) × handoff (B) | `changed=false`, sem nota nem evento |
+  | ticket em foco cancelado (A) × handoff sem ticket (B) | `changed=true`, `ticket_id` nulo |
+  | ticket cancelado (A) × handoff com esse ticket (B) | `TICKET_TERMINAL`; a conversa segue `bot` |
+  | contato renomeado × handoff de conversa arquivada, nos dois sentidos | o segundo espera; a conversa sai do arquivo; sem deadlock |
+
+  Tudo o que a prova criou foi apagado no fim (0 conversas, contatos, tokens e usuários de sobra).
+- **Revisão adversarial** (3 revisores independentes, e um 4º só para o que mudou depois deles): nenhum defeito grave na função. Corrigidos:
+  - o resumo na trilha;
+  - o remetente solto do tipo do token;
+  - a nota da IA contando como 1ª resposta na abertura do ticket;
+  - o portão que ignorava asserção nula;
+  - a falta de `lock_timeout`;
+  - handoff de conversa arquivada, que ficava fora da caixa de entrada;
+  - a nota num ticket e o evento em outro;
+  - as lacunas de teste apontadas.
+- typecheck ✓ · lint ✓ (só os 9 avisos antigos) · test ✓ (2972) · build ✓. Os tipos regenerados batem com o arquivo.
+
+**Pendências / próximos passos:**
+- **PR 10** (rotas de conversa da v1):
+  - mapear `CONVERSATION_NOT_OWNED_BY_AI` (409, com o status do HINT) e `INVALID_HANDOFF` (400) em `mapTicketError`. Hoje cairiam em 500. `INVALID_SENDER` é bug do app, e 500 está certo;
+  - o serviço remonta a resposta campo a campo. `conversation_external_id` é o telefone do canal: serve para avisar o agente e nunca sai na API nem fica em `api_idempotency_keys`;
+  - a rota deriva o `sender_type` do tipo do token;
+  - rótulo de `ticket.handoff_requested` na timeline e assinatura na nota sem autor usuário. Hoje aparecem "Atividade registrada" e "Nota interna" sem nome;
+  - `sent_by_token_id` nos DTOs de mensagem; nota em `GET /messages` só com `comments:read`, como na timeline;
+  - **quem apaga a nota da IA.** Hoje ninguém, pela tela: a regra é "só o autor", e o autor é um token. Proposta: admin apaga nota de token; ninguém edita. Até lá, o resumo só sai por SQL;
+  - guia da IA: despedir-se do cliente ANTES do handoff (depois dele, o envio responde 409); `changed: false` não traz o ticket; ticket errado é erro mesmo com a conversa já humana;
+  - atualizar a skill `uazapi-integration` (modelo de dados) quando a IA passar a enviar pela API.
+- **Aplicar em produção** só com "pode subir", junto dos PRs 3 a 8b. Se a migration falhar com `lock timeout` (55P03), nada mudou: basta rodar de novo, fora do horário do backup (03:30 UTC).
+- O `btrim` do banco só tira espaço: motivo feito só de tab ou quebra de linha passa como não vazio. A rota do PR 10 precisa do `trim()` do zod.
+
+**Armadilhas descobertas:**
+- **O portão dos testes SQL deixava passar asserção nula.** `r.ok` aceita NULL e o portão era `where not ok`, que descarta NULL. A listagem mostrava `FALHA`, mas o arquivo saía com 0 e o CI ficava verde. Uma comparação com um lado nulo (`(j ->> 'ticket_id')::uuid = v_a` sem o ticket) caía nisso. Use `ok is not true`, e `is not distinct from` quando um lado pode ser nulo.
+- **Texto longo vindo da conversa não entra em tabela append-only** (`ticket_events`, `ticket_status_history`, `contact_events`): não há como apagar depois, e a trilha do ticket sai inteira para `tickets:read`.
+- **Nota com `sender_type='ai'` contava como 1ª resposta da IA em `create_ticket`.** O trigger de INSERT ignora nota, mas o vínculo das mensagens soltas só ignorava no ramo humano. Estava inalcançável enquanto nada gravava `ai`.
+- **RPC que trava a conversa pode inserir NOTA, não mensagem comum.** A nota não toca em `contacts`. Uma mensagem comum tocaria (`touch_contact_from_inserted_message`), e aí a ordem ficaria conversa → contato, o inverso de quem renomeia o contato: deadlock.
+- **Trigger BEFORE roda antes dos CHECKs.** Com o trigger de autoria, um CHECK para o mesmo caso ficava inalcançável; ficou só o trigger.
+- **"No space left on device" no Postgres local é o disco da VM do Docker** (32 GB, dividido entre todos os projetos da máquina), não a migration. O `crm-suporte-db` entra em reinício contínuo até sobrar espaço.
+- **`baseline.sql` e `segredo_integracao.sql` falham num banco local que já tem integração `uazapi`** (inserem a deles). No CI o banco nasce vazio. Para rodá-los localmente: `begin; delete from public.chat_integrations where provider = 'uazapi';` antes do arquivo; o `rollback` do próprio arquivo desfaz.
+
 ## [2026-10-01] Fase 5 · PR 8b: comentário, anexo e timeline do ticket na API v1
 
 **Agente/Modelo:** Claude Opus 5.5.

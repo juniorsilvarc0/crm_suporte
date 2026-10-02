@@ -142,6 +142,23 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 **PR 9: `feat(banco)`, conversas da IA** · banco · P · depende das decisões D10 e D12; pode entrar no PR 3 se as decisões saírem antes
 - **Arquivos:** `chat_messages.sent_by_token_id`; RPC `conversation_handoff(token, conversation, reason, summary, ticket_id)`, que muda bot→human com trava e grava `ticket_event` quando houver ticket; testes SQL e `db:types`.
 
+> **PR 9, feito (2026-10-01)**, na migration `20261001120000_conversas_ia.sql`:
+> - **Autoria.** `chat_messages.sent_by_token_id` (FK restrict, fora do UPDATE do app). O remetente da mensagem de um token é o tipo do token, por trigger: `ai` escreve como `ai`; `api`, como `system`. Fora disso é `INVALID_SENDER`. Um token nunca passa por analista, e uma integração não carimba a 1ª resposta da IA.
+> - **Handoff.** `conversation_handoff(conversa, token, motivo, resumo?, ticket?)` trava a conversa e passa de `bot` para `human`. Conversa já `human` devolve `changed=false` sem gravar nada; `resolved` é `CONVERSATION_NOT_OWNED_BY_AI`, com o status no HINT. O ticket informado tem de ser da conversa e não terminal; sem ele, vale o ticket em foco.
+> - **Onde ficam o motivo e o resumo (mudou em relação ao texto acima).** A trilha do ticket é append-only e sai inteira para quem tem `tickets:read`; texto longo vindo da conversa não cabe nela. Por isso:
+>   - o evento `ticket.handoff_requested` guarda só o motivo (até 500 caracteres, como o motivo de uma mudança de status) e o id da nota;
+>   - o motivo e o resumo (até 4.000) vão para uma **nota interna no chat**, assinada pelo token e marcada com `metadata.handoff`. O analista a lê ao assumir, com ou sem ticket. Nota não vai ao cliente, não vira prévia, e o banco permite apagá-la (a trilha, não);
+>   - a nota e o evento ficam no mesmo ticket (o informado, ou o em foco).
+> - **Caixa de entrada.** O handoff desarquiva e restaura a conversa: o pedido de um humano não pode ficar na caixa "Arquivadas".
+> - **`create_ticket`** deixou de contar nota da IA como 1ª resposta da IA ao vincular as mensagens soltas.
+> - **Para o PR 10:**
+>   - mapear `CONVERSATION_NOT_OWNED_BY_AI` (409, com o status do HINT) e `INVALID_HANDOFF` (400) em `mapTicketError`; `INVALID_SENDER` é bug do app (500);
+>   - o serviço remonta a resposta campo a campo: `conversation_external_id` é só para avisar o agente e nunca sai na API;
+>   - a rota deriva o `sender_type` do tipo do token (`ai` → `ai`; `api` → `system`);
+>   - rótulo de `ticket.handoff_requested` na timeline e assinatura na nota sem autor usuário (hoje aparece "Atividade registrada" e "Nota interna" sem nome);
+>   - `sent_by_token_id` nos DTOs de mensagem, e nota em `GET /messages` só com `comments:read`, como na timeline;
+>   - decidir quem apaga a nota da IA pela tela (proposta: admin apaga, ninguém edita).
+
 **PR 10: `feat(api)`, envio pela IA, handoff e active-ticket** · back · G · depende dos PRs 4 e 9
 - **Arquivos:**
   - `src/features/chat/lib/send-outbound.ts`: extraído de `send/route.ts:80-232`, com `sender_type` agent|ai, `clientId` e checagem condicional de `status='bot'` para o 409 `conversation_not_owned_by_ai`. A rota de sessão passa a chamá-lo;

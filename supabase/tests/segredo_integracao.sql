@@ -61,7 +61,7 @@ select case when ok then 'ok  ' else 'FALHA' end as resultado, teste, detalhe fr
 do $$
 declare v_falhas text;
 begin
-  select string_agg(teste, '; ' order by teste) into v_falhas from r where not ok;
+  select string_agg(teste, '; ' order by teste) into v_falhas from r where ok is not true;
   if v_falhas is not null then
     raise exception 'testes de segredo da integração falharam: %', v_falhas;
   end if;
