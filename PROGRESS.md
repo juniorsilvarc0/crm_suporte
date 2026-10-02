@@ -27,6 +27,43 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 12b: leitura real dos registros de integração e a Saúde
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O back das abas Logs e Saúde: os registros de `integration_logs` lidos de verdade, com filtros, e uma Saúde que junta o estado do WhatsApp, a última mensagem recebida e a taxa de erro do repasse ao agente.
+**Arquivos alterados:** `src/features/integrations/types.ts`, `src/features/integrations/queries/get-integration-logs.ts` (era um stub que devolvia `[]`), os novos `src/features/integrations/queries/get-integration-health.ts` e os testes `get-integration-logs.test.ts` e `get-integration-health.test.ts`, e os docs `docs/PLANO-FASE-5.md` e este PROGRESS.
+
+**O que foi feito:**
+- **`getIntegrationLogs(filtros)`:** devolve os registros mais recentes, do mais novo ao mais antigo, até 200 (`INTEGRATION_LOGS_LIMIT`). Pede uma linha a mais para saber se passou do teto (`truncated`), sem `count` na tabela inteira. Os filtros são integração, ação, status e `request_id`, todos por igualdade. Se a leitura falha, devolve `failed: true`, para a tela não dizer "nenhum registro".
+- **`parseIntegrationLogFilters(searchParams)`:** lê da URL `integracao`, `acao`, `status` e `request_id`. Valor fora da forma da coluna vira "sem filtro" em vez de erro, como em `parseContactListParams`.
+- **`IntegrationLog` passa a ser só as colunas que a lista lê.** O `payload` fica de fora.
+- **`getIntegrationHealth()`:** lê três partes em paralelo, e a que falhar vira `unreadable` sem derrubar as outras:
+  - **WhatsApp:** `not_configured`, `unreadable` (o banco ou o cofre não responderam), `unreachable` (a uazapi não respondeu) ou o estado da instância. Usa só `/instance/status`;
+  - **último inbound:** o `created_at` da mensagem mais recente com `direction = 'inbound'`, ou `null` se nenhuma chegou;
+  - **relay:** total e erros das últimas 24 h, só da ação `conversation.message_received`, com `errorRate` de 0 a 1 (`null` quando não houve repasse).
+
+**Decisões tomadas:**
+- **Consultas de servidor, e não rotas.** As abas são server components de administrador (PR 13), como Configurações já é. Nenhuma rota nova: sem guard novo e nada que mude estado por GET.
+- **Sem paginação, com teto e filtros.** Os logs são append-only, ficam 90 dias e são estreitados pelos filtros. Mais de 200 linhas aparece como `truncated`. Se o PR 13 precisar de "carregar mais", o caminho é o cursor `(created_at, id)`, como o das mensagens em `src/lib/api/v1/cursor.ts`.
+- **Sem `payload` na lista.** Ele leva dado interno do evento (o `by` da trilha da chave, por exemplo). Se a aba Logs quiser mostrar quem trocou a chave, o PR 13 lê o `payload` só dessa ação.
+- **A Saúde não repete a gravação de `GET /api/connection/state`:** só lê o estado, e não grava o telefone do dono. O texto do erro da uazapi não sai da consulta, porque traz o corpo da resposta do provedor.
+- **As duas contagens do relay não são um instante só.** Um erro gravado entre elas daria taxa acima de 100%, então os erros são limitados pelo total.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos, nenhum nos arquivos tocados) · `test` ✓ (4224 em 222 arquivos; eram 4198 em 220) · `build` ✓.
+- Os testes conferem a consulta montada (colunas, filtros por `eq`, ordem e teto + 1), o recorte da ação do relay e da janela, a taxa nula sem repasse, o limite de 100%, e o isolamento de cada parte da Saúde quando outra falha.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente. No lugar: a releitura do diff e os quatro comandos acima.
+
+**Pendências / próximos passos:**
+- **PR 13 (front):** ligar `IntegrationLogsTable` a `getIntegrationLogs` (os filtros vão para a URL, e a tabela deixa de filtrar no cliente) e montar a aba Saúde. A uazapi pode levar até 12 s para responder (`getUazapiStatus`), então a Saúde vai num `Suspense` próprio, para não segurar a página.
+- **Último inbound sem índice:** `chat_messages` não tem índice que sirva a `direction = 'inbound' order by created_at desc`. Com o volume de hoje (milhares de linhas) não pesa. Se a Saúde ficar lenta, o caminho é um índice parcial `(created_at desc) where direction = 'inbound'`, em migration própria.
+- **Taxa de erro da API v1 na Saúde:** não entrou, porque o plano só pede a do relay. Mesma consulta com `provider = 'api_v1'`, se o dono quiser.
+
+**Armadilhas descobertas:**
+- **`select()` do supabase-js precisa de string literal para tipar a linha.** Um `columns.join(", ")` vira `string` e a linha perde o tipo. Por isso `INTEGRATION_LOG_SELECT` é literal, e um teste confere que ele bate com as chaves de `IntegrationLog`.
+- **`provider = 'relay'` não basta para medir o repasse:** o teste de conexão (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider.
+- **`pnpm build` reescreve o `next-env.d.ts`.** Não entra no commit.
+
 ## [2026-10-01] O pedido do QR deixa de ser GET
 
 **Agente/Modelo:** Claude Opus 5.5.
