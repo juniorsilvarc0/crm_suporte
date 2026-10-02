@@ -259,7 +259,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 
 > **PR 13 dividido em três** (2026-10-02), para caber numa revisão:
 > - **13a, feito:** a estrutura. `/app/conexao` vira **Integrações**, com as abas na URL (`?aba=`) pelo `UrlTabs` (`src/components/layout/url-tabs.tsx`; o Atendimento passou a usar o mesmo). WhatsApp (a padrão), API do CRM, Agente de IA (`keepMounted`) e Variáveis, com os blocos de antes, sem mudança. `/app/configuracoes` só redireciona (307) para `/app/conexao?aba=variaveis`, e o item Configurações saiu do menu; o Atendimento segue em `/app/configuracoes/atendimento`. O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
-> - **13b, a fazer:** as abas Registros (`IntegrationLogsTable` refeita, os filtros na URL e "carregar mais", sobre `GET /api/connection/logs`) e Saúde (sobre `GET /api/connection/health`, pedida só com a aba aberta). As rotas já estão na `main` (PR 12b, #40).
+> - **13b, feito (2026-10-02):** as abas Registros (`IntegrationLogsTable` refeita, os filtros na URL e "carregar mais", sobre `GET /api/connection/logs`) e Saúde (sobre `GET /api/connection/health`, pedida só com a aba aberta). A página lê a 1ª página dos registros só com a aba Registros aberta, e a Saúde nunca. Detalhe em `UI.md` §5.19.
 > - **13c, a fazer:** a edição de token (escopos, preset, validade, limite), o `FormSelect` do catálogo em Variáveis e a limpeza da coluna Origem e de "Substituir" em variável antiga.
 
 **PR 14: `docs`, API e guia do agente** · docs · M · depende dos PRs 6 a 11

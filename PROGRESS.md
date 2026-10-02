@@ -27,6 +27,52 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 13b: as abas Registros e Saúde de Integrações
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O administrador vê, em Integrações, os registros da API e do repasse ao agente, com filtros, e a saúde das integrações. As rotas do #40 ganham tela.
+**Arquivos alterados:**
+- novos: `src/features/integrations/components/integration-health-panel.tsx`, `src/features/integrations/lib/log-labels.ts`, e os testes `integration-logs-table.test.tsx`, `integration-health-panel.test.tsx` e `log-labels.test.ts`;
+- alterados: `src/features/integrations/components/integration-logs-table.tsx` (refeita; era órfã e filtrava no navegador), `src/features/integrations/lib/log-filters.ts` (exporta `isRequestIdLike`), `src/features/connection/lib/connection-tabs.ts` (duas abas), `src/app/(dashboard)/app/conexao/page.tsx` e o teste dela;
+- docs: `UI.md` §5.19, `PRD.md`, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md` e este PROGRESS.
+
+**O que foi feito:**
+- **Aba Registros** (`?aba=registros`):
+  - os filtros ficam na URL e são lidos no servidor por `parseIntegrationLogFilters`: integração, ação, status, token, período e o id do pedido (na busca, com debounce de 300 ms);
+  - a 1ª página vem do `getIntegrationLogs` da página, só com a aba aberta;
+  - "Carregar mais" pede `GET /api/connection/logs` com o cursor;
+  - filtro novo zera o que foi carregado, e a resposta que chega depois da troca é descartada;
+  - três estados distintos: falha com "Tentar de novo", vazio sem filtro e vazio com filtro.
+- **Aba Saúde** (`?aba=saude`): `IntegrationHealthPanel` pede `GET /api/connection/health` ao montar e no "Atualizar".
+  - Cada parte diz o próprio estado em texto colorido, e `unavailable` diz "Não foi possível ler…".
+  - A página nunca lê a Saúde.
+- **Rótulos** em arquivo neutro (`log-labels.ts`): integração, ação do repasse, período e quem fez. O que a tela não conhece aparece como veio.
+
+**Decisões tomadas:**
+- **A Saúde é lida pelo navegador, e não pela página.** O provedor pode levar até 12 s, e a página relê tudo a cada troca de aba. A rota (GET, com a leitura guardada 10 s no servidor) já existia para isso.
+- **Os registros são lidos pela página, mas só com a aba aberta.** Assim a 1ª página chega junto com a aba (sem um segundo pedido), e as outras abas não pagam por ela.
+- **A ação muda com a integração escolhida:** trocar de integração limpa a ação que não existe na outra, e o filtro de token some com o Agente de IA, que não tem token.
+- **Sem total na contagem:** a lista não usa `count` (decisão do 12b), então a tela diz "N registros, e há mais".
+- **Número da instância numa linha à parte** na Saúde ("Número: (27) 99999-0000."), em vez de entre parênteses na frase do estado.
+
+**Verificação:**
+- `typecheck` ✓ · `lint` ✓ (os 9 avisos antigos) · `test` ✓ (4386 em 231 arquivos) · `build` ✓.
+- **Mutações conferidas à mão:**
+  - tirar a guarda da resposta atrasada do "Carregar mais" derruba o teste dela;
+  - fazer a página ler os registros em qualquer aba derruba o teste da página.
+- **Não feito:** o roteiro por HTTP contra o stack local (`PROXIMOS-PASSOS.md` §4), porque não há Docker neste ambiente. Também não houve revisor independente.
+- `bug-hunter` e `verification-before-completion` não estão instaladas neste ambiente.
+
+**Pendências / próximos passos:**
+- **PR 13c:** edição de token na API do CRM, e o catálogo em Variáveis.
+- **Conferência por HTTP** antes de publicar, com os registros e a Saúde na tela.
+- **"Filtrar por este pedido" a partir da linha:** não entrou. Hoje o id se copia da tabela.
+
+**Armadilhas descobertas:**
+- **`react-hooks/set-state-in-effect` acusa função chamada no efeito que faz `setState` antes do primeiro `await`.** Leitura na montagem: a função devolve o resultado, e o `setState` fica no `.then` (`IntegrationHealthPanel`).
+- **A tabela e a lista do celular estão as duas no DOM do jsdom** (o CSS não esconde nada). Nos testes, procurar dentro de `getByRole("table")`.
+- **`formatPhone` não põe o `+55`:** devolve `(27) 99999-0000`.
+
 ## [2026-10-02] Fase 5, PR 13a: Integrações em /app/conexao, com a aba na URL
 
 **Agente/Modelo:** Claude Opus 5.5.

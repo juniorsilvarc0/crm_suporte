@@ -25,6 +25,11 @@ const m = vi.hoisted(() => ({
   EnvironmentVariablesManager: vi.fn<(props: { variables: unknown; transcriptionModel: unknown }) => ReactNode>(
     () => <div data-testid="cofre" />
   ),
+  logs: vi.fn(),
+  health: vi.fn(),
+  IntegrationLogsTable: vi.fn<(props: { page: unknown; filters: unknown; tokens: unknown }) => ReactNode>(
+    () => <div data-testid="registros" />
+  ),
 }));
 
 // Só o guard de admin: trocar por outro faz a página falhar aqui.
@@ -54,6 +59,15 @@ vi.mock("@/features/settings/components/environment-variables-manager", () => ({
   EnvironmentVariablesManager: m.EnvironmentVariablesManager,
 }));
 vi.mock("@/components/layout/page-header", () => ({ PageHeader: () => null }));
+vi.mock("@/features/integrations/queries/get-integration-logs", () => ({ getIntegrationLogs: m.logs }));
+// A Saúde nunca é lida pela página: o painel pede a rota no navegador.
+vi.mock("@/features/integrations/queries/get-integration-health", () => ({ getIntegrationHealth: m.health }));
+vi.mock("@/features/integrations/components/integration-logs-table", () => ({
+  IntegrationLogsTable: m.IntegrationLogsTable,
+}));
+vi.mock("@/features/integrations/components/integration-health-panel", () => ({
+  IntegrationHealthPanel: () => <div data-testid="saude" />,
+}));
 vi.mock("@/features/connection/components/connection-panel", () => ({
   ConnectionPanel: () => <div data-testid="whatsapp" />,
 }));
@@ -82,7 +96,11 @@ import ConexaoPage from "@/app/(dashboard)/app/conexao/page";
 const RELAY_CONFIG: RelayConfig = { configuredUrl: "https://agente.exemplo.com/hook", state: "active", reason: null };
 const SIGNING: RelaySigning = { state: "configured", updatedAt: "2026-10-01T12:00:00+00:00" };
 const BOT_SIGNATURE = { marker: "assinatura do bot" };
-const TOKENS = [{ id: "t1" }];
+const TOKENS = [{ id: "t1", name: "IA de triagem", token_prefix: "crmsuporte_ab", scopes: [] }];
+const LOGS_PAGE = { state: "ok", items: [], nextCursor: null };
+
+/** A página com a query string dada, como o Next a entrega. */
+const open = (query: Record<string, string | string[]> = {}) => ConexaoPage({ searchParams: Promise.resolve(query) });
 const VARIABLES = [{ name: "OPENAI_API_KEY" }];
 const MODEL = { value: "whisper-1", source: "default" };
 
@@ -94,6 +112,7 @@ beforeEach(() => {
   m.botSignature.mockResolvedValue(BOT_SIGNATURE);
   m.variables.mockResolvedValue(VARIABLES);
   m.model.mockResolvedValue(MODEL);
+  m.logs.mockResolvedValue(LOGS_PAGE);
 });
 
 afterEach(() => {
@@ -106,14 +125,14 @@ describe("Integrações (/app/conexao)", () => {
   it("sem admin confirmado no banco, o redirect do guard interrompe antes de qualquer leitura", async () => {
     m.admin.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
-    await expect(ConexaoPage()).rejects.toThrow("NEXT_REDIRECT");
+    await expect(open()).rejects.toThrow("NEXT_REDIRECT");
 
     expect(m.admin).toHaveBeenCalledOnce();
     for (const read of reads) expect(read).not.toHaveBeenCalled();
   });
 
   it("cada leitura é feita uma vez e chega ao bloco dela", async () => {
-    render(await ConexaoPage());
+    render(await open());
 
     for (const read of reads) expect(read).toHaveBeenCalledOnce();
     expect(m.AutomationSettings.mock.calls[0]![0]).toEqual({ config: RELAY_CONFIG });
@@ -133,45 +152,47 @@ describe("Integrações (/app/conexao)", () => {
   ])("%s: o estado da chave chega ao bloco como veio", async (_label, signing) => {
     m.relaySigning.mockResolvedValue(signing);
 
-    render(await ConexaoPage());
+    render(await open());
 
     expect(m.RelaySigningSettings.mock.calls[0]![0]).toEqual({ signing });
   });
 
   it("o refresh que muda o estado da chave NÃO remonta o bloco: o diálogo com a chave gerada continua aberto", async () => {
     m.relaySigning.mockResolvedValue({ state: "absent" });
-    const { rerender } = render(await ConexaoPage());
+    const { rerender } = render(await open());
 
     m.relaySigning.mockResolvedValue(SIGNING);
-    rerender(await ConexaoPage());
+    rerender(await open());
 
     expect(m.RelaySigningSettings.mock.lastCall![0]).toEqual({ signing: SIGNING });
     expect(m.signingMounts).toHaveBeenCalledTimes(1);
   });
 
   it("as abas, na ordem: WhatsApp (a padrão), API do CRM, Agente de IA e Variáveis", async () => {
-    render(await ConexaoPage());
+    render(await open());
 
     expect(screen.getAllByTestId(/^aba-/).map((tab) => [tab.dataset.testid, tab.dataset.label])).toEqual([
       ["aba-whatsapp", "WhatsApp"],
       ["aba-api", "API do CRM"],
       ["aba-agente", "Agente de IA"],
       ["aba-variaveis", "Variáveis"],
+      ["aba-registros", "Registros"],
+      ["aba-saude", "Saúde"],
     ]);
     expect(within(screen.getByTestId("aba-whatsapp")).getByTestId("whatsapp")).toBeInTheDocument();
   });
 
   it("a aba Agente de IA não desmonta ao trocar de aba (a chave gerada só aparece uma vez); as outras, sim", async () => {
-    render(await ConexaoPage());
+    render(await open());
 
     expect(screen.getByTestId("aba-agente")).toHaveAttribute("data-keep-mounted", "true");
-    for (const tab of ["aba-whatsapp", "aba-api", "aba-variaveis"]) {
+    for (const tab of ["aba-whatsapp", "aba-api", "aba-variaveis", "aba-registros", "aba-saude"]) {
       expect(screen.getByTestId(tab)).toHaveAttribute("data-keep-mounted", "false");
     }
   });
 
   it("a aba Agente de IA traz o webhook, a chave de assinatura e a assinatura das mensagens, nessa ordem", async () => {
-    render(await ConexaoPage());
+    render(await open());
 
     const agent = screen.getByTestId("aba-agente");
     const blocks = within(agent)
@@ -191,7 +212,7 @@ describe("Integrações (/app/conexao)", () => {
   });
 
   it("os blocos do agente não vazam para as outras abas", async () => {
-    render(await ConexaoPage());
+    render(await open());
 
     expect(within(screen.getByTestId("aba-variaveis")).getByTestId("cofre")).toBeInTheDocument();
     expect(within(screen.getByTestId("aba-api")).getByTestId("tokens")).toBeInTheDocument();
@@ -199,5 +220,60 @@ describe("Integrações (/app/conexao)", () => {
       expect(within(screen.getByTestId(tab)).queryByTestId("chave")).not.toBeInTheDocument();
       expect(within(screen.getByTestId(tab)).queryByTestId("webhook")).not.toBeInTheDocument();
     }
+  });
+
+  describe("Registros e Saúde", () => {
+    it("fora da aba Registros, os registros não são lidos, e a aba mostra só o esqueleto", async () => {
+      for (const aba of [undefined, "api", "saude", "inexistente"]) {
+        m.logs.mockClear();
+        const { unmount } = render(await open(aba ? { aba } : {}));
+
+        expect(m.logs).not.toHaveBeenCalled();
+        expect(within(screen.getByTestId("aba-registros")).queryByTestId("registros")).not.toBeInTheDocument();
+        expect(screen.getByTestId("aba-registros").querySelector("[aria-busy='true']")).not.toBeNull();
+        unmount();
+      }
+    });
+
+    it("na aba Registros, lê a 1ª página com os filtros da URL e entrega página, filtros e tokens", async () => {
+      const filters = {
+        integracao: "relay",
+        status: "error",
+        acao: "webhook.ping",
+        token: null,
+        pedido: null,
+        periodo: "24h",
+      };
+
+      render(await open({ aba: "registros", integracao: "relay", status: "error", acao: "webhook.ping", periodo: "24h" }));
+
+      expect(m.logs).toHaveBeenCalledExactlyOnceWith(filters);
+      expect(m.IntegrationLogsTable.mock.calls[0]![0]).toEqual({
+        page: LOGS_PAGE,
+        filters,
+        tokens: [{ id: "t1", name: "IA de triagem" }],
+      });
+      expect(within(screen.getByTestId("aba-registros")).getByTestId("registros")).toBeInTheDocument();
+    });
+
+    it("a 1ª ocorrência de `aba` vale, como em toda a query string", async () => {
+      render(await open({ aba: ["registros", "api"] }));
+
+      expect(m.logs).toHaveBeenCalledOnce();
+    });
+
+    it("a leitura dos registros só começa depois do admin confirmado", async () => {
+      m.admin.mockRejectedValue(new Error("NEXT_REDIRECT"));
+
+      await expect(open({ aba: "registros" })).rejects.toThrow("NEXT_REDIRECT");
+      expect(m.logs).not.toHaveBeenCalled();
+    });
+
+    it("a Saúde nunca é lida no servidor, nem com a aba dela aberta: o painel pede a rota", async () => {
+      render(await open({ aba: "saude" }));
+
+      expect(m.health).not.toHaveBeenCalled();
+      expect(within(screen.getByTestId("aba-saude")).getByTestId("saude")).toBeInTheDocument();
+    });
   });
 });

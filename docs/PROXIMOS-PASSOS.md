@@ -17,9 +17,9 @@
 
 | | |
 |---|---|
-| `main` | até o PR #40 (o 12b, §4). Aberto: o PR do 13a (§5.1). |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4334 testes em 226 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 13a da Fase 5 **pronto**, à espera do merge. Depois, o 13b e o 13c (§5.1). |
+| `main` | até o PR #41 (o 13a, §5.1). Aberto: o PR do 13b (§5.1). |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4341 testes em 228 arquivos) e `build` verdes. |
+| Trabalho em curso | PR 13b da Fase 5 **pronto**, à espera do merge. Depois, o 13c (§5.1). |
 | Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
@@ -31,7 +31,7 @@
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
 | 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 · Integrações em abas #41 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
@@ -81,17 +81,16 @@ O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e n
 
 Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". O PR foi dividido em três.
 
-**13a, feito (no PR aberto, à espera do merge):**
+**13a, feito (#41):**
 - `/app/conexao` virou **Integrações**, com as abas na URL pelo `UrlTabs` (`src/components/layout/url-tabs.tsx`, que o Atendimento também usa): WhatsApp (a padrão), API do CRM, Agente de IA (`keepMounted`) e Variáveis.
 - `/app/configuracoes` só redireciona (307) para `/app/conexao?aba=variaveis`. O item Configurações saiu do menu, e o Atendimento segue em `/app/configuracoes/atendimento` (D14, decidido em 2026-10-02).
 - O `revalidatePath` das rotas de token, de variável e da chave aponta para `/app/conexao`.
 - O pedido do QR continua POST (#38).
 
-**13b, a fazer: as abas Registros e Saúde,** sobre as rotas do #40.
-- **Registros:** `IntegrationLogsTable` refeita, com filtros no servidor e "carregar mais", usando `parseIntegrationLogFilters` e `integrationLogSearch`. Os filtros vão para a URL da página; o cursor, não.
-- **Saúde:** pedir `GET /api/connection/health` só com a aba aberta, e nunca aguardar no render da página: o provedor pode levar 12 s. Mostrar contagens ("3 de 40"), sem inventar índice.
-- **Estados novos no `UI.md`:** `unavailable`, `cause`, `invalid_cursor`, `exact: false`.
-- A lista das abas está em `src/features/connection/lib/connection-tabs.ts`, neutra: a página lê dali qual aba está aberta.
+**13b, feito (no PR aberto, à espera do merge): as abas Registros e Saúde,** sobre as rotas do #40. Como ficou está em `UI.md` §5.19. Em resumo:
+- **Registros:** `IntegrationLogsTable` refeita. Os filtros ficam na URL e são lidos no servidor, e "Carregar mais" pede `GET /api/connection/logs` com o cursor. A página só lê os registros com a aba aberta.
+- **Saúde:** `IntegrationHealthPanel` pede `GET /api/connection/health` ao abrir a aba e no "Atualizar". A página nunca a lê.
+- **Não feito:** o roteiro por HTTP contra o stack local (§4), de novo por falta de Docker.
 
 **13c, a fazer: API do CRM e Variáveis.**
 - **API do CRM:** edição de token (escopos um a um, preset, validade, limite). A rota `PATCH /api/api-tokens/[id]` já aceita esses campos.
