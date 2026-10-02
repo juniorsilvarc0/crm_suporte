@@ -32,8 +32,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { VAULT_EDITABLE_NAMES } from "@/features/settings/schemas/environment-variable";
 import {
-  ENVIRONMENT_VARIABLE_NAME_PATTERN,
+  OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODELS,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
   type EnvironmentVariableListItem,
@@ -51,10 +52,17 @@ type ApiResult = {
   errors?: Record<string, string[]>;
 };
 
-const sourceLabel = {
-  vault: "Cofre",
-  environment: "Servidor",
-} as const;
+// O que cada chave do catálogo faz, para quem escolhe qual gravar. O modelo de
+// transcrição tem seletor próprio, abaixo, e não entra na lista de chaves.
+const KEY_DESCRIPTIONS: Record<string, string> = {
+  [OPENAI_API_KEY_NAME]: "Chave da OpenAI, usada para transcrever os áudios do WhatsApp.",
+};
+const SELECTABLE_NAMES = VAULT_EDITABLE_NAMES.filter((name) => name !== OPENAI_TRANSCRIPTION_MODEL_NAME);
+
+/** A chave está no catálogo: o CRM a lê, e a tela deixa substituir. */
+function isCatalogName(name: string): boolean {
+  return VAULT_EDITABLE_NAMES.includes(name);
+}
 
 export function EnvironmentVariablesManager({
   variables,
@@ -83,6 +91,10 @@ export function EnvironmentVariablesManager({
     setModel(transcriptionModel.value);
   }
 
+  // Só as chaves do catálogo que ainda não têm valor: substituir é pela linha.
+  const configured = new Set(variables.map((variable) => variable.name));
+  const availableNames = SELECTABLE_NAMES.filter((candidate) => !configured.has(candidate));
+
   const filteredVariables = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR");
     if (!normalized) return variables;
@@ -93,7 +105,7 @@ export function EnvironmentVariablesManager({
 
   function openCreate() {
     setEditor({ mode: "create" });
-    setName("");
+    setName(availableNames.length === 1 ? availableNames[0]! : "");
     setValue("");
     setShowValue(false);
     setErrors({});
@@ -119,14 +131,8 @@ export function EnvironmentVariablesManager({
     event.preventDefault();
     const normalizedName = name.trim().toUpperCase();
 
-    if (normalizedName === OPENAI_TRANSCRIPTION_MODEL_NAME) {
-      setErrors({ name: ["Use o seletor de modelo abaixo."] });
-      return;
-    }
-    if (!ENVIRONMENT_VARIABLE_NAME_PATTERN.test(normalizedName)) {
-      setErrors({
-        name: ["Use letras maiúsculas, números e sublinhado. Comece por uma letra."],
-      });
+    if (!normalizedName) {
+      setErrors({ name: ["Escolha a chave."] });
       return;
     }
     if (!value) {
@@ -229,10 +235,15 @@ export function EnvironmentVariablesManager({
               a ser exibidos.
             </p>
           </div>
-          <Button onClick={openCreate} className="h-11 sm:h-9">
-            <PlusIcon data-icon="inline-start" />
-            Adicionar variável
-          </Button>
+          <div className="grid justify-items-start gap-1 sm:justify-items-end">
+            <Button onClick={openCreate} disabled={availableNames.length === 0} className="h-11 sm:h-9">
+              <PlusIcon data-icon="inline-start" />
+              Adicionar variável
+            </Button>
+            {availableNames.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Todas as chaves do catálogo já têm valor.</p>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
@@ -268,9 +279,6 @@ export function EnvironmentVariablesManager({
                       Variável
                     </TableHead>
                     <TableHead className="text-xs uppercase tracking-normal text-muted-foreground">
-                      Origem
-                    </TableHead>
-                    <TableHead className="text-xs uppercase tracking-normal text-muted-foreground">
                       Atualizada
                     </TableHead>
                     <TableHead className="w-48" />
@@ -287,26 +295,27 @@ export function EnvironmentVariablesManager({
                           </code>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Valor protegido
+                          {isCatalogName(variable.name)
+                            ? "Valor protegido"
+                            : "Fora do catálogo: o CRM não lê esta chave."}
                         </p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{sourceLabel[variable.source]}</Badge>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {variable.updatedAt ? formatDateTime(variable.updatedAt) : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openReplace(variable)}
-                          >
-                            <PencilIcon data-icon="inline-start" />
-                            {variable.source === "environment" ? "Sobrescrever" : "Substituir"}
-                          </Button>
+                          {isCatalogName(variable.name) ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openReplace(variable)}
+                            >
+                              <PencilIcon data-icon="inline-start" />
+                              Substituir
+                            </Button>
+                          ) : null}
                           {variable.source === "vault" ? (
                             <Button
                               type="button"
@@ -339,23 +348,26 @@ export function EnvironmentVariablesManager({
                         </code>
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {variable.updatedAt
-                          ? `Atualizada em ${formatDateTime(variable.updatedAt)}`
-                          : "Configurada no servidor"}
+                        {isCatalogName(variable.name)
+                          ? variable.updatedAt
+                            ? `Atualizada em ${formatDateTime(variable.updatedAt)}`
+                            : "Valor protegido"
+                          : "Fora do catálogo: o CRM não lê esta chave."}
                       </p>
                     </div>
-                    <Badge variant="outline">{sourceLabel[variable.source]}</Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap justify-end gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-11"
-                      onClick={() => openReplace(variable)}
-                    >
-                      <PencilIcon data-icon="inline-start" />
-                      {variable.source === "environment" ? "Sobrescrever" : "Substituir"}
-                    </Button>
+                    {isCatalogName(variable.name) ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-11"
+                        onClick={() => openReplace(variable)}
+                      >
+                        <PencilIcon data-icon="inline-start" />
+                        Substituir
+                      </Button>
+                    ) : null}
                     {variable.source === "vault" ? (
                       <Button
                         type="button"
@@ -379,13 +391,8 @@ export function EnvironmentVariablesManager({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold">Transcrição de áudios</h2>
-            <Badge variant="outline">
-              {transcriptionModel.source === "vault"
-                ? "Cofre"
-                : transcriptionModel.source === "environment"
-                  ? "Servidor"
-                  : "Padrão"}
-            </Badge>
+            {/* Desde a Fase 2 o CRM não lê o ambiente do servidor: ou o cofre, ou o padrão. */}
+            <Badge variant="outline">{transcriptionModel.source === "vault" ? "Cofre" : "Padrão"}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
             Modelo usado ao transcrever áudios do WhatsApp.
@@ -439,28 +446,31 @@ export function EnvironmentVariablesManager({
           <div className="grid gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="environment-variable-name">Chave</Label>
-              <Input
-                id="environment-variable-name"
-                value={name}
-                onChange={(event) => setName(event.target.value.toUpperCase())}
-                disabled={editor?.mode === "replace"}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                placeholder="OPENAI_API_KEY"
-                maxLength={64}
-                required
-                className="h-11 font-mono sm:h-10"
-                aria-invalid={errors.name ? true : undefined}
-                aria-describedby={errors.name ? "environment-variable-name-error" : undefined}
-              />
+              {editor?.mode === "replace" ? (
+                <Input
+                  id="environment-variable-name"
+                  value={name}
+                  disabled
+                  className="h-11 font-mono sm:h-10"
+                />
+              ) : (
+                <FormSelect
+                  id="environment-variable-name"
+                  value={name}
+                  onValueChange={setName}
+                  options={availableNames.map((candidate) => ({ value: candidate, label: candidate }))}
+                  emptyLabel="Escolha a chave"
+                  aria-invalid={errors.name ? true : undefined}
+                  aria-describedby={errors.name ? "environment-variable-name-error" : "environment-variable-name-hint"}
+                />
+              )}
               {errors.name ? (
                 <p id="environment-variable-name-error" className="text-xs text-destructive">
                   {errors.name[0]}
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  O cofre só guarda as chaves que o CRM usa. Ex.: OPENAI_API_KEY.
+                <p id="environment-variable-name-hint" className="text-xs text-muted-foreground">
+                  {KEY_DESCRIPTIONS[name] ?? "O cofre só guarda as chaves que o CRM usa."}
                 </p>
               )}
             </div>

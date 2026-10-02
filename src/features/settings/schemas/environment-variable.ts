@@ -16,7 +16,11 @@ const modelNames = new Set<string>(
 // do relay está no catálogo, mas não se grava à mão: o CRM a gera e a mostra
 // uma vez (/api/connection/agent/signing-secret).
 const catalogNames = new Set<string>(RUNTIME_ENVIRONMENT_NAMES);
-const editableNames = RUNTIME_ENVIRONMENT_NAMES.filter((name) => name !== RELAY_SIGNING_SECRET_NAME);
+/** Os nomes do catálogo que se gravam pela tela (a chave de assinatura, não). */
+export const VAULT_EDITABLE_NAMES: readonly string[] = RUNTIME_ENVIRONMENT_NAMES.filter(
+  (name) => name !== RELAY_SIGNING_SECRET_NAME
+);
+const editableNames = VAULT_EDITABLE_NAMES;
 const GENERATED_BY_CRM = "A chave de assinatura é gerada pelo CRM, em Agente de IA.";
 
 export const environmentVariableSchema = z
