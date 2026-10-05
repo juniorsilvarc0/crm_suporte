@@ -27,6 +27,36 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-05] Integração de clientes externa (TCBX): contexto no painel do chat (PR 2)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o atendente ver, no painel do contato do chat, o contexto do cliente vindo da TCBX (situação, contrato e títulos em aberto), sob demanda. Continuação da fundação (PR #46).
+**Arquivos alterados:**
+- novos: `src/app/api/customers/[id]/external-context/route.ts` (+teste), `src/features/customer-source/summarize.ts` (+teste), `src/features/chat/hooks/use-customer-context.ts` (+teste);
+- alterados: `src/features/chat/components/contact-info-sheet.tsx` (grupo novo "Cliente (TCBX)"); docs: UI.md §5.7.12 e este PROGRESS.
+
+**O que foi feito:**
+- **Rota de sessão** `GET /api/customers/[id]/external-context` (member): chaveia pela empresa, lê o CNPJ no servidor e chama `getCustomerContext({documento})`. Só leitura; devolve `{ ok, result }` com o `CustomerContextResult`. Como a consulta mora em `customer-source` (outro arquivo), o GET não dispara RPC direto e passa no `api-guards`.
+- **Helper puro** `summarizeCustomerContext`: soma principal+multa+juros dos títulos em aberto, acha o vencimento mais próximo, e resume o contrato (status quando é um só; contagem quando são vários).
+- **Hook** `useCustomerContext(customerId, enabled)`: busca quando a empresa tem CNPJ; `result`/`loading` são DERIVADOS do que chegou (guardado com o id da empresa), não sincronizados por efeito — trocar de empresa já mostra "carregando" sem `setState` dentro do `useEffect`. Falha vira `unavailable`.
+- **Painel:** grupo "Cliente (TCBX)" abaixo de "Empresa", só com CNPJ; estados explícitos (esqueleto, indisponível+retry, sem dados, resumo); some com a integração desligada (`not_configured`).
+
+**Decisões tomadas:**
+- **O painel passa a mostrar VALOR** (R$ em aberto), exceção consciente ao "nunca valor" do grupo Empresa: vem da fonte autoritativa, não é inventado (UI.md §5.7.12).
+- **Member vê** (quem atende precisa). **Só PJ pelo CNPJ** da empresa vinculada — pessoa física/contato sem empresa fica para quando a TCBX aceitar telefone.
+- **"Importar como cliente" ficou para o PR 2b** (sem busca por telefone, falta o gatilho natural). Sob demanda, uma consulta por abertura (sem cache/Realtime, como o selo do contrato).
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 avisos antigos) · test ✓ (4462 testes, 238 arquivos) · build ✓. Testes novos: helper (soma/vencimento/contratos), rota (401/400/consulta por CNPJ/sem CNPJ/empresa inexistente/falha do banco/sem Supabase) e hook (liga-desliga, resultado, falha→unavailable, retry, troca de empresa).
+
+**Pendências / próximos passos:**
+- **PR 2b:** botão "importar como cliente" (com busca por telefone, ou CNPJ digitado).
+- **PR 3:** webhook/polling + id externo, após a TCBX.
+- Depende da TCBX (Bruno): busca por `telefone`, webhook de mudanças, carga inicial.
+
+**Armadilhas descobertas:**
+- **`setState` síncrono dentro de `useEffect` é ERRO de lint** ("cascading renders") neste projeto. O padrão aqui é DERIVAR o estado no render (guardar a leitura com o id a que ela pertence) e deixar o efeito só disparar o fetch.
+- **O `api-guards` não segue imports:** um GET de sessão pode chamar função de OUTRO arquivo que faz RPC (leitura do cofre) sem cair na regra "GET não chama RPC". A rota só precisa do guard de sessão e de não ter `.rpc(`/escrita no próprio arquivo.
+
 ## [2026-10-05] Integração de clientes externa (TCBX): fundação da consulta sob demanda
 
 **Agente/Modelo:** Claude Opus 4.8.
