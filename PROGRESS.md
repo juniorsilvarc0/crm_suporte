@@ -27,6 +27,38 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-05] Integração de clientes externa (TCBX): fundação da consulta sob demanda
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o CRM consultar a base de clientes de uma fonte externa (hoje a API da TCBX, INT-0001) para enriquecer o atendimento — funcionando SEM webhook (consulta na hora), opcional e genérica.
+**Arquivos alterados:**
+- novos: `src/features/customer-source/{types.ts, get-customer-context.ts, get-customer-context.test.ts}`;
+- alterados: `src/features/settings/types.ts` (catálogo do cofre), `src/features/settings/components/environment-variables-manager.tsx` (descrição das chaves novas) e os testes de settings afetados pelo catálogo; docs: este PROGRESS.
+
+**O que foi feito:**
+- Duas variáveis no catálogo do cofre: `CUSTOMER_SOURCE_URL` e `CUSTOMER_SOURCE_TOKEN`, gerenciadas pela aba **Variáveis** que já existe (sem UI nova; só as descrições na lista).
+- `getCustomerContext({ documento | clienteId | telefone })`: lê a URL + chave do cofre, consulta `GET {base}/clientes/contexto`, valida com zod e devolve um `CustomerContext` NORMALIZADO (identidade + contratos + títulos em aberto). Desfechos: `ok | not_found | not_configured | unavailable`. Nunca lança; falha de leitura nunca vira "cliente não encontrado".
+- Independente de webhook: funciona só com a consulta. Sem as duas variáveis → `not_configured`, e o CRM roda igual ao de hoje.
+
+**Decisões tomadas:**
+- **Sob demanda, não espelho a base deles** (aprovado pelo dono): guardar só o vínculo e buscar o volátil ao vivo. Webhook/polling e o campo de id externo ficam para PRs seguintes — nada aqui depende deles.
+- **Config no cofre, não em tabela nova.** Reusei o mecanismo de Variáveis (Vault) em vez de criar `customer_integrations`: zero migration, UI de configuração de graça.
+- **Segurança:** chave só no cofre (nunca em arquivo/log); a URL passa pela guarda SSRF; timeout de 12 s; `redirect: "error"` para não vazar o Bearer num redirect.
+- **Tipo normalizado nosso** (não o formato do fornecedor): outra fonte mapeia para o mesmo `CustomerContext`; trocar de fonte é trocar o mapeamento, não quem chama.
+- **Genérico e opcional:** o CRM é single-tenant; cada deploy configura a sua fonte (ou nenhuma), e sem fonte a integração fica desligada.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 avisos antigos) · test ✓ (4440 testes, 235 arquivos) · build ✓. 23 casos no teste da consulta (achado, not_found, not_configured, falhas de rede/status/formato, URL interna recusada, chave nunca no log).
+
+**Pendências / próximos passos:**
+- **PR 2:** mostrar o contexto no painel do contato do chat + botão "importar como cliente" (decisão do dono: oferecer importar, não criar automático). Aí entram as atualizações de PRD/UI.
+- **PR 3 (depende da TCBX):** receptor de webhook (autenticado por token da API do CRM) e/ou polling por listagem, para sincronização; e o campo de id externo em `contacts`/`customers`.
+- Pedidos já enviados à TCBX (Bruno): aceitar `telefone` em `/clientes/contexto`; webhook de mudanças (`cliente.*`, `contrato.*`, `financeiro.*`); carga inicial (listagem/replay).
+- Hoje a ponte de identificação é documento/CNPJ; telefone só quando a TCBX passar a aceitá-lo.
+
+**Armadilhas descobertas:**
+- A guarda SSRF LIBERA `localhost`/`127.0.0.1` fora de produção (para testar contra provedor local), mas bloqueia faixas privadas (`10/8` etc.) em qualquer ambiente — teste de "URL interna" tem que usar `10.0.0.5`, não loopback.
+- Adicionar um nome a `RUNTIME_ENVIRONMENT_NAMES` quebra TODOS os testes que fixam o catálogo: o parser (mensagem de erro), o cache (`p_names`), a rota `/api/settings/environment-variables` e o componente da aba Variáveis (chaves selecionáveis + a descrição). Tudo deriva do catálogo, então é só acompanhar os fixtures.
+
 ## [2026-10-02] Fase 5, PR 14 (documentos): API e guia do agente reescritos
 
 **Agente/Modelo:** Claude Opus 5.5. O rascunho foi feito por um subagente, a partir do código, e revisado por amostragem.
