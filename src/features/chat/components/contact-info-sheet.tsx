@@ -21,6 +21,8 @@ import { ConversationTagsPicker } from "@/features/chat/components/conversation-
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
 import { NO_TAGS } from "@/features/chat/lib/conversation-tags";
 import { useContactInfo } from "@/features/chat/hooks/use-contact-info";
+import { useCustomerContext, type UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
+import { summarizeCustomerContext } from "@/features/customer-source/summarize";
 import {
   contactDisplayName,
   contactTelHref,
@@ -46,6 +48,7 @@ import {
 import { useTicketCatalog } from "@/features/tickets/hooks/use-ticket-catalog";
 import { formatCnpj } from "@/lib/formatters/cnpj";
 import { formatDate } from "@/lib/formatters/date";
+import { formatMoney } from "@/lib/formatters/money";
 import { formatPhoneBR } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";
 import type { ChatConversation } from "@/features/chat/types";
@@ -159,6 +162,8 @@ export function ContactInfoSheet({
   const telHref = contactTelHref(conversation.contact_phone);
   const contact = info?.contact ?? null;
   const customer = info?.customer ?? null;
+  // Contexto do cliente na fonte externa (TCBX): só quando a empresa tem CNPJ.
+  const externalContext = useCustomerContext(customer?.id ?? null, Boolean(customer?.cnpj));
 
   // Tickets da conversa: relê quando o foco ou o atendimento mudam (Realtime do
   // chat, inclusive de outra aba) e depois de cada ação daqui. Com os de quem
@@ -410,6 +415,13 @@ export function ContactInfoSheet({
               onChange={() => setView("customer")}
             />
 
+            {/* Contexto do cliente na fonte externa (TCBX): contrato e títulos em
+                aberto, sob demanda. Só aparece quando há empresa com CNPJ e a
+                integração está configurada; some sozinho no resto. */}
+            {!loading && !failed && customer?.cnpj ? (
+              <ExternalContextGroup state={externalContext} />
+            ) : null}
+
             {/* A falha dos tickets fica no grupo, com "Tentar de novo" próprio:
                 o resto do painel não depende dela. */}
             <InfoGroup title="Tickets">
@@ -599,6 +611,82 @@ function CustomerGroup({
         />
       </Link>
       <GroupActionButton label="Trocar empresa" onClick={onChange} />
+    </InfoGroup>
+  );
+}
+
+const capitalize = (value: string) => (value ? value[0].toUpperCase() + value.slice(1) : value);
+
+/**
+ * Contexto do cliente na fonte externa (TCBX): situação, contrato e títulos em
+ * aberto, buscados sob demanda. É o dado que o nosso banco não tem. Cada estado
+ * é explícito (UI.md §1): carregando, indisponível (com "Tentar de novo"), sem
+ * dados, e o resumo. Com a integração desligada (`not_configured`) o grupo some.
+ */
+function ExternalContextGroup({ state }: { state: UseCustomerContext }) {
+  const { loading, result, retry } = state;
+
+  if (loading && !result) {
+    return (
+      <InfoGroup title="Cliente (TCBX)">
+        <SkeletonRow />
+        <SkeletonRow />
+      </InfoGroup>
+    );
+  }
+  if (!result || result.state === "not_configured") return null;
+
+  if (result.state === "unavailable") {
+    return (
+      <InfoGroup title="Cliente (TCBX)">
+        <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2.5">
+          <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
+            Não foi possível consultar a TCBX.
+          </span>
+          <button
+            type="button"
+            onClick={retry}
+            className="min-h-11 shrink-0 rounded-lg px-3 text-[15px] font-medium text-[var(--wa-green-deep)] transition-colors hover:bg-[var(--wa-info-active)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      </InfoGroup>
+    );
+  }
+
+  if (result.state === "not_found") {
+    return (
+      <InfoGroup title="Cliente (TCBX)">
+        <div className="flex min-h-11 items-center px-4 py-2.5">
+          <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
+            Sem dados na TCBX para este CNPJ.
+          </span>
+        </div>
+      </InfoGroup>
+    );
+  }
+
+  const summary = summarizeCustomerContext(result.context);
+  const contractLabel =
+    summary.contratoCount > 1
+      ? `${summary.contratoCount} contratos`
+      : summary.contratoStatus
+        ? capitalize(summary.contratoStatus)
+        : null;
+  const openLabel =
+    summary.quantidadeEmAberto === 0
+      ? "Nenhum título em aberto"
+      : `${summary.quantidadeEmAberto} ${summary.quantidadeEmAberto === 1 ? "título" : "títulos"} · ${formatMoney(summary.totalEmAberto)}`;
+
+  return (
+    <InfoGroup title="Cliente (TCBX)">
+      {summary.situacao ? <InfoRow label="Situação" value={capitalize(summary.situacao)} /> : null}
+      {contractLabel ? <InfoRow label="Contrato" value={contractLabel} /> : null}
+      <InfoRow label="Em aberto" value={openLabel} />
+      {summary.quantidadeEmAberto > 0 && summary.proximoVencimento ? (
+        <InfoRow label="Próx. vencimento" value={formatDate(summary.proximoVencimento)} />
+      ) : null}
     </InfoGroup>
   );
 }
