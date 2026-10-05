@@ -59,6 +59,14 @@ export const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
 export const RELAY_SIGNING_SECRET_NAME = "RELAY_SIGNING_SECRET";
 
 /**
+ * Fonte externa de clientes (ex.: TCBX): base da API e a chave Bearer. O CRM
+ * consulta o contexto do cliente lá na hora do atendimento. Sem as duas, a
+ * consulta fica desligada e o CRM roda igual. Ver src/features/customer-source.
+ */
+export const CUSTOMER_SOURCE_URL_NAME = "CUSTOMER_SOURCE_URL";
+export const CUSTOMER_SOURCE_TOKEN_NAME = "CUSTOMER_SOURCE_TOKEN";
+
+/**
  * O catálogo: as variáveis que o app lê do cofre. O Cofre só guarda estes
  * nomes, porque variável que nada lê é segredo guardado sem uso.
  */
@@ -66,6 +74,8 @@ export const RUNTIME_ENVIRONMENT_NAMES = [
   OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
   RELAY_SIGNING_SECRET_NAME,
+  CUSTOMER_SOURCE_URL_NAME,
+  CUSTOMER_SOURCE_TOKEN_NAME,
 ] as const;
 
 export const OPENAI_TRANSCRIPTION_MODELS = [

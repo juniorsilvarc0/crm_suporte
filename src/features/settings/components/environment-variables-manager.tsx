@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/table";
 import { VAULT_EDITABLE_NAMES } from "@/features/settings/schemas/environment-variable";
 import {
+  CUSTOMER_SOURCE_TOKEN_NAME,
+  CUSTOMER_SOURCE_URL_NAME,
   OPENAI_API_KEY_NAME,
   OPENAI_TRANSCRIPTION_MODELS,
   OPENAI_TRANSCRIPTION_MODEL_NAME,
@@ -56,6 +58,9 @@ type ApiResult = {
 // transcrição tem seletor próprio, abaixo, e não entra na lista de chaves.
 const KEY_DESCRIPTIONS: Record<string, string> = {
   [OPENAI_API_KEY_NAME]: "Chave da OpenAI, usada para transcrever os áudios do WhatsApp.",
+  [CUSTOMER_SOURCE_URL_NAME]:
+    "Endereço base da API da fonte externa de clientes (ex.: TCBX), de onde o CRM lê o contexto do cliente no atendimento.",
+  [CUSTOMER_SOURCE_TOKEN_NAME]: "Chave de acesso (Bearer) da API da fonte externa de clientes.",
 };
 const SELECTABLE_NAMES = VAULT_EDITABLE_NAMES.filter((name) => name !== OPENAI_TRANSCRIPTION_MODEL_NAME);
 

@@ -23,6 +23,8 @@ describe("environmentVariableSchema", () => {
       "OPENAI_API_KEY",
       "OPENAI_TRANSCRIPTION_MODEL",
       "RELAY_SIGNING_SECRET",
+      "CUSTOMER_SOURCE_URL",
+      "CUSTOMER_SOURCE_TOKEN",
     ]);
   });
 
@@ -35,7 +37,7 @@ describe("environmentVariableSchema", () => {
     ["nome vazio", ""],
   ])("recusa chave fora do catálogo (%s), e diz quais o cofre guarda", (_label, name) => {
     expect(nameErrors({ name, value: "valor" })).toEqual([
-      "O cofre só guarda as chaves que o CRM usa: OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL.",
+      "O cofre só guarda as chaves que o CRM usa: OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL, CUSTOMER_SOURCE_URL, CUSTOMER_SOURCE_TOKEN.",
     ]);
   });
 

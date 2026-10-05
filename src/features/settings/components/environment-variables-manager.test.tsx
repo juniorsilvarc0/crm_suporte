@@ -30,6 +30,21 @@ const OLD: EnvironmentVariableListItem = {
   createdAt: "2026-08-01T12:00:00Z",
   updatedAt: "2026-08-01T12:00:00Z",
 };
+// As duas chaves da fonte externa de clientes, também no catálogo.
+const SOURCE_URL: EnvironmentVariableListItem = {
+  id: "v3",
+  name: "CUSTOMER_SOURCE_URL",
+  source: "vault",
+  createdAt: "2026-10-05T12:00:00Z",
+  updatedAt: "2026-10-05T12:00:00Z",
+};
+const SOURCE_TOKEN: EnvironmentVariableListItem = {
+  id: "v4",
+  name: "CUSTOMER_SOURCE_TOKEN",
+  source: "vault",
+  createdAt: "2026-10-05T12:00:00Z",
+  updatedAt: "2026-10-05T12:00:00Z",
+};
 const DEFAULT_MODEL: TranscriptionModelConfig = { value: "whisper-1", source: "default" };
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -100,7 +115,8 @@ describe("EnvironmentVariablesManager", () => {
   });
 
   it("adicionar escolhe a chave do catálogo que falta, e grava sem substituir", async () => {
-    const user = renderManager([OLD]);
+    // Só a chave da OpenAI fica faltando (as da fonte externa já estão gravadas).
+    const user = renderManager([OLD, SOURCE_URL, SOURCE_TOKEN]);
 
     await user.click(screen.getByRole("button", { name: "Adicionar variável" }));
     // Uma só chave faltando: ela já vem escolhida, com o que ela faz.
@@ -114,7 +130,7 @@ describe("EnvironmentVariablesManager", () => {
   });
 
   it("com todas as chaves do catálogo já gravadas, adicionar fica desabilitado e diz por quê", () => {
-    renderManager([OPENAI]);
+    renderManager([OPENAI, SOURCE_URL, SOURCE_TOKEN]);
 
     expect(screen.getByRole("button", { name: "Adicionar variável" })).toBeDisabled();
     expect(screen.getByText("Todas as chaves do catálogo já têm valor.")).toBeInTheDocument();
