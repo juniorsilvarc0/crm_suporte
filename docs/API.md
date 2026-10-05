@@ -400,6 +400,14 @@ A IA no n8n gera a resposta e **envia direto pela uazapi** (`POST {apiUrl}/send/
 
 - `POST /api/connection/persist` (`{ apiUrl, token }`, só admin) — valida as credenciais na uazapi, grava a `apiUrl` na integração e o `token` no **Vault**, obtém o segredo do webhook de forma atômica (`ensure_chat_integration_secret`: o existente, ou um novo na primeira conexão) e registra o webhook com esse valor.
 - `POST /api/connection/qr` (só admin) — QR / código de pareamento. É POST porque cada pedido age no provedor (`/instance/connect` reinicia o pareamento); por GET responde 405. · `GET /api/connection/state` — estado da conexão.
+- `GET /api/connection/logs` (só admin) — registros de integração (API v1 e repasse ao agente), do mais novo para o mais antigo, 50 por página.
+  - Query string: `integracao` (`api_v1` ou `relay`), `status` (`ok` ou `error`), `acao` (uma das ações de `INTEGRATION_LOG_ACTIONS`, em `src/features/integrations/types.ts`), `token` (uuid do token), `pedido` (o `request_id`: acha a linha fora do período), `periodo` (`24h`, `7d`, `30d` ou `90d`; padrão `7d`) e `cursor` (o `nextCursor` da página anterior). Valor que a lista não conhece é ignorado.
+  - Resposta: `{ ok, filters, items, nextCursor }`. `filters` são os filtros que valeram. O `payload` da linha não sai; `actor` diz quem fez a ação, quando a linha é da trilha da chave de assinatura.
+  - Cursor inválido → 400. Leitura que falha → 500, nunca uma lista vazia.
+- `GET /api/connection/health` (só admin) — saúde das integrações: `{ ok, health: { generatedAt, windowHours, whatsapp, lastInbound, relay, api } }`.
+  - Responde 200 mesmo com uma parte indisponível: cada parte traz o próprio `state`, e `unavailable` não é zero nem "nunca".
+  - `relay.deliveries` conta só os repasses de mensagem das últimas 24 h; `api.calls` separa 4xx de 5xx; `lastInbound.exact: false` quer dizer piso.
+  - A leitura vale por 10 s para todos os pedidos (`generatedAt` diz de quando ela é). Só lê: não grava o telefone nem pede QR.
 - `POST /api/connection/disconnect` (`{ wipe?: boolean, deleteIntegration?: boolean }`) — logout da instância. Com `wipe: true`, **apaga todo o chat** (conversas + mensagens), mantendo a instância. Com `deleteIntegration: true`, **exclui a instância do CRM** (apaga o chat **e** remove as credenciais) para conectar outra. Após desconectar, a tela oferece **reconectar** (mesma instância, conversas preservadas) ou **excluir**. Leads sempre intactos.
 
 ### Chat (sessão)

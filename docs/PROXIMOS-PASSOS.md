@@ -17,10 +17,10 @@
 
 | | |
 |---|---|
-| `main` | até o PR #38. Nenhum PR de código aberto. |
-| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4198 testes em 220 arquivos) e `build` verdes. |
-| Trabalho em curso | PR 12b da Fase 5, **pela metade**, na branch `feat/conexao-registros-e-saude` (§4). |
-| Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 ao #38 foi publicado.** Publicar é decisão do dono (§8). |
+| `main` | até o PR 12b da Fase 5 (#40). Nenhum PR de código aberto. |
+| Verificação na `main` | `typecheck`, `lint` (9 avisos antigos), `test` (4360 testes em 226 arquivos) e `build` verdes. |
+| Trabalho em curso | nenhum. O próximo é o PR 13 da Fase 5 (§4). |
+| Produção | roda o que foi publicado em 2026-09-29 (PR #19). **Nada do #20 em diante foi publicado.** Publicar é decisão do dono (§8). |
 
 ## 3. O que já foi feito
 
@@ -30,112 +30,75 @@
 | 1 · Poda do legado | feito | #1 |
 | 2 · Baseline do banco, contatos, Vault, mídia privada | feito | #4 (e #2, #3: sessão confirmada no banco) |
 | 3 · Cadastros (empresas, contatos, filas, planos, contratos) | feito | #5, #6 |
-| 4 · Tickets | **falta o Quadro** (§5.4) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
-| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 |
+| 4 · Tickets | **falta o Quadro** (§5.3) | banco #7 · back #8, #9 · lista e detalhe #10 · chat e Início #11 · Configurações › Atendimento #15 |
+| 5 · API v1 + relay | **em curso** (§4 e §5) | relay sem token #19 · banco #20 · `withApi` #21 · tokens com escopo #22 · catálogos #23 · empresas e contatos #24 · `/context` #25 · tickets #26, #27 · conversas da IA #28, #29 · envio #30 · a IA na tela #31 · teto do corpo #33 · relay v1 #34 · chave de assinatura e teste de conexão #36 · registros e Saúde (back) #40 |
 | 6 · Eventos, worker e SLA ativo | não começou | |
 | 7 · Agenda e follow-ups | não começou | |
 | 8 · Financeiro | não começou | |
 | 9 · Métricas de suporte | não começou | |
-| 10 · Produção | infra feita; faltam dois itens (§5.6) | #12, #14, #17, #18 · identidade visual #13 |
+| 10 · Produção | infra feita; faltam dois itens (§5.5) | #12, #14, #17, #18 · identidade visual #13 |
 
-Correções fora do plano que já entraram: testes de tela instáveis (#16, #32), guarda de URL (#35), escrita só da própria origem (#37), pedido do QR por POST (#38).
+Correções fora do plano que já entraram: testes de tela instáveis (#16, #32), guarda de URL (#35), escrita só da própria origem (#37), pedido do QR por POST (#38). Este documento entrou no #39.
 
 O que cada PR decidiu e por quê está no `PROGRESS.md` (uma entrada por PR) e na descrição do próprio PR no GitHub, na seção "Decisões que tomei e você deveria revisar".
 
-## 4. Próximo passo: terminar o PR 12b
+## 4. Próximo passo: PR 13 da Fase 5, a tela de Conexão em abas (front)
 
-**O que é:** o back das abas Registros e Saúde da tela de Conexão ([plano da Fase 5](PLANO-FASE-5.md), PR 12). Só leitura, só administrador, sem migration. A tela vem no PR 13.
+Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". Abas: WhatsApp, API, Agente, Cofre, Registros e Saúde.
 
-**Onde está:** branch `feat/conexao-registros-e-saude`, um commit `wip` em cima da `main`. **Não está pronto para merge:** 41 testes falham e o `typecheck` acusa dois arquivos de teste.
+**Antes de começar:** o dono decide o que sobra em `/app/configuracoes` (D14 do plano).
 
-### 4.1 O que já está escrito
+### 4.1 O que o back já entrega (PR 12b)
 
-| Arquivo | O que faz | Teste |
-|---|---|---|
-| `src/lib/http/search-params.ts` | `firstParam` e `searchParamsRecord` (parâmetro repetido: vale o primeiro) | passa |
-| `src/features/integrations/types.ts` | tipos dos registros e da Saúde; `INTEGRATION_LOG_PROVIDERS`, `INTEGRATION_LOG_ACTIONS`, `INTEGRATION_LOG_PERIODS` | — |
-| `src/features/integrations/lib/log-filters.ts` | **neutro** (serve à página, à rota e ao componente client): `parseIntegrationLogFilters`, `integrationLogSearch`, `DEFAULT_INTEGRATION_LOG_FILTERS` | passa; inclui o teste que confere a lista de ações contra quem grava |
-| `src/features/integrations/queries/get-integration-logs.ts` | `getIntegrationLogs(filters, cursor, now)` | passa |
-| `src/lib/api/v1/cursor.ts` | par novo `encodeLogCursor` / `decodeLogCursor` (versão `l1`) | passa |
-| `src/features/integrations/queries/get-integration-health.ts` | `readIntegrationHealth(now)` e `getIntegrationHealth(now)`, que guarda o resultado por 10 s | **falha: teste no formato antigo** |
-| `src/app/api/connection/logs/route.ts` | `GET`, só admin | **falha: teste no formato antigo** |
-| `src/app/api/connection/health/route.ts` | `GET`, só admin | passa |
+| Para | Usar |
+|---|---|
+| Ler os filtros da URL da página | `parseIntegrationLogFilters(await searchParams)`, de `src/features/integrations/lib/log-filters.ts` |
+| Escrever a URL a partir dos filtros | `integrationLogSearch(filters)`, do mesmo arquivo. O padrão fica fora da URL |
+| Montar os selects | `INTEGRATION_LOG_PROVIDERS`, `INTEGRATION_LOG_ACTIONS` (por integração) e `INTEGRATION_LOG_PERIODS`, de `src/features/integrations/types.ts` |
+| A primeira página, no servidor | `getIntegrationLogs(filters)` |
+| "Carregar mais", no navegador | `GET /api/connection/logs?<filtros>&cursor=<nextCursor>`. A resposta devolve `filters`, os que valeram |
+| A Saúde | `GET /api/connection/health`, ou `getIntegrationHealth()` sob `Suspense` |
 
-### 4.2 O que falta
+`log-filters.ts` e `types.ts` são neutros: um componente client pode importá-los. As consultas (`queries/*`) são de servidor.
 
-1. **Reescrever `get-integration-health.test.ts`** para o código atual:
-   - os testes da lógica chamam `readIntegrationHealth(NOW)`. `getIntegrationHealth` guarda estado no módulo entre um teste e outro;
-   - WhatsApp: `unavailable` agora leva `cause` (`crm` = o CRM não leu a integração; `provider` = o provedor não respondeu) e `instance`;
-   - `relay` ganhou `reason`; sem o Supabase configurado, `config` é `unreadable`;
-   - última mensagem recebida, em um passo só: nenhuma conversa; menos de 50 conversas (exato); 50 conversas e mensagem achada a partir da atividade da última (exato); 50 e nada achado (segunda consulta, `exact: false`); erro em cada leitura;
-   - as datas do último repasse também têm a janela de 24 h;
-   - o log da falha leva código, mensagem e status HTTP;
-   - cada contagem que falha (três da API, quatro leituras do repasse) deixa só a parte dela `unavailable`;
-   - parte que **lança** não derruba as outras;
-   - o resultado guardado: dois pedidos em 10 s fazem uma leitura só; depois de 10 s lê de novo; pedidos simultâneos dividem a mesma leitura.
-2. **Atualizar `src/app/api/connection/logs/route.test.ts`:** as chaves dos filtros são os nomes da URL; `getIntegrationLogs(filters, cursor)` recebe o cursor à parte; a resposta devolve `filters`; cursor vazio é "sem cursor"; cursor inválido é 400.
-3. **Rodar** `pnpm typecheck`, `pnpm lint`, `pnpm test` e `pnpm build`.
-4. **Conferir por HTTP contra o stack local** (§9.2), com linhas de teste em `integration_logs` criadas e apagadas pelo próprio roteiro:
-   - filtros e paginação, inclusive a segunda página com filtros e linhas de mesmo `created_at` atravessando o corte da página;
-   - `pedido` com caractere inválido é ignorado (200), cursor inventado é 400;
-   - os números da Saúde batem com a conta feita em SQL;
-   - dois pedidos seguidos à Saúde trazem o mesmo `generatedAt`.
-5. **Documentação:** `docs/API.md` (§Conexão: as duas rotas), `docs/PLANO-FASE-5.md` (12b feito), `PRD.md`, a skill `uazapi-integration` (tabela de rotas e o item "Registro"), o mapa do `AGENTS.md` §4.1 (`src/lib/http/`, saúde em `integrations`), `PROGRESS.md` e este arquivo.
-6. **Commits por camada** antes do PR: o commit `wip` não entra como está. Caminho simples: branch nova a partir da `main`, trazer os arquivos (`git checkout origin/feat/conexao-registros-e-saude -- src`) e commitar por camada.
+### 4.2 O que a tela precisa tratar
 
-### 4.3 Decisões já tomadas (não refazer)
+- **Registros:** `state` é `ok`, `invalid_cursor` ou `unavailable`. `unavailable` é "não foi possível carregar", nunca "nenhum registro". O cursor não vai para a URL da página.
+- **Saúde:** cada parte tem o próprio `state`, e `unavailable` não é zero nem "nunca".
+  - WhatsApp `unavailable` traz `cause`: `crm` (o CRM não leu a integração) ou `provider` (o provedor não respondeu).
+  - `lastInbound.exact: false` quer dizer piso: a última recebida é essa ou outra mais nova. É o horário da mensagem, e não o da chegada.
+  - `relay.config` pode ser `refused`, e aí `relay.reason` diz por quê.
+  - Mostrar as contagens como vieram ("3 de 40"), sem inventar índice. Na API, 4xx é erro de quem chama e 5xx é erro do CRM.
+- **Não aguardar a Saúde no render da página.** A consulta ao provedor pode levar 12 s: carregar só na aba. A leitura vale por 10 s para todos os pedidos, e `generatedAt` diz de quando ela é.
+- `src/features/integrations/components/integration-logs-table.tsx` está órfã, filtra no navegador e mostra "N de M": refazer sobre `IntegrationLogItem`, com filtro no servidor.
 
-- **Leitura que falha não vira vazio nem zero.** A lista devolve `unavailable` (a rota responde 500) e cada parte da Saúde tem o seu `unavailable`. É de propósito o contrário do padrão das outras listagens: numa tela de diagnóstico, "nenhum registro" com o banco fora do ar é mentira.
-- **As chaves do filtro são os nomes da URL** (`integracao`, `status`, `acao`, `token`, `pedido`, `periodo`), como nas listas de tickets, clientes e contatos. O cursor não é filtro.
-- **Valor desconhecido na URL é ignorado,** e a rota devolve os filtros que valeram.
-- **`acao` só aceita o que está em `INTEGRATION_LOG_ACTIONS`.** Um teste confere essa lista contra as rotas da v1 e contra quem grava no repasse.
-- **Busca por `pedido` (o `request_id`) ignora o período.**
-- **Sem `count` na lista:** página de 50 com cursor opaco sobre `(created_at, id)`.
-- **O `payload` nunca sai.** Dele o banco extrai só `payload->>by`, que vira `actor` quando é um uuid.
-- **O repasse é contado pela ação** `conversation.message_received`. O teste de conexão e a trilha da chave usam o mesmo provider `relay` e não são entregas.
-- **A API separa 4xx (erro de quem chama) de 5xx (erro do CRM).** Só entra o que foi registrado: pedido sem token ou barrado por excesso não aparece.
-- **Última mensagem recebida, sem migration:** procura nas 50 conversas mais recentes. É o horário da mensagem, informado pelo provedor, e não o da chegada. Mensagem apagada e conversa limpa não contam. `exact: false` quer dizer piso.
-- **A Saúde guarda o resultado por 10 s por processo.** A rota é GET, e GET fica fora da trava de origem: sem isso, uma aba em laço chamaria o provedor em laço.
-
-### 4.4 Limites conhecidos, para dizer no PR
-
-- Filtro raro (`status=error` com tudo saudável) lê o período inteiro: `status` e `action` não têm índice. Um índice parcial resolve, e pede migration.
-- A última mensagem recebida teria uma consulta só, e exata, com um índice em `chat_messages (created_at) where direction = 'inbound'`. Também é migration.
-- O expurgo de `integration_logs` (90 dias, D9) só começa a rodar na Fase 6.
-- `src/features/integrations/components/integration-logs-table.tsx` está órfã e filtra no navegador. O PR 13 a refaz.
-
-## 5. Depois, nesta ordem
-
-### 5.1 PR 13 da Fase 5: a tela de Conexão em abas (front)
-
-Texto do plano: [`PLANO-FASE-5.md`](PLANO-FASE-5.md), "PR 13". Abas: WhatsApp, API, Agente, Cofre, Registros e Saúde. O que os PRs anteriores deixaram para ele:
+### 4.3 O que os PRs anteriores deixaram para ele
 
 - **Abas com a aba na URL.** É o 3º uso de `service-settings-tabs.tsx`: vira componente em `src/components/layout`.
 - **Agente:** o bloco "Chave de assinatura do webhook" e o botão "Testar conexão" saem de Configurações e vêm para cá. A aba precisa de `keepMounted`: o diálogo guarda a chave, que só aparece uma vez.
 - **`revalidatePath`** das rotas de conexão passa a apontar para `/app/conexao`.
 - **Cofre:** o campo de nome vira `FormSelect` do catálogo. Saem a coluna Origem, os rótulos "Servidor" e "Sobrescrever" e o "Substituir" em variável antiga.
-- **Registros:** filtros no servidor e "carregar mais", com `parseIntegrationLogFilters` e `integrationLogSearch`. O cursor não vai para a URL da página.
-- **Saúde:** não aguardar `getIntegrationHealth()` no render da página. A consulta ao provedor pode levar 12 s: carregar só na aba, pela rota ou sob `Suspense`. Mostrar contagens ("3 de 40"), sem inventar índice.
-- **Estados novos no `UI.md`:** `unavailable`, `cause`, `invalid_cursor`, `exact: false`.
+- **Estados novos no `UI.md`:** os do §4.2.
 - **O pedido do QR continua POST** (#38).
-- **Antes de começar:** o dono decide o que sobra em `/app/configuracoes` (D14 do plano).
 
-### 5.2 PR 14 da Fase 5: documentação da API e guia do agente
+## 5. Depois, nesta ordem
+
+### 5.1 PR 14 da Fase 5: documentação da API e guia do agente
 
 - Reescrever `docs/API.md` e `docs/GUIA-AGENTE-IA.md`.
 - Rodar contra o app local o roteiro curl de 8 passos de [`PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md) §Verificação e anotar a saída no `PROGRESS.md`. É o "pronto quando" da Fase 5.
 - Decidir e documentar: respostas publicadas com `additionalProperties: false` quebram quem valida a cada campo novo; o `pattern` de uuid do OpenAPI não aceita maiúsculas e a API aceita; os limites de texto contam unidades UTF-16.
 - No guia: despedir-se do cliente **antes** do handoff (depois dele o envio responde 409); `changed: false` não traz o ticket; cliente .NET no upload de anexo (ver PROGRESS do PR 8b).
 
-### 5.3 PR 11b da Fase 5: tirar o filtro `bot` do repasse
+### 5.2 PR 11b da Fase 5: tirar o filtro `bot` do repasse
 
 Só depois de o dono confirmar que a IA só responde quando `conversation_status` é `bot`. Entra com o teste que falha se o filtro voltar.
 
-### 5.4 Fase 4, PR 7: o Quadro
+### 5.3 Fase 4, PR 7: o Quadro
 
 `/app/tickets/quadro` sobre `kibo-ui/kanban`, com "Mover para", véu e 409 desfazendo com toast ([plano §E](PLANO-IMPLANTACAO.md), item 4c). É o que falta da Fase 4.
 
-### 5.5 Fases 6 a 9
+### 5.4 Fases 6 a 9
 
 Descrição e "pronto quando" de cada uma em [`PLANO-IMPLANTACAO.md`](PLANO-IMPLANTACAO.md) §E.
 
@@ -149,7 +112,7 @@ Descrição e "pronto quando" de cada uma em [`PLANO-IMPLANTACAO.md`](PLANO-IMPL
 - **8 · Financeiro.** Em paralelo com a 7.
 - **9 · Métricas de suporte.** `docs/especificacao_dashboard_frontend.md` é da clínica e está obsoleto: não usar.
 
-### 5.6 O que falta da Fase 10
+### 5.5 O que falta da Fase 10
 
 - Política de privacidade definitiva (hoje a página é um aviso provisório).
 - Cópia do backup fora do servidor: requisito de go-live, ainda sem destino.
@@ -178,7 +141,15 @@ Mexe no fluxo de conexão, que não se testa contra o provedor de verdade. Detal
 | As chamadas ao provedor seguem redirecionamento levando o token. **Mexe no envio do WhatsApp: só com o OK do dono** | `senders/uazapi.ts`, `connection/uazapi.ts` |
 | `api/tags` devolve `error.message` do banco | `src/app/api/tags/route.ts` |
 
-### 6.3 Envio pela API e mensagens da IA
+### 6.3 Registros e Saúde (limites do PR 12b)
+
+- Filtro raro (`status=error` com tudo saudável) lê o período inteiro: `status` e `action` não têm índice. Um índice parcial resolve, e pede migration.
+- A última mensagem recebida teria uma consulta só, e sempre exata, com um índice em `chat_messages (created_at) where direction = 'inbound'`. Também é migration.
+- O expurgo de `integration_logs` (90 dias, D9) só começa a rodar na Fase 6. Até lá a tabela só cresce.
+- A Saúde conta o que foi registrado: pedido à API sem token, ou barrado por excesso, não entra no registro e não aparece.
+- A leitura guardada da Saúde é por processo: com duas réplicas, dois pedidos seguidos podem trazer leituras diferentes.
+
+### 6.4 Envio pela API e mensagens da IA
 
 Detalhe nos PROGRESS dos PRs 10a, 10b e 10c.
 
@@ -188,16 +159,16 @@ Detalhe nos PROGRESS dos PRs 10a, 10b e 10c.
 - O administrador apagar a nota de um token (PR 10d; decisão do dono).
 - A busca dentro da conversa rotula toda saída como "Você", inclusive a da IA.
 
-### 6.4 Webhook de entrada
+### 6.5 Webhook de entrada
 
 `status@broadcast`, reação e mensagem editada viram mensagem nova do cliente e são repassadas à IA. Medir o que o provedor entrega e filtrar no normalizador. O que fazer com reação e edição é decisão de produto.
 
-### 6.5 Tela e limpeza
+### 6.6 Tela e limpeza
 
 - Backlog visual: [`UI.md`](../UI.md) §12.
 - Os modais antigos que recusam fechar durante o envio ainda não usam `dismissible` do `Dialog`.
 - O stub de `window.matchMedia` aparece em 13 arquivos de teste: cabe num setup do vitest.
-- `firstParam` e o tipo `SearchParams` estão copiados em três consultas (tickets, clientes, contatos). O 12b cria `src/lib/http/search-params.ts`; migrar as três é um PR pequeno.
+- `firstParam` e o tipo `SearchParams` estão copiados em três consultas (tickets, clientes, contatos). `src/lib/http/search-params.ts` já existe (PR 12b): migrar as três é um PR pequeno.
 - `@aws-sdk/client-s3` está no `package.json` e foi anotado como sem uso. Conferir e remover.
 - `.agents/skills/` é uma cópia antiga das skills de `.claude/skills/`: decidir se some ou se passa a espelhar.
 
@@ -221,7 +192,7 @@ O padrão descrito é o que está no código hoje. Cada uma está explicada no P
 | Sem registro em log da recusa por origem; segunda camada nas rotas | #37 | sem log; só no proxy |
 | O painel do contato não tirar o foco de um campo já clicado | #32 | não corrigido |
 | Redirecionamento nas chamadas ao provedor | #35 | segue o redirecionamento |
-| Índices para os registros e para a última mensagem recebida (migration) | 12b | sem índice |
+| Índices para os registros e para a última mensagem recebida (migration) | #40 | sem índice |
 
 ## 8. Publicar em produção
 

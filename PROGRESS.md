@@ -27,6 +27,72 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-02] Fase 5, PR 12b: registros de integração com filtros e a Saúde (back)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** O back das abas Registros e Saúde da Conexão: ler os registros de integração de verdade, com filtros e paginação, e resumir a saúde das integrações só com números que vêm do banco e do provedor.
+**Arquivos alterados:**
+- novos: `src/features/integrations/lib/log-filters.ts`, `src/features/integrations/queries/get-integration-health.ts`, `src/lib/http/search-params.ts`, `src/app/api/connection/logs/route.ts` e `src/app/api/connection/health/route.ts`, cada um com o seu teste, e `get-integration-logs.test.ts`;
+- alterados: `src/features/integrations/queries/get-integration-logs.ts` (devolvia `[]`), `src/features/integrations/types.ts`, `src/lib/api/v1/cursor.ts` (par `encodeLogCursor`/`decodeLogCursor`) e o teste dele;
+- docs: `docs/API.md`, `docs/PLANO-FASE-5.md`, `docs/PROXIMOS-PASSOS.md`, `PRD.md`, `AGENTS.md` §4.1, a skill `uazapi-integration` e este PROGRESS.
+
+**O que foi feito:**
+- **Registros** (`getIntegrationLogs`, e `GET /api/connection/logs`, só admin):
+  - os filtros são os nomes da URL: `integracao` (`api_v1` ou `relay`), `status`, `acao`, `token`, `pedido` (o `request_id`) e `periodo` (`24h`, `7d`, `30d`, `90d`; padrão 7 dias). `lib/log-filters.ts` lê (`parseIntegrationLogFilters`) e escreve (`integrationLogSearch`) a URL, e é neutro: a tela do PR 13 importa dali;
+  - valor que a lista não conhece é ignorado, e a rota devolve os filtros que valeram;
+  - 50 por página, do mais novo para o mais antigo, com cursor opaco sobre `(created_at, id)` e a linha a mais no lugar do `count`. O cursor não é filtro: vai à parte;
+  - quem procura por id de pedido acha a linha fora do período;
+  - o item sai campo a campo. O `payload` não é lido: dele o PostgREST extrai só `payload->>by`, que vira `actor` (id e nome) quando é um uuid. Do token, o nome e o prefixo;
+  - três desfechos: `ok`, `invalid_cursor` (a rota responde 400) e `unavailable` (500).
+- **Saúde** (`getIntegrationHealth`, e `GET /api/connection/health`, só admin), em quatro partes:
+  - **WhatsApp:** o estado lido do provedor agora. `not_configured` sem integração; `unavailable` com `cause` (`crm` = o CRM não leu a integração; `provider` = o provedor não respondeu). Só lê: não grava o telefone nem pede QR;
+  - **última mensagem recebida:** o horário, e se ele é exato;
+  - **repasse ao agente:** o estado da configuração (e o motivo, quando a URL é recusada) e, das últimas 24 h, total e erros dos repasses de mensagem, mais a data do último que deu certo e do último que falhou;
+  - **API v1:** das últimas 24 h, total, 4xx e 5xx.
+- **Lista fechada de ações** (`INTEGRATION_LOG_ACTIONS`, em `types.ts`): o filtro `acao` só aceita o que está nela, e um teste a confere contra as rotas da v1 e contra quem grava no repasse.
+- **`src/lib/http/search-params.ts`:** `firstParam` e `searchParamsRecord`. Parâmetro repetido na URL vale o primeiro, na página e na rota.
+- **Cursor:** versão própria (`l1`) em `src/lib/api/v1/cursor.ts`. O das mensagens (`m1`) e o dos cadastros não valem nesta lista.
+
+**Decisões tomadas:**
+- **Leitura que falha não vira vazio nem zero.** Numa tela de diagnóstico, "nenhum registro" ou "0 erros" com o banco fora do ar é mentira. A lista devolve `unavailable`, e cada parte da Saúde tem o seu. É o contrário do padrão das listagens do app (devolver vazio e logar), de propósito.
+- **Cada parte da Saúde falha sozinha,** até quando lança: o provedor fora do ar não esconde as contagens, e a rota responde 200 com o estado de cada parte.
+- **A Saúde guarda o resultado por 10 s por processo.** A rota é GET, e GET fica fora da trava de origem do proxy: uma aba em laço, ou uma página de outra origem do mesmo site, chamaria o provedor e o banco à vontade. Com a leitura guardada, é no máximo uma por 10 s por réplica. A resposta leva `generatedAt`.
+- **O repasse é contado pela AÇÃO** (`conversation.message_received`), e não só pelo provider: o teste de conexão (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider `relay` e não são entregas.
+- **A API separa 4xx de 5xx.** O `status` da linha é `error` para os dois; para a saúde, 4xx é erro de quem chama e 5xx é erro do CRM.
+- **As datas do último repasse têm a mesma janela de 24 h.** `action` e `status` não estão em índice: sem janela, um agente que nunca falhou faria a busca do último erro ler a tabela toda.
+- **Última mensagem recebida sem migration.** Não há índice de `chat_messages` por data sozinha. A busca lê as 50 conversas mais recentes e, nelas, a mensagem recebida mais nova (índice por conversa). `last_message_at` é o máximo das mensagens da conversa, então nenhuma conversa de fora tem mensagem mais nova que a atividade da última lida. Daí:
+  - menos de 50 conversas: todas foram lidas, e o resultado é exato;
+  - 50 conversas: a busca tem piso naquela atividade. Achou, é exato, e leu pouca linha;
+  - não achou: devolve a mais nova daquelas conversas com `exact: false`. É um piso.
+- **O que "última mensagem recebida" quer dizer:** o horário da mensagem, informado pelo provedor, e não o da chegada ao CRM. Mensagem apagada não conta, e conversa limpa também não (limpar apaga as mensagens e zera `last_message_at`).
+- **Sem `count` na lista.** A tabela ganha uma linha a cada chamada da API.
+- **`lte(created_at)` antes do `.or()` do cursor.** É redundante na lógica, e é o que o índice usa como limite: sem ele, cada página releria do topo do período até o cursor.
+- **O id de pedido só aceita o alfabeto dos ids que o app grava.** Um NUL colado na URL chegaria ao Postgres, que o recusa, e a lista responderia 500.
+- **O texto do erro vai para a tela como está.** Quem grava em `integration_logs` só grava frases do próprio CRM ("O agente respondeu HTTP 500.", "Falha de rede (ECONNREFUSED)."), sem URL nem corpo de resposta.
+- **Reuso:** `takePage` e `olderThanFilter` vêm do chat (`messages-page.ts`), e o cursor opaco, do módulo da v1. `firstParam` estava copiado em três consultas: o arquivo novo em `src/lib/http` serve a esta; migrar as outras três fica para um PR próprio.
+
+**Verificação:**
+typecheck ✓ · lint ✓ (0 erros; 9 avisos antigos, nenhum novo) · test ✓ (4360 testes, 226 arquivos) · build ✓. Verificação HTTP de ponta a ponta (roteiro local, banco local, provedor apontando para `https://demo.invalid`): build de produção 58/58 e servidor de desenvolvimento 57/57 checagens. Mutação: 225 mutantes, 0 sobreviventes. (`bug-hunter` e `verification-before-completion` não estão instalados nesta máquina.)
+
+**Pendências / próximos passos:**
+- **PR 13:** a tela. O que ela precisa tratar está em `docs/PROXIMOS-PASSOS.md` §4.
+- **Índices (migration, decisão do dono):** filtro raro (`status=error` com tudo saudável) lê o período inteiro; e a última mensagem recebida teria uma consulta só, sempre exata, com um índice parcial em `chat_messages`.
+- **O expurgo de `integration_logs`** (90 dias, D9) só começa a rodar na Fase 6. Até lá a tabela só cresce.
+- **A Saúde conta o que foi registrado.** Pedido à API sem token, ou barrado por excesso, não entra no registro e não aparece.
+- **A leitura guardada é por processo:** com duas réplicas, dois pedidos seguidos podem trazer leituras diferentes.
+- **`integration-logs-table.tsx` segue órfã** e incoerente com o contrato novo (filtra no navegador). O PR 13 a refaz.
+- **A branch `feat/conexao-registros-e-saude`** (o commit `wip`) ficou obsoleta: pode ser apagada.
+
+**Armadilhas descobertas:**
+- **Com o cliente real, o erro chega vazio.** Na falha de rede o supabase-js devolve `code: ""`, e a contagem (HEAD) não tem corpo: `error.code ?? error.message` imprime uma linha em branco. Logar código, mensagem e o `status` da resposta. O teste tem de simular `code: ""`.
+- **`vi.restoreAllMocks()` não zera o histórico de `vi.fn()`** nesta versão do vitest: só desfaz `vi.spyOn`. Sem `vi.clearAllMocks()` no `beforeEach`, `not.toHaveBeenCalled()` enxerga as chamadas dos testes anteriores.
+- **Mock que responde a qualquer consulta do mesmo jeito não distingue duas consultas.** O respondedor de `integration_logs` devolvia o total para toda contagem sem `http_status`: um filtro a mais no total passava. O teste tem de conferir a cadeia de condições inteira.
+- **Paginação por `range` com a lista mudando pula linha.** Uma conversa que sobe de posição entre um passo e outro não é lida em nenhum. Foi o motivo de a busca da última mensagem ficar num passo só.
+- **`new URL("localhost:3200")` e `Object.fromEntries(searchParams)`:** o primeiro é válido (esquema `localhost:`), e o segundo fica com a ÚLTIMA ocorrência de um parâmetro repetido, enquanto o `searchParams` da página dá a primeira.
+- **Estado de módulo atravessa os testes.** A leitura guardada mora no módulo: os testes da lógica chamam `readIntegrationHealth`, e os da leitura guardada usam horários sempre à frente do teste anterior.
+- **Contagem pelo PostgREST:** `select("id", { count: "exact", head: true })` devolve `{ count, error, status }` com `data` nulo. `count` nulo sem erro acontece: tratar como falha.
+- **`select` com caminho JSON** (`actor_id:payload->>by`) funciona no PostgREST e o supabase-js infere o tipo: dá para ler um campo do `jsonb` sem trazer a coluna.
+
 ## [2026-10-02] Documento de continuidade: onde o projeto está e o que falta
 
 **Agente/Modelo:** Claude Opus 5.5.

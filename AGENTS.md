@@ -201,7 +201,7 @@ src/app/
   login, definir-senha, politica-de-privacidade, offline
 src/features/<dominio>/  # auth, chat, connection, contacts (identidade, lista,
                          #   vínculo com empresa), contracts, customers, home,
-                         #   integrations (logs, contexto da triagem, relay), products (filas), quick-replies,
+                         #   integrations (registros e saúde, contexto da triagem, relay), products (filas), quick-replies,
                          #   settings, tags, tickets (lib pura, schemas, queries
                          #   e server/ticket-service.ts: a escrita única, via RPC)
 src/components/
@@ -213,7 +213,9 @@ src/components/
 src/lib/
   auth/                  # session, route-guard, require-dashboard-session
   supabase/              # server (service role), admin, client (anon/Realtime), types
-  api/v1/                # withApi, escopos, envelope de erro, idempotência, OpenAPI
+  api/v1/                # withApi, escopos, envelope de erro, idempotência, OpenAPI,
+                         #   cursor (também o da lista de registros da Conexão)
+  http/                  # read-json-body, search-params (query string da página e da rota)
   security/              # api-token, hmac, rate-limit, ssrf-guard, verify-webhook
   formatters/            # phone, date, money, numbers, percentage, clean-name
 src/config/              # navigation.ts (menu + allowedRoles), site.ts (marca)

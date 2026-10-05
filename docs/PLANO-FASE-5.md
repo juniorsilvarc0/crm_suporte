@@ -219,7 +219,7 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - **endurecer a guarda de URL** (seção 4): PR próprio, logo depois deste. **Feito em 2026-10-01:** a guarda foi para `src/lib/security/ssrf-guard.ts` e passou a recusar ponto final, nome de um rótulo só (em produção), `.internal`, CGNAT e as demais faixas reservadas, e as formas de IPv6 que embutem IPv4; e deixou de recusar por engano nome de host que começa por `fc`, `fd` ou `fe80`.
 > - **Achado da revisão, fora deste PR:**
 >   - o webhook grava como mensagem do cliente o que chega com `chatid: status@broadcast` (status do WhatsApp), reação e tipo sem tratamento, e isso é repassado. Corrigir no normalizador, em PR próprio, medindo o que a uazapi entrega de fato;
->   - a tela não diz se há chave de assinatura (**feito no PR 12a**), e os registros ainda não têm tela (PRs 12b e 13);
+>   - a tela não diz se há chave de assinatura (**feito no PR 12a**), e os registros ainda não têm tela (o back veio no PR 12b; a tela é do PR 13);
 >   - na Fase 6, o id e o tipo do evento têm de ir no corpo assinado: hoje a assinatura não cobre os cabeçalhos.
 
 **PR 12: `feat(conexao)`, back das abas** · back · M · depende dos PRs 4 e 11
@@ -245,7 +245,10 @@ Os PRs sem dependência entre si podem ficar abertos em paralelo, cada um saído
 >   - **Não feito aqui:** `revalidatePath` para `/app/conexao` (as telas ainda estão em Configurações; muda no PR 13); o `FormSelect` do catálogo no Cofre, e a limpeza da coluna Origem e de "Substituir" em variável antiga (PR 13).
 >   - **A troca da chave tem uma janela**, e não é este PR que a fecha: a chave nova só existe depois de o CRM já assinar com ela, e um pedido que o agente recusa não é reenviado. Quem fecha é o reenvio do outbox (Fase 6).
 >   - **Fica para a Fase 6 ou para decisão do dono:** testar uma URL antes de salvá-la (hoje o teste só vai à URL salva, e salvar já manda o repasse para ela).
-> - **12b, a fazer:** a leitura real de `get-integration-logs.ts` com filtros, e a Saúde. A taxa de erro do relay tem de filtrar pela ação `conversation.message_received`: o teste (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider `relay`.
+> - **12b, feito (2026-10-02):** a leitura real dos registros, com filtros, e a Saúde. Como ficou:
+>   - **Registros:** `getIntegrationLogs(filters, cursor)` e `GET /api/connection/logs`. Os filtros são os nomes da URL (`integracao`, `status`, `acao`, `token`, `pedido`, `periodo`), lidos e escritos por `src/features/integrations/lib/log-filters.ts`, que é neutro: a tela do PR 13 importa dali. 50 por página, com cursor opaco e sem `count`. A leitura que falha devolve `unavailable`, e não uma lista vazia.
+>   - **Saúde:** `getIntegrationHealth()` e `GET /api/connection/health`, em quatro partes que falham cada uma por si: WhatsApp (lido do provedor), última mensagem recebida, repasse e API. O repasse é contado pela ação `conversation.message_received`: o teste (`webhook.ping`) e a trilha da chave (`signing_secret.*`) usam o mesmo provider `relay`. A leitura vale por 10 s por processo.
+>   - **Não feito aqui:** a tela (PR 13) e os índices que deixariam o filtro raro e a última mensagem recebida mais baratos (pedem migration; decisão do dono).
 > - **Rotação do segredo do webhook (D13): proposta de adiar, aguardando o dono.** A opção recomendada pede migration (o segredo anterior valendo por N minutos), e a alternativa abre uma janela de 401 na entrada do WhatsApp. Ninguém pediu a rotação até aqui, e ela não pode ser testada em produção.
 > - **Fora do plano, saído da revisão do 12a (2026-10-01, PR próprio):** o proxy passou a recusar escrita que não partiu do próprio app (`isCrossOriginWrite`). Vale para todas as rotas de sessão, e não só para as da Fase 5; o webhook e a API v1 ficam de fora. Na sequência, o pedido do QR (`/api/connection/qr`) virou POST, porque GET fica fora da trava: **o PR 13 mantém assim** ao mexer na tela de Conexão. Ver `AGENTS.md` §3.2 e o PROGRESS da data.
 
