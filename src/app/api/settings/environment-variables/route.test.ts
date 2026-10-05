@@ -85,7 +85,7 @@ describe("POST /api/settings/environment-variables", () => {
 
     expect(response.status).toBe(400);
     expect(body.errors.name).toEqual([
-      "O cofre só guarda as chaves que o CRM usa: OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL.",
+      "O cofre só guarda as chaves que o CRM usa: OPENAI_API_KEY, OPENAI_TRANSCRIPTION_MODEL, CUSTOMER_SOURCE_URL, CUSTOMER_SOURCE_TOKEN.",
     ]);
     expect(JSON.stringify(body)).not.toContain("valor-qualquer");
     expect(rpcMock).not.toHaveBeenCalled();

@@ -38,7 +38,10 @@ describe("getRuntimeEnvironmentVariable", () => {
     });
     // A chave de assinatura do relay não é pedida: ela não mora na memória da réplica.
     expect(rpcMock.mock.calls).toEqual([
-      ["get_app_environment_variables", { p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL"] }],
+      [
+        "get_app_environment_variables",
+        { p_names: ["OPENAI_API_KEY", "OPENAI_TRANSCRIPTION_MODEL", "CUSTOMER_SOURCE_URL", "CUSTOMER_SOURCE_TOKEN"] },
+      ],
     ]);
   });
 
