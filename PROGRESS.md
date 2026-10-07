@@ -27,6 +27,28 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-07] Contratos ativos da TCBX na ficha da empresa (somente leitura) — PR 2e
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** mostrar, na ficha de cada empresa, os contratos **ativos** que o cliente tem na TCBX — sob demanda, sem escrever nada no nosso banco.
+**Arquivos alterados:**
+- novos: `src/features/customer-source/use-external-context.ts` (hook genérico por endpoint), `src/features/customer-source/active-contract.ts` (+teste), `src/features/customers/components/external-contracts-card.tsx` (+teste);
+- alterados: `src/features/chat/hooks/use-customer-context.ts` (virou atalho fino sobre o hook genérico — API e testes do chat intactos), `src/features/customers/components/customer-detail.tsx` (renderiza o bloco); docs: UI.md §5.1 + §5.7.12, este PROGRESS.
+
+**O que foi feito:**
+- Bloco **"Contratos (TCBX)"** na ficha da empresa (`/app/clientes/[id]`), abaixo do contrato interno: lista os contratos com `statusVigencia: "ativo"` (número, modalidade, período, dia de vencimento). Reusa a rota que já existia (`GET /api/customers/[id]/external-context`, #47) — nada novo no servidor.
+- **Hook resiliente extraído** para `customer-source/use-external-context.ts` (genérico pelo endpoint: descarta resposta velha, falha vira `unavailable`). O `useCustomerContext` do chat passou a delegar a ele, sem mudar a assinatura.
+- `isActiveContract` (puro, testado): ativo = `statusVigencia` (ou, na ausência, `status`) == "ativo", sem caixa/espaços.
+
+**Decisões tomadas (revisar):**
+- **NÃO espelhar no `support_contracts`.** A pergunta era "cadastrar os contratos ativos"; medi o modelo e ele **não cabe**: a RPC exige `monthly_amount` e `product_ids` (a TCBX não traz valor nem fila), e o índice `support_contracts_one_current_per_customer_uidx` só deixa **um contrato vigente por empresa**. Gravar exigiria **inventar** valor/produto (proibido, §0.2.5/6) e perderia os contratos extras. O dono escolheu, entre 3 opções, a leitura ao vivo na tela (mantém a arquitetura "sob demanda" já aprovada; o chat já faz igual). As outras opções (contrato interno placeholder; tabela-espelho `external_contracts` com migration) ficaram descartadas/adiadas.
+- Mostra para **admin e member** (a rota é `requireDashboardUser`, e o chat já expõe o mesmo contexto ao member).
+- Bloco aparece para **qualquer** empresa com CNPJ (não há flag de "sincronizada" — não temos `external_id`); empresa fora da TCBX mostra "Sem cadastro na TCBX", e sem integração o bloco some.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes em `verify-webhook.test.ts`) · test ✓ (244 arq / 4509) · build ✓. bug-hunter / verification-before-completion **indisponíveis neste ambiente** ("Unknown skill") → revisão manual do diff no lugar.
+**Pendências / próximos passos:** re-clicar "Importar da TCBX" (fix do telefone canônico do PR 2d); PR 3 (webhook/polling + `external_id`). Se um dia quiser PERSISTIR os contratos da TCBX, é a tabela-espelho `external_contracts` (migration + aprovação, §3.3), não o `support_contracts`.
+**Armadilhas descobertas:** `support_contracts` é o contrato **interno** da casa (valor + fila + um vigente por empresa), **não** um espelho de base externa — não tente enfiar contrato de terceiro ali. O hook de contexto externo agora é `customer-source/use-external-context.ts`; `chat/hooks/use-customer-context.ts` é só o atalho do chat.
+
 ## [2026-10-07] Integração TCBX: telefone canônico (DDD+8), cursor no backfill e 409=ambíguo — PR 2d
 
 **Agente/Modelo:** Claude Opus 4.8.
