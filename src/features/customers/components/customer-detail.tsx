@@ -32,6 +32,7 @@ import type {
   SupportPlanOption,
 } from "@/features/contracts/types";
 import { CustomerFormDialog } from "@/features/customers/components/customer-form-dialog";
+import { ExternalContractsCard } from "@/features/customers/components/external-contracts-card";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerContact, CustomerRecord } from "@/features/customers/types";
 import type { ProductOption } from "@/features/products/types";
@@ -80,6 +81,7 @@ export function CustomerDetail(props: CustomerDetailProps) {
       <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         <div className="min-w-0 space-y-6 lg:col-span-2">
           <ContractsSection {...props} />
+          <ExternalContractsCard customerId={customer.id} hasCnpj={Boolean(customer.cnpj)} />
         </div>
         <div className="min-w-0 space-y-6">
           <ContactsSection contacts={contacts} />
