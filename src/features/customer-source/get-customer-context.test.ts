@@ -204,6 +204,12 @@ describe("getCustomerContext", () => {
     });
   });
 
+  it("409: a fonte achou vários — `ambiguous` (não erro)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: false, error: "Mais de um cliente." }, 409));
+
+    expect(await getCustomerContext({ telefone: "558699783446" })).toEqual({ state: "ambiguous" });
+  });
+
   it("cliente inexistente: not_found", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ success: false, error: "Cliente não encontrado." }, 404));
 

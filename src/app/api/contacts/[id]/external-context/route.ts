@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { getCustomerContext } from "@/features/customer-source/get-customer-context";
-import type { CustomerContextResult, CustomerLookup } from "@/features/customer-source/types";
+import { resolveCustomerByPhone } from "@/features/customer-source/resolve-by-phone";
+import type { CustomerContextResult } from "@/features/customer-source/types";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
@@ -50,7 +51,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, result: { state: "not_found" } } satisfies ExternalContextResponse);
   }
 
-  let lookup: CustomerLookup | null = null;
+  let documento: string | null = null;
   if (contact.customer_id) {
     const { data: customer, error: customerError } = await supabase
       .from("customers")
@@ -61,13 +62,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       console.error("external-context (contato): leitura da empresa", customerError.code, customerError.message);
       return unavailable();
     }
-    if (customer?.cnpj) lookup = { documento: customer.cnpj };
-  }
-  if (!lookup && contact.phone) lookup = { telefone: contact.phone };
-  if (!lookup) {
-    return NextResponse.json({ ok: true, result: { state: "not_found" } } satisfies ExternalContextResponse);
+    documento = customer?.cnpj ?? null;
   }
 
-  const result = await getCustomerContext(lookup);
+  // Empresa com CNPJ: consulta direta (mais preciso). Senão, pelo telefone do
+  // contato, tentando as variações canônicas do número (DDD + 8 últimos).
+  const result: CustomerContextResult = documento
+    ? await getCustomerContext({ documento })
+    : contact.phone
+      ? await resolveCustomerByPhone(contact.phone)
+      : { state: "not_found" };
+
   return NextResponse.json({ ok: true, result } satisfies ExternalContextResponse);
 }

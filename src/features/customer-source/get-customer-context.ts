@@ -178,6 +178,9 @@ export async function getCustomerContext(lookup: CustomerLookup): Promise<Custom
   }
 
   if (response.status === 404) return { state: "not_found" };
+  // 409: a fonte achou mais de um cliente para a chave (telefone ambíguo). Não é
+  // "fora do ar" — é "não dá para escolher".
+  if (response.status === 409) return { state: "ambiguous" };
   if (!response.ok) {
     console.error("getCustomerContext: a fonte respondeu com erro", response.status);
     return { state: "unavailable" };

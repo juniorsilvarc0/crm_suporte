@@ -69,6 +69,9 @@ export type CustomerContextResult =
   | { state: "ok"; context: CustomerContext }
   // A fonte não tem esse cliente.
   | { state: "not_found" }
+  // A fonte achou MAIS DE UM cliente para a chave (ex.: telefone que casa com
+  // vários cadastros): não dá para escolher. 409 na TCBX.
+  | { state: "ambiguous" }
   // Sem URL ou sem chave no cofre: a integração está desligada.
   | { state: "not_configured" }
   // A fonte não respondeu, respondeu com erro, ou respondeu algo inesperado.

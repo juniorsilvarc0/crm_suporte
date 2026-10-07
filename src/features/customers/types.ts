@@ -76,7 +76,12 @@ export type BackfillReport = {
   reused: number;
   linked: number;
   notFound: number;
+  /** Telefone que casou MAIS DE UM cliente na fonte (409): pulado. */
+  ambiguous: number;
   skippedPf: number;
   errors: number;
-  remaining: number;
+  /** Último contato processado — vai como `after` na próxima leva. */
+  cursor: string | null;
+  /** Não há mais contatos a processar. */
+  done: boolean;
 };

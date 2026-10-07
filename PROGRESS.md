@@ -27,6 +27,35 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-07] Integração TCBX: telefone canônico (DDD+8), cursor no backfill e 409=ambíguo — PR 2d
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** fazer a busca por telefone casar o cliente certo (o `409` era diferença de formato, não ambiguidade real) e corrigir o laço do backfill. Veio da 1ª importação em produção: 38 empresas criadas, mas 314 deram `409`.
+**Arquivos alterados:**
+- novos: `src/features/customer-source/resolve-by-phone.ts` (+teste);
+- alterados: `src/lib/formatters/phone.ts` (`phoneLookupCandidates`, +teste), `customer-source/types.ts` (estado `ambiguous`), `get-customer-context.ts` (409→`ambiguous`, +teste), `customers/types.ts` (`BackfillReport`: `ambiguous`/`cursor`/`done`), `customers/server/backfill-external.ts` (cursor + `resolveCustomerByPhone` + ambíguo, +teste), `api/customers/backfill-external/route.ts` (`after`, +teste), `customers/components/backfill-external-button.tsx` (laço por cursor), `api/contacts/[id]/external-context/route.ts` (telefone→`resolveCustomerByPhone`, +teste), `chat/components/contact-info-sheet.tsx` (estado ambíguo); docs: UI.md n-a, este PROGRESS.
+
+**O que foi feito:**
+- **`phoneLookupCandidates`:** a identidade do número é **DDD + os 8 últimos dígitos**; o 9º extra, o `55` e o `+55` são variações. Gera as variações (com/sem 9, com/sem 55), tentando **o formato como veio primeiro**.
+- **`resolveCustomerByPhone`:** tenta as variações até uma casar um cliente **único** (`200`); `409` em todas → `ambiguous`; para em `unavailable`/`not_configured`.
+- **`409` virou estado próprio (`ambiguous`):** o painel mostra "Vários cadastros na TCBX com este telefone" (não "erro"), e o backfill conta separado (pula, não cria).
+- **Backfill por CURSOR** (id do contato), não por "quem falta vincular": os que não resolvem não são reprocessados — era o bug que, na 1ª importação, martelou a TCBX com **1399 chamadas** (reprocessando os 409 em laço até o teto).
+
+**Decisões tomadas:**
+- Ordem das variações: formato como veio primeiro (celular com 9 → começa com 9), para o número real resolver antes de arriscar casar o formato curto com outro cadastro.
+- `409` (ambíguo) é pulado no backfill e informado na tela — não é erro nem "sem cadastro".
+- A rota antiga por empresa (`/api/customers/[id]/external-context`) segue por `documento`; a por contato usa telefone canônico.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 avisos antigos) · test ✓ · build ✓. Testes: `phoneLookupCandidates` (variações/ordem/curto), `resolveCustomerByPhone` (1ª que acha vence, 409 pula, todas 409=ambíguo, fonte fora para), `get-customer-context` (409→ambiguous), backfill (cursor/done, ambíguo) e as duas rotas.
+
+**Pendências / próximos passos:**
+- **Re-rodar "Importar da TCBX"** (já com o telefone canônico) deve resolver muito mais — ex.: PETECOPECAS, cujo 1º candidato `8699783446` bate exatamente o cadastro da TCBX. Validar o rendimento em produção.
+- PR 3: webhook/polling + id externo.
+
+**Armadilhas descobertas:**
+- **Backfill que filtra "sem empresa" e repete a leva** nos que não resolvem vira laço até o teto, martelando a fonte. Avançar por **cursor** (id) é o certo.
+- **TCBX casa por formato exato:** mandar `55`+`9`+número casa vários (409); a identidade real é DDD + 8 últimos — tentar as variações resolve do nosso lado, sem o Bruno.
+
 ## [2026-10-07] Integração TCBX: cadastro em massa de clientes (backfill) — PR 2b
 
 **Agente/Modelo:** Claude Opus 4.8.
