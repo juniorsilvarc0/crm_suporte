@@ -27,6 +27,36 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-07] Integração TCBX: cadastro em massa de clientes (backfill) — PR 2b
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** cadastrar em massa, em `/app/clientes`, as empresas que a TCBX conhece, a partir dos contatos do WhatsApp — por telefone (agora que a TCBX aceita).
+**Arquivos alterados:**
+- novos: `src/features/customers/server/backfill-external.ts` (+teste), `src/app/api/customers/backfill-external/route.ts` (+teste), `src/features/customers/components/backfill-external-button.tsx`;
+- alterados: `src/features/customers/types.ts` (tipo `BackfillReport`), `src/app/(dashboard)/app/clientes/page.tsx` (botão admin); docs: este PROGRESS.
+
+**O que foi feito:**
+- Serviço `backfillExternalCustomers`: para cada contato SEM empresa, consulta a TCBX pelo telefone; se achar PJ (CNPJ), cria a empresa (ou reusa a que já tem o CNPJ) e vincula o contato. Idempotente, em levas (`limit`, padrão 50), com ensaio (`apply: false`). PF (CPF) fica de fora (`customers` só aceita CNPJ).
+- Rota `POST /api/customers/backfill-external` (admin): uma leva por chamada, devolve o relatório + `remaining`. É escrita → POST.
+- Botão "Importar da TCBX" na tela de Clientes (só admin, `viewer.role === "admin"`), com confirmação em dois passos; repete as levas até `remaining` zerar, mostra o progresso e dá `router.refresh()` no fim.
+
+**Decisões tomadas:**
+- **Por telefone, por contato** — cada contato tem um número → um cliente, então some a ambiguidade do CNPJ solto em mensagem.
+- **Idempotente + em levas** (50/chamada): a tela repete; reexecutar só pega quem falta; evita timeout de centenas de consultas numa requisição só.
+- **Só PJ** (customers.cnpj); PF não tem onde morar hoje.
+- **Admin dispara** (o botão). Eu não posso disparar: a consulta à TCBX a partir de mim é barrada como exfiltração.
+- ⚠️ **9º dígito:** telefone que não bate vira "não encontrado" (pulado), não cadastro errado — o risco é perder match, não criar lixo.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 avisos antigos) · test ✓ (4485 testes, 241 arquivos) · build ✓. Testes: serviço (PJ cria+vincula, PF pulado, não encontrado, dedup por CNPJ, `remaining`, fonte indisponível = erro) e rota (admin, apply, ensaio, sem env, erro).
+
+**Pendências / próximos passos:**
+- **Requer as 2 variáveis no cofre + deploy.** Sem elas, "Importar da TCBX" não acha nada.
+- Confirmar o 9º dígito com casos reais.
+- PR 3: webhook/polling + id externo.
+
+**Armadilhas descobertas:**
+- **Tipo compartilhado entre servidor e client:** `BackfillReport` foi para `customers/types.ts` (neutro) — o botão (client) não pode importar do serviço/rota (que puxam `getCustomerContext`/admin para o bundle).
+
 ## [2026-10-07] Integração TCBX: contexto do cliente por TELEFONE no chat (PR 2c)
 
 **Agente/Modelo:** Claude Opus 4.8.
