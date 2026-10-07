@@ -657,12 +657,14 @@ function ExternalContextGroup({ state }: { state: UseCustomerContext }) {
     );
   }
 
-  if (result.state === "not_found") {
+  if (result.state === "not_found" || result.state === "ambiguous") {
     return (
       <InfoGroup title="Cliente (TCBX)">
         <div className="flex min-h-11 items-center px-4 py-2.5">
-          <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
-            Sem cadastro na TCBX.
+          <span className="min-w-0 break-words text-[15px] text-[var(--wa-info-label)]">
+            {result.state === "ambiguous"
+              ? "Vários cadastros na TCBX com este telefone."
+              : "Sem cadastro na TCBX."}
           </span>
         </div>
       </InfoGroup>

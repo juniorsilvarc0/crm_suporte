@@ -2,9 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 
-const { requireUserMock, contextMock, clientMock, hasEnvMock, contactRow, customerRow } = vi.hoisted(() => ({
+const { requireUserMock, contextMock, resolveMock, clientMock, hasEnvMock, contactRow, customerRow } = vi.hoisted(() => ({
   requireUserMock: vi.fn(),
   contextMock: vi.fn(),
+  resolveMock: vi.fn(),
   clientMock: vi.fn(),
   hasEnvMock: vi.fn(),
   contactRow: vi.fn(),
@@ -13,6 +14,7 @@ const { requireUserMock, contextMock, clientMock, hasEnvMock, contactRow, custom
 
 vi.mock("@/lib/auth/require-dashboard-session", () => ({ requireDashboardUser: requireUserMock }));
 vi.mock("@/features/customer-source/get-customer-context", () => ({ getCustomerContext: contextMock }));
+vi.mock("@/features/customer-source/resolve-by-phone", () => ({ resolveCustomerByPhone: resolveMock }));
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: clientMock,
   hasSupabaseAdminEnv: hasEnvMock,
@@ -40,6 +42,7 @@ beforeEach(() => {
   contactRow.mockResolvedValue({ data: { phone: "558699783446", customer_id: CUSTOMER_ID }, error: null });
   customerRow.mockResolvedValue({ data: { cnpj: "12321030000189" }, error: null });
   contextMock.mockResolvedValue({ state: "ok", context: CONTEXT });
+  resolveMock.mockResolvedValue({ state: "ok", context: CONTEXT });
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -71,7 +74,8 @@ describe("GET /api/contacts/[id]/external-context", () => {
 
     await get();
 
-    expect(contextMock).toHaveBeenCalledWith({ telefone: "558699783446" });
+    expect(resolveMock).toHaveBeenCalledWith("558699783446");
+    expect(contextMock).not.toHaveBeenCalled();
   });
 
   it("contato sem empresa vinculada: consulta por TELEFONE, sem ler empresa", async () => {
@@ -80,7 +84,7 @@ describe("GET /api/contacts/[id]/external-context", () => {
     await get();
 
     expect(customerRow).not.toHaveBeenCalled();
-    expect(contextMock).toHaveBeenCalledWith({ telefone: "558699783446" });
+    expect(resolveMock).toHaveBeenCalledWith("558699783446");
   });
 
   it("repassa not_found/not_configured da fonte como vêm", async () => {
