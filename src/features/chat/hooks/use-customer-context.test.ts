@@ -32,11 +32,11 @@ describe("useCustomerContext", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("ligado: busca pela empresa e devolve o resultado da fonte", async () => {
+  it("ligado: busca pelo contato e devolve o resultado da fonte", async () => {
     const { result } = renderHook(() => useCustomerContext("c1", true));
 
     await waitFor(() => expect(result.current.result).toEqual(OK));
-    expect(fetchMock).toHaveBeenCalledWith("/api/customers/c1/external-context");
+    expect(fetchMock).toHaveBeenCalledWith("/api/contacts/c1/external-context");
     expect(result.current.loading).toBe(false);
   });
 
@@ -62,7 +62,7 @@ describe("useCustomerContext", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
-  it("trocar de empresa zera o resultado e busca a nova", async () => {
+  it("trocar de contato zera o resultado e busca o novo", async () => {
     const { result, rerender } = renderHook(({ id }) => useCustomerContext(id, true), {
       initialProps: { id: "c1" },
     });
@@ -72,6 +72,6 @@ describe("useCustomerContext", () => {
     rerender({ id: "c2" });
 
     await waitFor(() => expect(result.current.result).toEqual({ state: "not_found" }));
-    expect(fetchMock).toHaveBeenLastCalledWith("/api/customers/c2/external-context");
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/contacts/c2/external-context");
   });
 });

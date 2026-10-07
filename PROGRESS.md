@@ -27,6 +27,36 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-07] Integração TCBX: contexto do cliente por TELEFONE no chat (PR 2c)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o painel do contato buscar o contexto da TCBX por CONTATO (CNPJ da empresa ou telefone), não só quando há empresa com CNPJ. A TCBX passou a aceitar busca por telefone, então o contexto vale para qualquer conversa.
+**Arquivos alterados:**
+- novo: `src/app/api/contacts/[id]/external-context/route.ts` (+teste);
+- alterados: `src/features/chat/hooks/use-customer-context.ts` (+teste, agora por contato), `src/features/chat/components/contact-info-sheet.tsx` (grupo para qualquer contato) e `contact-info-sheet.test.tsx`; docs: UI.md §5.7.12 e este PROGRESS.
+
+**O que foi feito:**
+- O Bruno (TCBX) adicionou os parâmetros `telefone` ("com ou sem +55") e `contrato` em `GET /clientes/contexto` — conferido no catálogo e com número fictício (antes `422`, agora `404`). O nosso `getCustomerContext` já encaminhava `{telefone}` desde o #46.
+- Rota nova `GET /api/contacts/[id]/external-context` (member, só leitura): lê o contato (telefone + customer_id); **prefere o CNPJ da empresa vinculada** (mais preciso) e, sem ela, **o telefone do contato**.
+- O painel mostra o grupo "Cliente (TCBX)" para **qualquer conversa com contato** (não só com CNPJ). O texto do vazio virou "Sem cadastro na TCBX".
+- A rota antiga `GET /api/customers/[id]/external-context` (por empresa) ficou para a ficha de Clientes.
+
+**Decisões tomadas:**
+- **Prefere CNPJ, cai no telefone.** Empresa com CNPJ é mais preciso; sem ela, o telefone resolve — assim vale para os ~300 contatos que só têm telefone.
+- **O telefone vai como está** (ex.: `558699783446`); a TCBX normaliza o `+55`. ⚠️ O catálogo não menciona o 9º dígito do celular — pode divergir em alguns números (validar com casos reais).
+- **Grupo para qualquer contato:** quem não é cliente na TCBX vê "Sem cadastro na TCBX" (informa o atendente) em vez de o grupo sumir.
+
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ · build ✓. Testes novos/ajustados: a rota (CNPJ, telefone, empresa sem CNPJ, contato sem empresa, falhas, sem env), o hook (URL de contato, estados) e o mock do painel (handler de `/external-context`).
+
+**Pendências / próximos passos:**
+- Validar o 9º dígito com números reais.
+- Cadastro em massa dos clientes (minerados + por telefone) — PR 2b / backfill.
+- PR 3: webhook/polling + id externo.
+
+**Armadilhas descobertas:**
+- **`NextResponse` reusado quebra:** `const resp = NextResponse.json(...)` no módulo, retornado em várias requisições, falha (o corpo só se lê uma vez). Use uma FUNÇÃO que cria a resposta a cada chamada.
+- **`contacts.customer_id` não tem FK** (nasce sem, por decisão de migração): embed do PostgREST (`customers(cnpj)`) não funciona — leia a empresa numa 2ª query.
+
 ## [2026-10-05] Integração de clientes externa (TCBX): contexto no painel do chat (PR 2)
 
 **Agente/Modelo:** Claude Opus 4.8.
