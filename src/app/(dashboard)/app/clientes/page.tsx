@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ListPagination } from "@/components/data-display/list-pagination";
+import { BackfillExternalButton } from "@/features/customers/components/backfill-external-button";
 import { CustomerFormDialog } from "@/features/customers/components/customer-form-dialog";
 import { CustomersTable } from "@/features/customers/components/customers-table";
 import {
@@ -31,7 +32,16 @@ export default async function ClientesPage({
 
   return (
     <main className="mx-auto w-full max-w-screen-xl space-y-4 p-4 sm:p-6 lg:p-8">
-      <CustomersTable page={customers} params={params} actions={<CustomerFormDialog />} />
+      <CustomersTable
+        page={customers}
+        params={params}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {viewer.role === "admin" ? <BackfillExternalButton /> : null}
+            <CustomerFormDialog />
+          </div>
+        }
+      />
       <ListPagination
         basePath="/app/clientes"
         // Os filtros já lidos, não a URL crua: valor fora da allowlist não
