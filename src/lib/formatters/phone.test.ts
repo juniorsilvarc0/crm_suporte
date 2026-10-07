@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPhone, formatPhoneBR, normalizePhone } from "@/lib/formatters/phone";
+import { formatPhone, formatPhoneBR, normalizePhone, phoneLookupCandidates } from "@/lib/formatters/phone";
 
 describe("normalizePhone", () => {
   it("remove todos os caracteres não numéricos", () => {
@@ -76,5 +76,34 @@ describe("formatPhoneBR", () => {
 
   it("cai no formato padrão quando não há 10 nem 11 dígitos", () => {
     expect(formatPhoneBR("123")).toBe("123");
+  });
+});
+
+describe("phoneLookupCandidates", () => {
+  it("celular (com o 9): tenta COM o 9 primeiro, depois sem, depois com 55", () => {
+    expect(phoneLookupCandidates("5586994259816")).toEqual([
+      "86994259816",
+      "8694259816",
+      "5586994259816",
+      "558694259816",
+    ]);
+  });
+
+  it("+55 e formatação são indiferentes — mesmas variações", () => {
+    expect(phoneLookupCandidates("+55 (86) 99425-9816")).toEqual(phoneLookupCandidates("86994259816"));
+  });
+
+  it("número com DDD + 8 (sem o 9): tenta sem o 9 primeiro", () => {
+    expect(phoneLookupCandidates("8699783446")).toEqual([
+      "8699783446",
+      "86999783446",
+      "558699783446",
+      "5586999783446",
+    ]);
+  });
+
+  it("curto demais (sem DDD + 8): nenhuma variação", () => {
+    expect(phoneLookupCandidates("994259816")).toEqual([]);
+    expect(phoneLookupCandidates("")).toEqual([]);
   });
 });

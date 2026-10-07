@@ -47,3 +47,24 @@ export function formatPhoneBR(value: string | null) {
 
   return formatPhone(value);
 }
+
+/**
+ * Variações do MESMO número para consultar numa fonte externa que casa por
+ * formato exato (ex.: TCBX). A identidade é **DDD + os 8 últimos dígitos**; o 9º
+ * dígito do celular, o `55` e o `+55` são só variações. Gera, do mais específico
+ * ao menos, sem repetir: `DDD+8`, `DDD+9+8`, `55+DDD+8`, `55+DDD+9+8`. Devolve
+ * vazio quando não dá para extrair DDD + 8 (número curto demais).
+ */
+export function phoneLookupCandidates(value: string | null | undefined): string[] {
+  const national = normalizePhone(value ?? ""); // sem o 55
+  if (national.length < 10) return [];
+  const ddd = national.slice(0, 2);
+  const last8 = national.slice(2).slice(-8); // tira o 9 extra quando houver
+  const with9 = `${ddd}9${last8}`;
+  const without9 = `${ddd}${last8}`;
+  // Tenta primeiro o formato COMO VEIO (celular com o 9 → com o 9), depois a
+  // outra variação; assim o número real é a 1ª tentativa e um match único sai
+  // antes de arriscar casar o formato curto com outro cadastro.
+  const [primary, secondary] = national.length >= 11 ? [with9, without9] : [without9, with9];
+  return [...new Set([primary, secondary, `55${primary}`, `55${secondary}`])];
+}
