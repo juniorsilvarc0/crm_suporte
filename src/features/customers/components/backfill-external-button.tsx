@@ -10,7 +10,7 @@ import type { BackfillReport } from "@/features/customers/types";
 
 type Totals = Pick<
   BackfillReport,
-  "processed" | "created" | "reused" | "linked" | "notFound" | "skippedPf" | "errors"
+  "processed" | "created" | "reused" | "linked" | "notFound" | "ambiguous" | "skippedPf" | "errors"
 >;
 const ZERO: Totals = {
   processed: 0,
@@ -18,6 +18,7 @@ const ZERO: Totals = {
   reused: 0,
   linked: 0,
   notFound: 0,
+  ambiguous: 0,
   skippedPf: 0,
   errors: 0,
 };
@@ -37,13 +38,14 @@ export function BackfillExternalButton() {
     setPhase("running");
     setTotals(ZERO);
     let acc = { ...ZERO };
+    let after: string | null = null;
     try {
-      // Teto de levas: evita laço infinito se a rota devolvesse `remaining` > 0 sempre.
-      for (let guard = 0; guard < 200; guard += 1) {
+      // Avança por cursor; o teto de levas é só uma rede contra laço infinito.
+      for (let guard = 0; guard < 500; guard += 1) {
         const response = await fetch("/api/customers/backfill-external", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ apply: true, limit: 50 }),
+          body: JSON.stringify({ apply: true, limit: 50, after }),
         });
         const body = (await response.json()) as { ok: boolean; message?: string; report?: BackfillReport };
         if (!body.ok || !body.report) {
@@ -58,11 +60,13 @@ export function BackfillExternalButton() {
           reused: acc.reused + r.reused,
           linked: acc.linked + r.linked,
           notFound: acc.notFound + r.notFound,
+          ambiguous: acc.ambiguous + r.ambiguous,
           skippedPf: acc.skippedPf + r.skippedPf,
           errors: acc.errors + r.errors,
         };
         setTotals(acc);
-        if (r.remaining === 0) break;
+        after = r.cursor;
+        if (r.done) break;
       }
       setPhase("done");
       router.refresh();

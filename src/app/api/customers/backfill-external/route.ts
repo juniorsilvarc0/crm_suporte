@@ -29,11 +29,13 @@ export async function POST(request: Request) {
   const input = body.error || typeof body.data !== "object" || body.data === null ? {} : (body.data as Record<string, unknown>);
   const apply = input.apply === true;
   const limit = typeof input.limit === "number" && Number.isFinite(input.limit) ? input.limit : undefined;
+  const after = typeof input.after === "string" && input.after.length > 0 ? input.after : null;
 
   try {
     const report = await backfillExternalCustomers(createSupabaseAdminClient(), {
       apply,
       limit,
+      after,
       createdBy: auth.viewer.id,
     });
     return NextResponse.json({ ok: true, apply, report } satisfies BackfillResponse);

@@ -21,9 +21,11 @@ const REPORT = {
   reused: 0,
   linked: 2,
   notFound: 0,
+  ambiguous: 0,
   skippedPf: 0,
   errors: 0,
-  remaining: 7,
+  cursor: "c2",
+  done: false,
 };
 
 const post = (body: unknown) =>
@@ -57,18 +59,23 @@ describe("POST /api/customers/backfill-external", () => {
   it("aplica (apply=true) com o id do admin, e devolve o relatório", async () => {
     const response = await post({ apply: true, limit: 50 });
 
-    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: true, limit: 50, createdBy: "admin-1" });
+    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: true, limit: 50, after: null, createdBy: "admin-1" });
     expect(await response.json()).toEqual({ ok: true, apply: true, report: REPORT });
   });
 
   it("ensaio por padrão: sem apply, roda com apply=false", async () => {
     await post({});
-    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: false, limit: undefined, createdBy: "admin-1" });
+    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: false, limit: undefined, after: null, createdBy: "admin-1" });
   });
 
   it("limit que não é número é ignorado", async () => {
     await post({ apply: true, limit: "muitos" });
-    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: true, limit: undefined, createdBy: "admin-1" });
+    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: true, limit: undefined, after: null, createdBy: "admin-1" });
+  });
+
+  it("passa o cursor `after` adiante", async () => {
+    await post({ apply: true, after: "contato-50" });
+    expect(backfillMock).toHaveBeenCalledWith(expect.anything(), { apply: true, limit: undefined, after: "contato-50", createdBy: "admin-1" });
   });
 
   it("sem Supabase admin: 500, sem rodar o backfill", async () => {
