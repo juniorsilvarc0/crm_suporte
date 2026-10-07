@@ -64,3 +64,19 @@ export type CustomerContact = {
   phone: string;
   last_message_at: string | null;
 };
+
+/**
+ * Resultado de uma leva do cadastro em massa a partir da fonte externa
+ * (src/features/customers/server/backfill-external.ts). Tipo neutro: a tela
+ * (client) o usa sem puxar o módulo de servidor.
+ */
+export type BackfillReport = {
+  processed: number;
+  created: number;
+  reused: number;
+  linked: number;
+  notFound: number;
+  skippedPf: number;
+  errors: number;
+  remaining: number;
+};
