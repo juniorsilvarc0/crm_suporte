@@ -162,8 +162,9 @@ export function ContactInfoSheet({
   const telHref = contactTelHref(conversation.contact_phone);
   const contact = info?.contact ?? null;
   const customer = info?.customer ?? null;
-  // Contexto do cliente na fonte externa (TCBX): só quando a empresa tem CNPJ.
-  const externalContext = useCustomerContext(customer?.id ?? null, Boolean(customer?.cnpj));
+  // Contexto do cliente na fonte externa (TCBX): por contato (a rota resolve por
+  // CNPJ da empresa ou pelo telefone), então vale para qualquer conversa.
+  const externalContext = useCustomerContext(contact?.id ?? null, Boolean(contact));
 
   // Tickets da conversa: relê quando o foco ou o atendimento mudam (Realtime do
   // chat, inclusive de outra aba) e depois de cada ação daqui. Com os de quem
@@ -416,9 +417,10 @@ export function ContactInfoSheet({
             />
 
             {/* Contexto do cliente na fonte externa (TCBX): contrato e títulos em
-                aberto, sob demanda. Só aparece quando há empresa com CNPJ e a
-                integração está configurada; some sozinho no resto. */}
-            {!loading && !failed && customer?.cnpj ? (
+                aberto, sob demanda, para qualquer conversa com contato (a rota
+                resolve por CNPJ ou telefone). Some sozinho se a integração está
+                desligada. */}
+            {!loading && !failed && contact ? (
               <ExternalContextGroup state={externalContext} />
             ) : null}
 
@@ -660,7 +662,7 @@ function ExternalContextGroup({ state }: { state: UseCustomerContext }) {
       <InfoGroup title="Cliente (TCBX)">
         <div className="flex min-h-11 items-center px-4 py-2.5">
           <span className="min-w-0 truncate text-[15px] text-[var(--wa-info-label)]">
-            Sem dados na TCBX para este CNPJ.
+            Sem cadastro na TCBX.
           </span>
         </div>
       </InfoGroup>

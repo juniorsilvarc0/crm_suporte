@@ -161,6 +161,11 @@ function routeFetch({
       return respond();
     }
     if (url === "/api/tickets" && init?.method === "POST" && createTicket) return createTicket();
+    // Contexto externo (TCBX): o painel consulta por contato. Aqui a integração
+    // está desligada, então o grupo "Cliente (TCBX)" nem aparece.
+    if (url.includes("/external-context")) {
+      return jsonResponse({ ok: true, result: { state: "not_configured" } });
+    }
     throw new Error(`fetch inesperado: ${init?.method ?? "GET"} ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
