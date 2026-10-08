@@ -27,6 +27,24 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Worker: lease + espelho da TCBX fresco sozinho + manutenção
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** fechar o fio da TCBX (o espelho de contratos passa a ficar fresco sozinho, sem clicar "Sincronizar") e amadurecer o worker com lease de execução única — a infra de lease que a 6b também vai usar.
+**Arquivos alterados:**
+- banco: `supabase/migrations/20261008130000_job_leases.sql` (tabela `job_leases` + RPCs `job_claim`/`job_cursor_set`), `supabase/tests/job_leases.sql` (+teste SQL), `src/lib/supabase/database.types.ts` (regenerado);
+- domínio: `src/lib/jobs/worker.ts` (jobs `runTcbxReconcile`/`runMaintenance` + lease, 3 intervalos; +teste); docs: este PROGRESS.
+**O que foi feito:**
+- **Lease (`job_leases` + `job_claim`/`job_cursor_set`):** jobs em TS que fazem várias chamadas (reconciliar a TCBX, purgar) não dão para o advisory lock de 1 SQL do sla_sweep — `job_claim(name, seconds)` pega o lock por N s (quem não pega pula o ciclo) e devolve o **cursor compartilhado** do job, para a leva avançar linear entre réplicas (sem redundância 2×). SECURITY DEFINER; service_role só EXECUTE, nem lê a tabela.
+- **Worker (3 jobs):** `sla_sweep` a cada 60s (advisory lock próprio); **reconciliação da TCBX** a cada 5 min (leva de 20 empresas, cursor rolante — passa por todas e recomeça); **manutenção** a cada 1h (`api_idempotency_purge` + `purge_integration_logs`, que os headers da Fase 5 pediam ao "worker da Fase 6"). Cada um gatado pelo lease; nunca lança.
+**Decisões tomadas (revisar):**
+- **Cursor compartilhado no banco** (não por réplica): a volta pela base avança linear, sem as réplicas repetirem empresas. `""` = recomeçar (o reconcile trata vazio como sem cursor).
+- **Leva de 20/5min** → volta completa pela base (~168 empresas) a cada ~45 min; carga modesta na TCBX. Ajustável.
+- Ainda **polling** (o webhook DA TCBX depende do Bruno); é o interino profissional para "100% sincronizado".
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ (worker + SQL `job_leases` 4 casos + suíte completa) · build ✓. Migration aplicada local + tipos regenerados; **smoke do lease**: pega/não-pega/cursor persiste/re-pega após expirar; service_role executa a RPC mas é barrado na tabela; baseline 33 tab/72 fn ✓.
+**Pendências / próximos passos:** ⚠️ depende do **worker LIGADO** (`RUN_JOBS=true` no `.env` do servidor, §3.9) — com ele, SLA automático + TCBX fresco + manutenção rodam juntos. Depois: 6b (outbox + webhooks).
+**Armadilhas descobertas:** o gen types marca param `text` como `string` (não anulável) — usar `""` em vez de `null` para "sem cursor". O advisory lock transacional (sla_sweep) não serve para job de várias chamadas (libera no fim da statement) — daí o lease.
+
 ## [2026-10-08] Fase 6a — SLA automático: sla_sweep + worker in-process (RUN_JOBS)
 
 **Agente/Modelo:** Claude Opus 4.8.
