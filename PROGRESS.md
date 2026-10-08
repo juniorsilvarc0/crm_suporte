@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 6b-1a: infra do outbox de entrega (event_outbox + RPCs)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** fundar a fila durável de entrega (relay à IA e, depois, webhooks) com lease + backoff + dead_letter — **sem** ainda mexer no caminho crítico. O relay migra para cá na 6b-1b; esta PR é só a infra, testada.
+**Arquivos alterados:**
+- banco: `supabase/migrations/20261008140000_event_outbox.sql` (tabela `event_outbox` + RPCs `outbox_enqueue`/`outbox_claim`/`outbox_settle`), `supabase/tests/event_outbox.sql` (17 casos), `src/lib/supabase/database.types.ts` (regenerado), `src/features/tickets/lib/map-ticket-error.test.ts` (ver armadilha);
+- domínio: `src/features/integrations/server/outbox.ts` (helpers `enqueueOutbox`/`claimOutbox`/`settleOutbox` + `outboxRetryAt`) e `outbox.test.ts`; docs: este PROGRESS.
+**O que foi feito:**
+- **`event_outbox`** (molde do outbox de conversões do projeto irmão): `kind` (`relay`|`webhook`), `event_key` (único por kind → enfileirar é idempotente), `payload`, `status` (pending→processing→sent/retry/dead_letter/skipped), `attempts`, `next_attempt_at` (backoff), lease (`lease_token`/`owner`/`expires_at`), `last_http_status`/`last_error`, `delivered_at`. Dois índices parciais (prontas; órfãs).
+- **`outbox_enqueue`** idempotente (`on conflict (kind,event_key) do nothing`, devolve o id novo ou o existente — o 2º enqueue **não** sobrescreve o payload do 1º).
+- **`outbox_claim`** (`for update skip locked`): mata o esgotado/velho antes de reivindicar, reivindica até `limit` (travado em [1,100]) marcando `processing` + lease de 2 min + `attempts+1`.
+- **`outbox_settle`** com **FENCING**: só o dono da lease (`lease_token`) finaliza; o worker calcula o `next_attempt_at` (backoff exp. com teto) e passa pronto.
+- **Segurança (molde `job_leases`):** RLS + `revoke all ... from public, anon, authenticated, service_role` (inclusive service_role — nem lê a tabela); as 3 RPCs são SECURITY DEFINER com `search_path=''`, `revoke ... from public, anon, authenticated` e `grant execute` só a service_role. `assert_security_baseline()` passou.
+**Decisões tomadas (revisar):**
+- **Infra-primeiro, relay depois.** Quebrei a 6b em duas: esta (fundação, zero no caminho crítico) e a 6b-1b (migrar o relay). O caminho WhatsApp→IA é sensível demais para migrar junto com fundação nova não exercitada.
+- **Helpers TS já nesta PR** (ainda sem chamador): são a fundação tipada que a 6b-1b usa de imediato, e os testes os exercitam — não é código morto.
+- **Backoff no TS, não no banco:** `outboxRetryAt(attempts, nowMs)` puro (base 5s · 2^(n-1), teto 60s); o banco não decide o "quando". Teto curto de propósito — a janela útil do relay é 120s.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings são pré-existentes em `verify-webhook.test.ts`) · vitest ✓ (4566/4566) · build ✓ · teste SQL `event_outbox` ✓ (17 casos). bug-hunter/verification-before-completion: **skills não instaladas nesta sessão** — fiz a revisão adversarial à mão (achei e corrigi o bug do dead_letter em voo, abaixo).
+**Pendências / próximos passos:**
+- **6b-1b:** migrar o relay para o outbox (sanitizar o payload tirando o token da instância; reconstruir o envelope fresco na entrega; buscar o token fresco; `max_age` 120s; reavaliar `status='bot'` na entrega; tentativa imediata no `after()` + job de recuperação no worker).
+- **6c:** `ticket_notices` (derivar do molde Meta — `20260825143000` é inacessível) e `webhook_subscriptions` + aba de Webhooks.
+**Armadilhas descobertas:**
+- **`outbox_claim` não pode matar `processing` com lease VIVA.** A 1ª versão dava `dead_letter` em qualquer `processing` esgotado/velho. Como a 6b-1b terá dois reivindicadores quase simultâneos (o `after()` imediato + o worker periódico), matar uma entrega em voo faria o `settle` do dono falhar por fencing e perderíamos o registro de uma entrega que talvez deu certo. Corrigido: só mata `processing` com **lease expirada** (órfã). O esgotamento normal é o worker que resolve via `settle(dead_letter)`; o claim só é a rede de segurança do órfão.
+- **O teste `map-ticket-error` varre TODA migration `>= _tickets` por `raise exception 'TAG'`.** Meu `raise exception 'INVALID_OUTBOX_STATUS'` entrou no varrimento e quebrou a igualdade com `TICKET_ERROR_TAGS`. É um guard interno do outbox (service_role, nunca vira resposta de rota), então entrou no `NOT_TICKET_TAGS` — como já estavam `INVALID_LEASE`/`INVALID_RETENTION`. (O `'EVENT_OUTBOX: …'` não casa o regex porque tem `:`.)
+- **Tipos gerados marcam os args nuláveis de `outbox_settle` como não-nulos** (mesmo quirk de `job_cursor_set`). O SQL **precisa** de null (sem HTTP não há status — a constraint recusa 0; sem retry não há próximo prazo). O helper passa null em runtime e faz `as unknown as ...Args` com comentário.
+
 ## [2026-10-08] Worker: lease + espelho da TCBX fresco sozinho + manutenção
 
 **Agente/Modelo:** Claude Opus 4.8.
