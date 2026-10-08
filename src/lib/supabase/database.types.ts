@@ -938,6 +938,9 @@ isOneToOne: false
 "set_support_contract_status":
 { Args: { "p_actor_id": string,"p_contract_id": string,"p_ends_on"?: string,"p_status": string }; Returns: Json
                            },
+"sla_sweep":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "ticket_apply_take_over":
 { Args: { "p_actor_user_id": string,"p_ticket_id": string }; Returns: boolean
                            },
