@@ -27,6 +27,15 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Esconder "Sem contrato vigente" quando há contrato ativo na TCBX — fix
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** com contrato ativo na TCBX, a ficha mostrava o selo "Contrato ativo (TCBX)" no topo MAS ainda a seção interna "Sem contrato vigente"/"Novo contrato" — contraditório. O dono pediu para sumir.
+**Arquivos alterados:** `customers/components/customer-detail.tsx` (ContractsSection recebe `hasActiveExternal`; esconde a seção "Contrato" interna quando não há contrato interno e há ativo na TCBX); docs: UI.md §5.1, este PROGRESS.
+**O que foi feito:** quando `!current` (sem contrato interno vigente) e `hasActiveExternal`, a seção "Contrato" não renderiza (nem "Sem contrato vigente", nem "Novo contrato") — o contrato aparece no bloco "Contratos (TCBX)" abaixo. Vale para admin e member. Sem contrato ativo na TCBX, tudo como antes.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ (clientes) · build ✓.
+**Pendências:** nenhuma. (Em paralelo: PR do enriquecimento automático no 1º contato pelo WhatsApp.)
+
 ## [2026-10-07] Contratos da TCBX ESPELHADOS no banco (read-only) + reconciliação — PR 3a
 
 **Agente/Modelo:** Claude Opus 4.8.
