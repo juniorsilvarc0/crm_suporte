@@ -1380,6 +1380,7 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 - ⚠️ Âmbar e esmeralda são paleta de domínio, porque ainda não existe token semântico de aviso nem de sucesso.
 - Com a 1ª resposta pendente, um ticket pausado mostra "1ª resposta…", não "Pausado".
 - **O relógio é `useNow(fetchedAt)`:** começa no instante da leitura do servidor (sem divergência de hidratação) e avança a cada 60 s.
+- **SLA automático (Fase 6a, `sla_sweep`):** um worker em background carimba o estouro (`*_breached_at`, histórico) e **fecha sozinho o ticket resolvido após 72h** (some do "resolvidos"; aparece em "encerrados" com a linha "Fechado automaticamente após 72h resolvido" na timeline, ator "Automático"). A tela segue calculando o selo na leitura (`lib/sla.ts`): o sweep não muda o que o selo mostra, só grava o histórico e fecha. Liga só com `RUN_JOBS=true` no servidor.
 
 **Lista `/app/tickets`:**
 - **Filtros na URL:** status, prioridade, fila, responsável e SLA, mais busca e ordem (`lib/ticket-list-url.ts`, neutro: servidor e cliente usam o mesmo).
