@@ -1,8 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { ListPagination } from "@/components/data-display/list-pagination";
+import { TicketViewSwitch } from "@/features/tickets/components/ticket-view-switch";
 import { TicketsTable } from "@/features/tickets/components/tickets-table";
-import { ticketListSearch, TICKETS_PATH } from "@/features/tickets/lib/ticket-list-url";
+import {
+  ticketListSearch,
+  TICKETS_PATH,
+  toListFilters,
+} from "@/features/tickets/lib/ticket-list-url";
 import { getAssignableUsers } from "@/features/tickets/queries/get-assignable-users";
 import { getTicketCatalog } from "@/features/tickets/queries/get-ticket-catalog";
 import {
@@ -50,6 +55,7 @@ export default async function TicketsPage({
         }}
         users={users?.map(({ id, name, is_active }) => ({ id, name, is_active })) ?? null}
         viewerId={viewer.id}
+        viewSwitch={<TicketViewSwitch view="lista" filters={toListFilters(params)} />}
       />
       <ListPagination
         basePath={TICKETS_PATH}
