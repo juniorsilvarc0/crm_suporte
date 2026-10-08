@@ -27,6 +27,22 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Enriquecimento automático no 1º contato pelo WhatsApp (TCBX) — PR 3b
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** no 1º contato de um número pelo WhatsApp, procurar o cliente na TCBX e já trazer empresa + contratos para o CRM, automaticamente. Número fora da base (ou PF): o contato é criado SEM empresa (como já era).
+**Arquivos alterados:** `customers/server/enrich-contact.ts` (serviço `enrichContactFromSource`, +teste), `app/api/chat/webhook/uazapi/route.ts` (gancho `after()` no contato novo, +teste no route.test.ts); docs: este PROGRESS.
+**O que foi feito:**
+- `enrichContactFromSource(supabase, {contactId, phone, createdBy?})`: resolve o cliente pelo TELEFONE (variações canônicas), e se achar PJ com CNPJ cria/reusa a empresa, vincula o contato (só se ainda estiver SEM empresa — nunca sobrescreve vínculo manual) e espelha os contratos (reusa o contexto já buscado). `not_found`/PF/ambíguo/indisponível: não cria nem vincula. **Nunca lança.**
+- O webhook, no passo 4.1, agenda isso com `after()` (pós-resposta, sobrevive a deploy — mesmo mecanismo do relay) **só quando `identity.created`** (contato novo). Best-effort: o webhook responde 200 sem esperar; falha aqui não afeta a mensagem.
+**Decisões tomadas (revisar):**
+- Dispara por `identity.created` (contato novo), não por direção — assim vale também quando o dono inicia a conversa com um número novo. Só cria empresa se a TCBX tiver o PJ; número aleatório não vira nada.
+- `createdBy` vai `null` (criação pelo sistema, não por um usuário). A coluna é anulável.
+- **Já existiam** (não reconstruído): vínculo manual contato→empresa (chat "Ligar/Trocar empresa", diálogo em Contatos, desvincular na ficha — tudo via `PATCH /api/contacts/[id]`), vínculo via API (`PATCH /api/v1/contacts/[id]` com `customer_id`), e a seção "Contatos (N)" na ficha da empresa.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ (webhook + enrich + api-guards; suíte completa) · build ✓.
+**Pendências / próximos passos:** o relay e o enriquecimento são dois `after()` independentes; se um dia virar gargalo, um outbox (Fase 6) coordena. PR 3 (webhook/polling da TCBX) mantém o espelho fresco depois.
+**Armadilhas descobertas:** o webhook é hotspot crítico (nunca pode quebrar) — o enriquecimento entra SÓ por `after()` e `enrichContactFromSource` nunca lança, então uma falha de TCBX/DB não derruba a mensagem. `identity.created` é o sinal de "1º contato" (vem da RPC `resolve_contact_identity`); num reenvio da 1ª mensagem, `created=false`, e não re-dispara.
+
 ## [2026-10-08] Esconder "Sem contrato vigente" quando há contrato ativo na TCBX — fix
 
 **Agente/Modelo:** Claude Opus 4.8.
