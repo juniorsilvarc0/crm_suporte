@@ -286,7 +286,7 @@ export function toTicketListItems(rows: TicketListRow[], context: string): Ticke
  * nenhum. Os filtros que ela escolheu (prioridade, fila, responsável, SLA)
  * continuam valendo.
  */
-function buildListQuery(
+export function buildListQuery(
   supabase: SupabaseClient<Database>,
   params: TicketListParams,
   viewerId: string,
