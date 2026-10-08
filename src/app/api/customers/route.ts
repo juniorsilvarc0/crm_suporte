@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { mapCadastroError } from "@/features/customers/lib/map-cadastro-error";
+import { syncExternalContracts } from "@/features/customers/server/external-contracts";
 import { searchCustomerOptions } from "@/features/customers/queries/get-customers-page";
 import { customerCreateSchema } from "@/features/customers/schemas/customer";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
@@ -122,6 +123,18 @@ export async function POST(request: Request) {
       { ok: false, message: mapped.message, errors },
       { status: mapped.status }
     );
+  }
+
+  // Empresa nova já traz os contratos da TCBX (a fonte da verdade). Best-effort:
+  // a fonte fora do ar ou desligada não impede o cadastro — a reconciliação
+  // (ou abrir a ficha e "Atualizar da TCBX") pega depois. syncExternalContracts
+  // nunca lança; o try é só uma rede de segurança.
+  if (parsed.data.cnpj) {
+    try {
+      await syncExternalContracts(supabase, { customerId: data.id, cnpj: parsed.data.cnpj });
+    } catch (syncError) {
+      console.error("[POST /api/customers] sync-contracts", syncError);
+    }
   }
 
   return NextResponse.json({

@@ -18,6 +18,9 @@ export type CustomerSummary = {
 
 export type CustomerListItem = CustomerSummary & {
   created_at: string;
+  /** Tem ao menos um contrato ATIVO na fonte externa (TCBX). Espelho read-only
+   *  — não é o selo interno (contract_status), que vem do support_contracts. */
+  has_external_active: boolean;
 };
 
 // `failed` = a leitura deu erro: a tela diz "não foi possível carregar", nunca
@@ -55,6 +58,53 @@ export type CustomerRecord = CustomerSummary & {
   notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * Contrato do cliente na fonte externa (TCBX), ESPELHADO no banco
+ * (`external_contracts`) e lido pela ficha. Somente leitura: a TCBX é a fonte da
+ * verdade; o CRM nunca cria nem edita. Neutro: a tela (client) o usa sem puxar o
+ * módulo de servidor.
+ */
+export type StoredExternalContract = {
+  id: string;
+  externalId: string;
+  numero: string | null;
+  modalidade: string | null;
+  status: string | null;
+  statusVigencia: string | null;
+  dataInicio: string | null;
+  dataFim: string | null;
+  vencimentoDia: number | null;
+  dataAtivacao: string | null;
+  syncedAt: string;
+};
+
+/**
+ * Resultado de uma leva da reconciliação de contratos a partir da fonte externa
+ * (src/features/customers/server/external-contracts.ts). Tipo neutro: a tela
+ * (client) o usa sem puxar o módulo de servidor.
+ */
+export type ReconcileContractsReport = {
+  processed: number;
+  /** Empresas sincronizadas com sucesso (a fonte respondeu). */
+  ok: number;
+  /** Empresa que a fonte não achou: o espelho dela foi esvaziado. */
+  notFound: number;
+  /** A fonte não respondeu para a empresa (transitório): espelho preservado. */
+  unavailable: number;
+  /** A fonte achou mais de um cadastro para o CNPJ (409). */
+  ambiguous: number;
+  /** Empresa sem CNPJ: não há chave de consulta. */
+  skipped: number;
+  /** Contratos gravados/atualizados no espelho nesta leva. */
+  contractsUpserted: number;
+  /** Última empresa processada — vai como `after` na próxima leva. */
+  cursor: string | null;
+  /** Não há mais empresas a processar. */
+  done: boolean;
+  /** A fonte está desligada (not_configured): a leva abortou. */
+  notConfigured: boolean;
 };
 
 // Contato ligado à empresa, como a ficha lista.

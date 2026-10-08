@@ -84,6 +84,28 @@ function buildListQuery(
 }
 
 /**
+ * Quais das empresas da página têm contrato ATIVO no espelho da TCBX
+ * (external_contracts). Uma query por página (ids ≤ 25). Resiliente: erro devolve
+ * conjunto vazio e loga — a lista aparece sem o selo da TCBX, nunca quebra.
+ */
+async function fetchActiveExternalSet(
+  supabase: SupabaseClient<Database>,
+  ids: string[]
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const { data, error } = await supabase
+    .from("external_contracts")
+    .select("customer_id")
+    .in("customer_id", ids)
+    .eq("status_vigencia", "ativo");
+  if (error) {
+    console.error("getCustomersPage external_contracts", error.message);
+    return new Set();
+  }
+  return new Set((data ?? []).map((row) => row.customer_id));
+}
+
+/**
  * Paginação real server-side (`count: "exact"` + `range`), no molde do legado.
  *
  * Leitura resiliente (AGENTS §4), mas com `failed`: erro loga e devolve página
@@ -144,10 +166,16 @@ export async function getCustomersPage(params: CustomerListParams): Promise<Cust
     }
 
     const total = result.count ?? 0;
+    const rows = result.data ?? [];
+    const activeExternal = await fetchActiveExternalSet(
+      supabase,
+      rows.map((row) => row.id)
+    );
     return {
-      items: (result.data ?? []).map((row) => ({
+      items: rows.map((row) => ({
         ...toCustomerSummary(row),
         created_at: row.created_at,
+        has_external_active: activeExternal.has(row.id),
       })),
       total,
       page,

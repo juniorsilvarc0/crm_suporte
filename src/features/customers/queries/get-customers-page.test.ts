@@ -31,7 +31,7 @@ function fakeQuery(result: unknown) {
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };
-  for (const method of ["select", "ilike", "eq", "is", "not", "order", "range", "limit"]) {
+  for (const method of ["select", "ilike", "eq", "is", "not", "in", "order", "range", "limit"]) {
     builder[method] = (...args: unknown[]) => {
       calls.push([method, ...args]);
       return builder;
@@ -150,7 +150,8 @@ describe("getCustomersPage", () => {
   });
 
   it("pagina de 25 em 25", async () => {
-    const [calls] = queueQueries(ok([row()], 80));
+    // 2ª query: o selo de contrato ativo da TCBX (external_contracts).
+    const [calls] = queueQueries(ok([row()], 80), ok([]));
 
     const result = await getCustomersPage(params({ page: 3 }));
 
@@ -163,7 +164,9 @@ describe("getCustomersPage", () => {
       ok([
         { ...row(), search_name: "padaria sao joao", monthly_amount: 999 },
         row({ id: "c2", contract_status: "cancelado" }),
-      ])
+      ]),
+      // Nenhuma das duas tem contrato ativo na TCBX.
+      ok([])
     );
 
     const result = await getCustomersPage(params());
@@ -177,9 +180,24 @@ describe("getCustomersPage", () => {
         contract_status: "ativo",
         archived_at: null,
         created_at: "2026-09-25T10:00:00Z",
+        has_external_active: false,
       },
-      { ...row({ id: "c2" }), contract_status: null },
+      { ...row({ id: "c2" }), contract_status: null, has_external_active: false },
     ]);
+  });
+
+  it("marca has_external_active quando a empresa tem contrato ativo na TCBX", async () => {
+    const [, externalCalls] = queueQueries(ok([row()]), ok([{ customer_id: "c1" }]));
+
+    const result = await getCustomersPage(params());
+
+    // A 2ª query filtra o espelho pelos ids da página e por status ativo.
+    expect(externalCalls).toEqual([
+      ["select", "customer_id"],
+      ["in", "customer_id", ["c1"]],
+      ["eq", "status_vigencia", "ativo"],
+    ]);
+    expect(result.items[0]).toMatchObject({ id: "c1", has_external_active: true });
   });
 
   it("erro do banco devolve failed, não lista vazia comum", async () => {
@@ -209,7 +227,8 @@ describe("getCustomersPage", () => {
     const [first, head, retry] = queueQueries(
       { data: null, error: { code: "PGRST103", message: "Requested range not satisfiable" }, count: null },
       { data: null, error: null, count: 30 },
-      ok([row()], 30)
+      ok([row()], 30),
+      ok([]) // selo TCBX da página
     );
 
     const result = await getCustomersPage(params({ q: "padaria", situacao: "sem", page: 9 }));
@@ -228,7 +247,7 @@ describe("getCustomersPage", () => {
   });
 
   it("offset igual ao total (206 com lista vazia) abre a última página", async () => {
-    const [first, retry] = queueQueries(ok([], 25), ok([row()], 25));
+    const [first, retry] = queueQueries(ok([], 25), ok([row()], 25), ok([]));
 
     const result = await getCustomersPage(params({ page: 2 }));
 
