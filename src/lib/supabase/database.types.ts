@@ -326,6 +326,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"external_contracts": {
+                  Row: {
+                    "created_at": string,"customer_id": string,"data_ativacao": string | null,"data_fim": string | null,"data_inicio": string | null,"external_id": string,"id": string,"modalidade": string | null,"numero": string | null,"provider": string,"status": string | null,"status_vigencia": string | null,"synced_at": string,"updated_at": string,"vencimento_dia": number | null
+                  }
+                  Insert: {
+                    "created_at"?: string,"customer_id": string,"data_ativacao"?: string | null,"data_fim"?: string | null,"data_inicio"?: string | null,"external_id": string,"id"?: string,"modalidade"?: string | null,"numero"?: string | null,"provider"?: string,"status"?: string | null,"status_vigencia"?: string | null,"synced_at"?: string,"updated_at"?: string,"vencimento_dia"?: number | null
+                  }
+                  Update: {
+                    "created_at"?: string,"customer_id"?: string,"data_ativacao"?: string | null,"data_fim"?: string | null,"data_inicio"?: string | null,"external_id"?: string,"id"?: string,"modalidade"?: string | null,"numero"?: string | null,"provider"?: string,"status"?: string | null,"status_vigencia"?: string | null,"synced_at"?: string,"updated_at"?: string,"vencimento_dia"?: number | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "external_contracts_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"integration_logs": {
                   Row: {
                     "action": string | null,"api_token_id": string | null,"created_at": string,"direction": string | null,"error": string | null,"http_status": number | null,"id": string,"latency_ms": number | null,"payload": Json | null,"provider": string,"request_id": string | null,"route": string | null,"status": string | null
