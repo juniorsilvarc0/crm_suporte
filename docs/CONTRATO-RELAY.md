@@ -240,8 +240,10 @@ Uma mensagem que não chegou ao agente continua no CRM: `GET /api/v1/conversatio
 |---|---|
 | Nenhum endereço configurado | O CRM não repassa nada. |
 | Endereço recusado: sem HTTPS em produção, endereço de rede interna (IP privado ou reservado, `localhost`, nome sem domínio), ou com usuário e senha | Nada é enviado, e o motivo fica no registro e na tela de configuração. |
-| O CRM não consegue ler os dados do envelope, ou a chave de assinatura | O CRM tenta de novo uma vez, 1 segundo depois. Se falhar de novo, nada é enviado e fica no registro. Ele não manda um envelope pela metade, nem sem assinatura quando não sabe se há chave. |
-| O agente não responde em 10 s, ou responde fora de `2xx` | Fica no registro como erro, com o status e o tempo. O CRM não envia de novo. |
+| O CRM não consegue ler os dados do envelope, ou a chave de assinatura | O CRM tenta de novo uma vez, 1 segundo depois; não sairá um envelope pela metade, nem sem assinatura quando não sabe se há chave. Persistindo, a tentativa é retomada dentro da janela (abaixo). |
+| O agente não responde em 10 s, ou responde fora de `2xx` | Fica no registro como erro, com o status e o tempo, e o CRM **tenta de novo** dentro da janela (abaixo). |
+
+**O repasse é "ao menos uma vez" dentro de uma janela de ~2 minutos.** Uma tentativa que falha é retomada, com espera crescente, até sair ou a janela fechar. Por isso **a mesma mensagem pode chegar mais de uma vez** — descarte repetição pelo `message_id` (seção 6). Fechada a janela (a mensagem perde valor para a IA responder), o CRM desiste daquele repasse; a mensagem continua no CRM e pode ser lida por `GET /api/v1/conversations/{conversation_id}/messages`.
 
 Cada tentativa fica registrada no CRM (integração `relay`) com o resultado, o status HTTP e o tempo de resposta. O registro não guarda o corpo nem o endereço do agente. Para localizar um evento, informe o `X-CRM-Event-Id`.
 
@@ -262,7 +264,7 @@ Tudo em Integrações → Agente de IA (`/app/conexao?aba=agente`).
   - Quem gera é o CRM: 64 caracteres hexadecimais, mostrados **uma única vez**. Copie e configure no agente. A chave não pode ser digitada nem consultada depois: se ela se perder, gere outra.
   - Sem chave, os pedidos saem sem `X-CRM-Signature`.
   - Gerar, trocar ou remover a chave vale a partir do pedido seguinte.
-  - Na troca (**Gerar nova chave**), o CRM passa a assinar com a chave nova na hora, e ela só existe a partir daí: não dá para configurar o agente antes. Até a chave nova estar no agente, ele recusa os pedidos, e um pedido recusado não é enviado de novo. Troque num horário sem movimento, configure o agente em seguida e confira com **Testar conexão**.
+  - Na troca (**Gerar nova chave**), o CRM passa a assinar com a chave nova na hora, e ela só existe a partir daí: não dá para configurar o agente antes. Até a chave nova estar no agente, ele recusa os pedidos; cada recusado é retentado pela janela de ~2 min (seção 7) e depois descartado. Troque num horário sem movimento, configure o agente em seguida e confira com **Testar conexão**.
   - No cofre do CRM ela fica com o nome `RELAY_SIGNING_SECRET`, fora da lista de variáveis.
 - **Testar conexão:** o botão ao lado do endereço (seção 10). Ele testa o endereço **salvo**.
 

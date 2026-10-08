@@ -27,6 +27,31 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 6b-1b: relay à IA migrado para o outbox (durável, at-least-once)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o repasse da mensagem do cliente à IA deixa de ser "no máximo uma vez" (fire-and-forget que some num 500) e passa pela fila durável do #59 — at-least-once dentro de uma janela de 120s, sem nunca gravar o token da instância no banco. Caminho crítico WhatsApp→IA.
+**Arquivos alterados:**
+- back: `src/features/integrations/server/relay-dispatch.ts` (novo: `enqueueRelay`/`dispatchRelayBatch` + entrega por evento) e `relay-dispatch.test.ts`; `src/features/integrations/server/relay-message.ts` (relayInboundMessage vira a primitiva de entrega de UM evento: devolve o desfecho, perde o token; leak-scan extraído para `envelopeLeaksToken`) e `relay-message.test.ts`; `src/app/api/chat/webhook/uazapi/route.ts` (+ `route.test.ts`): enfileira síncrono + `after(dispatchRelayBatch)`; `src/lib/jobs/worker.ts` (+teste): job `relay` a cada 20s; docs: `docs/CONTRATO-RELAY.md` (§7 garantia de entrega) + este PROGRESS.
+**O que foi feito:**
+- **Webhook (inbound+bot+nova):** `enqueueRelay` SÍNCRONO antes de responder (durável — se o processo cair, o worker entrega) + `after(() => dispatchRelayBatch)` (tentativa imediata de baixa latência). Idempotente por `message_id`.
+- **enqueueRelay:** tira o `token` da instância (qualquer caixa) e confirma por `envelopeLeaksToken` que ele não sobrou aninhado — **fail-closed**: envelope com a credencial não é gravado nem entregue. O outbox nunca guarda o token.
+- **dispatchRelayBatch:** `claimOutbox('relay', limit 10, max_attempts 6, max_age 120s)` → para cada evento, reconstrói a mensagem (do payload limpo), entrega por `relayInboundMessage` (reusada) e finaliza com fencing: `sent` / `retry` (backoff `outboxRetryAt`) / `skipped` (sem agente) / `dead_letter` (payload corrompido). O outbox mata por idade/tentativas.
+- **Worker:** 4º job `relay` a cada 20s, drena o que a tentativa imediata não entregou. **Não usa `job_leases`** — o claim do outbox serializa por evento, então todas as réplicas ajudam.
+**Decisões tomadas (revisar):**
+- **relayInboundMessage reusada, não duplicada:** virou a entrega de UM evento (devolve o desfecho; o token saiu dela). O leak-scan agora mora no enqueue (único ponto com o token). Preservei a suíte dela quase inteira; os casos de credencial migraram para `relay-dispatch.test.ts`.
+- **Sem re-gate de `status='bot'` na ENTREGA:** o webhook filtra no recebimento, `buildRelayFields` lê o status FRESCO (vai no envelope) e o contrato manda o agente só responder com `bot`. Um humano que assume entre o recebimento e a entrega é barrado pelo agente (e pela trava do `409` no envio por token IA). Não gastei um 4º estado do settle com isso.
+- **Janela 120s / 6 tentativas / backoff 5s→60s:** mensagem velha perde valor para a IA; vira `dead_letter` e fica só no CRM (lida por `GET /conversations/{id}/messages`).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes em `verify-webhook.test.ts`) · test ✓ (4577/4577, +relay-dispatch) · build ✓. bug-hunter/verification-before-completion: skills não instaladas na sessão — revisão adversarial à mão.
+**Pendências / próximos passos:**
+- **6c:** `ticket_notices` (derivar do molde Meta — `20260825143000` inacessível) + `webhook_subscriptions` e aba de Webhooks (o outbox já aceita `kind='webhook'`).
+- Depois do deploy, conferir no banco de prod: `event_outbox` com linhas `kind='relay'` chegando a `sent`, e `integration_logs` do relay seguindo normais.
+**Armadilhas descobertas:**
+- **O webhook agora AWAITa o enqueue** (um roundtrip a mais antes de responder 200). É o preço da durabilidade; é um INSERT via RPC, rápido.
+- **O leak-scan em relayInboundMessage virou defesa em profundidade** (o dispatch reconstrói a mensagem SEM token, então o guard lá é no-op no fluxo real). O guard ATIVO é o `enqueueRelay`. Não remova o scan da primitiva: ele protege quem a chamar com token.
+- **O job de relay NÃO tem `job_leases`** (diferente de SLA/TCBX/manutenção). De propósito: o `claim` do outbox já é o ponto de serialização (skip-locked + lease por evento), então as duas réplicas drenam em paralelo sem reenviar a mesma mensagem.
+- **at-least-once:** a mesma mensagem pode chegar ao agente mais de uma vez (retry). O contrato já mandava descartar repetição por `message_id`; o `docs/CONTRATO-RELAY.md` §7 agora diz isso explicitamente.
+
 ## [2026-10-08] Fase 6b-1a: infra do outbox de entrega (event_outbox + RPCs)
 
 **Agente/Modelo:** Claude Opus 4.8.
