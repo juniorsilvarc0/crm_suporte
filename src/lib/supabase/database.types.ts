@@ -326,6 +326,19 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"event_outbox": {
+                  Row: {
+                    "attempts": number,"created_at": string,"delivered_at": string | null,"event_key": string,"id": string,"kind": string,"last_error": string | null,"last_http_status": number | null,"lease_expires_at": string | null,"lease_owner": string | null,"lease_token": string | null,"next_attempt_at": string,"payload": NonNullable<Json>,"status": string,"updated_at": string
+                  }
+                  Insert: {
+                    "attempts"?: number,"created_at"?: string,"delivered_at"?: string | null,"event_key": string,"id"?: string,"kind": string,"last_error"?: string | null,"last_http_status"?: number | null,"lease_expires_at"?: string | null,"lease_owner"?: string | null,"lease_token"?: string | null,"next_attempt_at"?: string,"payload"?: NonNullable<Json>,"status"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "attempts"?: number,"created_at"?: string,"delivered_at"?: string | null,"event_key"?: string,"id"?: string,"kind"?: string,"last_error"?: string | null,"last_http_status"?: number | null,"lease_expires_at"?: string | null,"lease_owner"?: string | null,"lease_token"?: string | null,"next_attempt_at"?: string,"payload"?: NonNullable<Json>,"status"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"external_contracts": {
                   Row: {
                     "created_at": string,"customer_id": string,"data_ativacao": string | null,"data_fim": string | null,"data_inicio": string | null,"external_id": string,"id": string,"modalidade": string | null,"numero": string | null,"provider": string,"status": string | null,"status_vigencia": string | null,"synced_at": string,"updated_at": string,"vencimento_dia": number | null
@@ -929,6 +942,36 @@ isOneToOne: false
                            },
 "normalize_search_text":
 { Args: { "p_value": string }; Returns: string
+                           },
+"outbox_claim":
+{ Args: { "p_kind": string,"p_limit": number,"p_max_age_seconds": number,"p_max_attempts": number,"p_owner": string }; Returns: {
+              "attempts": number,
+"created_at": string,
+"delivered_at": string | null,
+"event_key": string,
+"id": string,
+"kind": string,
+"last_error": string | null,
+"last_http_status": number | null,
+"lease_expires_at": string | null,
+"lease_owner": string | null,
+"lease_token": string | null,
+"next_attempt_at": string,
+"payload": NonNullable<Json>,
+"status": string,
+"updated_at": string
+            }[]
+                          SetofOptions: {
+        from: "*"
+        to: "event_outbox"
+        isOneToOne: false
+        isSetofReturn: true
+      } },
+"outbox_enqueue":
+{ Args: { "p_event_key": string,"p_kind": string,"p_payload": Json }; Returns: string
+                           },
+"outbox_settle":
+{ Args: { "p_error": string,"p_http_status": number,"p_id": string,"p_lease_token": string,"p_next_attempt_at": string,"p_status": string }; Returns: boolean
                            },
 "phone_match_key":
 { Args: { "p_phone": string }; Returns: string

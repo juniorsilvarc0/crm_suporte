@@ -55,8 +55,15 @@ function tagsOf(sql: string): string[] {
 // uma TAG sem entrada no mapa reprova o teste em vez de virar 500 em produção.
 const FIRST_TICKET_MIGRATION = "20260925120900";
 // As que não passam por este mapa: idempotência e retenção da API v1
-// (20260929170000), tratadas em lib/api/v1/idempotency.ts.
-const NOT_TICKET_TAGS = new Set(["IDEMPOTENCY_NOT_IN_PROGRESS", "INVALID_LEASE", "INVALID_RETENTION"]);
+// (20260929170000), tratadas em lib/api/v1/idempotency.ts; e o guard interno do
+// outbox (20261008140000), que o worker chama via service_role — nunca vira
+// resposta de rota (o union de settleOutbox e o check da coluna já o barram).
+const NOT_TICKET_TAGS = new Set([
+  "IDEMPOTENCY_NOT_IN_PROGRESS",
+  "INVALID_LEASE",
+  "INVALID_RETENTION",
+  "INVALID_OUTBOX_STATUS",
+]);
 
 function ticketMigrations(): string[] {
   return readdirSync(MIGRATIONS)
