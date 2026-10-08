@@ -129,9 +129,15 @@ function jsonResponse(body: unknown, status = 200) {
 function routeFetch({
   tickets,
   createTicket,
+  customer = null,
+  external,
 }: {
   tickets: Array<() => Response>;
   createTicket?: () => Response;
+  /** Empresa vinculada ao contato (default: nenhuma). */
+  customer?: unknown;
+  /** Corpo da rota /external-context (default: integração desligada). */
+  external?: unknown;
 }) {
   let ticketReads = 0;
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
@@ -139,7 +145,7 @@ function routeFetch({
     if (url === `/api/chat/conversations/${CONVERSATION_ID}/contact`) {
       return jsonResponse({
         contact: { id: "contact-1", notes: null, email: null, created_at: "2026-09-01T12:00:00+00:00" },
-        customer: null,
+        customer,
       });
     }
     if (url === "/api/app-users") {
@@ -164,7 +170,7 @@ function routeFetch({
     // Contexto externo (TCBX): o painel consulta por contato. Aqui a integração
     // está desligada, então o grupo "Cliente (TCBX)" nem aparece.
     if (url.includes("/external-context")) {
-      return jsonResponse({ ok: true, result: { state: "not_configured" } });
+      return jsonResponse(external ?? { ok: true, result: { state: "not_configured" } });
     }
     throw new Error(`fetch inesperado: ${init?.method ?? "GET"} ${url}`);
   });
@@ -228,6 +234,61 @@ async function renderNewTicket(conversation = CONVERSATION) {
 function title() {
   return screen.getByRole("heading", { level: 2, name: /Dados do contato|Novo ticket|Tickets/ });
 }
+
+describe("ContactInfoSheet · contrato da empresa", () => {
+  it("empresa sem contrato interno mas com contrato ativo na TCBX: mostra 'Contrato ativo (TCBX)', não 'Sem contrato'", async () => {
+    routeFetch({
+      tickets: [ticketsOk],
+      customer: {
+        id: "cust-1",
+        legal_name: "W J MOVEIS LTDA",
+        trade_name: null,
+        cnpj: "41582874000181",
+        contract_status: null,
+        archived_at: null,
+      },
+      external: {
+        ok: true,
+        result: {
+          state: "ok",
+          context: {
+            externalId: "9",
+            tipoPessoa: "PJ",
+            documento: "41582874000181",
+            razaoSocial: "W J MOVEIS LTDA",
+            nomeFantasia: null,
+            status: "ativo",
+            emailPrincipal: null,
+            emailFinanceiro: null,
+            telefonePrincipal: null,
+            telefoneSecundario: null,
+            contratos: [
+              {
+                id: 1,
+                numero: "CT-1",
+                modalidade: null,
+                vigencia: null,
+                dataInicio: null,
+                dataFim: null,
+                vencimentoDia: null,
+                status: "assinado",
+                statusVigencia: "ativo",
+                dataAtivacao: null,
+              },
+            ],
+            titulosEmAberto: [],
+          },
+        },
+      },
+    });
+    renderSheet();
+
+    expect(await screen.findByText("W J MOVEIS LTDA")).toBeInTheDocument();
+    // O selo da empresa reflete a TCBX, não o selo interno (nulo) "Sem contrato".
+    expect(await screen.findByText("Contrato ativo (TCBX)")).toBeInTheDocument();
+    expect(screen.queryByText("Sem contrato")).not.toBeInTheDocument();
+  });
+});
 
 describe("ContactInfoSheet · tickets", () => {
   it("a falha dos tickets fica no grupo: o resto do painel segue, e \"Tentar de novo\" relê", async () => {

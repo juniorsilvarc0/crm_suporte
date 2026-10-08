@@ -27,6 +27,16 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Selo de contrato da TCBX no painel do chat (não "Sem contrato") — fix
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** no painel "Dados do contato" do chat, o grupo EMPRESA mostrava "Contrato → Sem contrato" (selo interno nulo) mesmo com contrato ativo na TCBX — contraditório com o grupo "Cliente (TCBX)" logo abaixo ("Situação: Ativo"). O dono pediu para corrigir em todos e não acontecer mais.
+**Arquivos alterados:** `chat/components/contact-info-sheet.tsx` (deriva `hasActiveExternalContract` do contexto TCBX já consultado e aplica a precedência no selo do grupo EMPRESA, +teste no contact-info-sheet.test.tsx); docs: UI.md §5.7.12, este PROGRESS.
+**O que foi feito:** mesma precedência do #53 (ficha de Clientes): interno (`contract_status`) → contrato ativo na TCBX (`ExternalContractBadge` "Contrato ativo (TCBX)") → "Sem contrato". O sinal vem da consulta **ao vivo** do painel (`useCustomerContext`/`isActiveContract`), então vale mesmo onde o espelho ainda não tem a linha. É só exibição — corrige **todos** automaticamente e não recorre.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ (contact-info-sheet com caso novo; suíte completa) · build ✓.
+**Pendências:** nenhuma. Não há mudança de dado — é renderização.
+**Armadilhas descobertas:** o `ExternalContractBadge`/`ContractStatusBadge` renderizam com a paleta de domínio (sem tokens `--wa-*`) e funcionam dentro do painel do chat nos dois temas — por isso dá para reusar o mesmo selo da ficha ali.
+
 ## [2026-10-08] Enriquecimento automático no 1º contato pelo WhatsApp (TCBX) — PR 3b
 
 **Agente/Modelo:** Claude Opus 4.8.

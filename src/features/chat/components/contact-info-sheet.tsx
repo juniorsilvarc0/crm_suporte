@@ -22,6 +22,7 @@ import type { ConversationTagsController } from "@/features/chat/hooks/use-conve
 import { NO_TAGS } from "@/features/chat/lib/conversation-tags";
 import { useContactInfo } from "@/features/chat/hooks/use-contact-info";
 import { useCustomerContext, type UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
+import { isActiveContract } from "@/features/customer-source/active-contract";
 import { summarizeCustomerContext } from "@/features/customer-source/summarize";
 import {
   contactDisplayName,
@@ -30,6 +31,7 @@ import {
 } from "@/features/chat/lib/contact-info";
 import { ContractStatusBadge } from "@/features/contracts/components/contract-status-badge";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
+import { ExternalContractBadge } from "@/features/customers/components/external-contract-badge";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerSummary } from "@/features/customers/types";
 import { useTeamDirectory } from "@/features/settings/hooks/use-team-directory";
@@ -165,6 +167,12 @@ export function ContactInfoSheet({
   // Contexto do cliente na fonte externa (TCBX): por contato (a rota resolve por
   // CNPJ da empresa ou pelo telefone), então vale para qualquer conversa.
   const externalContext = useCustomerContext(contact?.id ?? null, Boolean(contact));
+  // A empresa tem contrato ATIVO na TCBX? O selo interno (contract_status) é nulo
+  // para empresa TCBX; sem isto, o grupo "Empresa" mostraria "Sem contrato" ao
+  // lado do "Ativo" do grupo da TCBX. Mesma precedência da ficha de Clientes (#53).
+  const hasActiveExternalContract =
+    externalContext.result?.state === "ok" &&
+    externalContext.result.context.contratos.some(isActiveContract);
 
   // Tickets da conversa: relê quando o foco ou o atendimento mudam (Realtime do
   // chat, inclusive de outra aba) e depois de cada ação daqui. Com os de quem
@@ -411,6 +419,7 @@ export function ContactInfoSheet({
             <CustomerGroup
               customer={customer}
               hasContact={contact !== null}
+              hasActiveExternal={hasActiveExternalContract}
               loading={loading}
               failed={failed}
               onChange={() => setView("customer")}
@@ -537,12 +546,15 @@ export function ContactInfoSheet({
 function CustomerGroup({
   customer,
   hasContact,
+  hasActiveExternal,
   loading,
   failed,
   onChange,
 }: {
   customer: CustomerSummary | null;
   hasContact: boolean;
+  /** A empresa tem contrato ATIVO na TCBX (espelho/consulta). */
+  hasActiveExternal: boolean;
   loading: boolean;
   failed: boolean;
   onChange: () => void;
@@ -592,7 +604,15 @@ function CustomerGroup({
         <span className="truncate text-[15px] text-[var(--wa-info-label)]">Contrato</span>
         {/* `div min-w-0`: o `shrink-0` do selo venceria a linha (UI.md §5.6.1). */}
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-          <ContractStatusBadge status={customer.contract_status} />
+          {/* Interno (support_contracts) tem prioridade; sem ele, o contrato
+              ativo na TCBX; senão "Sem contrato" — nunca os dois. Igual à ficha. */}
+          {customer.contract_status ? (
+            <ContractStatusBadge status={customer.contract_status} />
+          ) : hasActiveExternal ? (
+            <ExternalContractBadge />
+          ) : (
+            <ContractStatusBadge status={null} />
+          )}
           {customer.archived_at ? (
             <Badge variant="outline" title="Empresa arquivada" className="max-w-full">
               <span className="min-w-0 truncate">Empresa arquivada</span>
