@@ -6,7 +6,8 @@ const {
   integrationMock,
   secretMock,
   identityMock,
-  relayMock,
+  enqueueMock,
+  dispatchMock,
   enrichMock,
   downloadMock,
   persistMediaMock,
@@ -16,7 +17,8 @@ const {
   integrationMock: vi.fn(),
   secretMock: vi.fn(),
   identityMock: vi.fn(),
-  relayMock: vi.fn(),
+  enqueueMock: vi.fn(),
+  dispatchMock: vi.fn(),
   enrichMock: vi.fn(),
   downloadMock: vi.fn(),
   persistMediaMock: vi.fn(),
@@ -41,10 +43,12 @@ vi.mock("@/features/chat/lib/connection/integration", () => ({
 vi.mock("@/features/contacts/queries/resolve-contact-identity", () => ({
   resolveContactIdentity: identityMock,
 }));
-// O que sai no repasse (envelope, assinatura, log) é de relay-message.test.ts.
-// Aqui fica QUANDO o webhook repassa, e com o quê.
-vi.mock("@/features/integrations/server/relay-message", () => ({
-  relayInboundMessage: relayMock,
+// O que sai no repasse (sanitizar o token, envelope, assinatura, log) é de
+// relay-dispatch.test.ts / relay-message.test.ts. Aqui fica QUANDO o webhook
+// enfileira (síncrono) e agenda a tentativa imediata (after), e com o quê.
+vi.mock("@/features/integrations/server/relay-dispatch", () => ({
+  enqueueRelay: enqueueMock,
+  dispatchRelayBatch: dispatchMock,
 }));
 // Enriquecimento no 1º contato: aqui fica QUANDO o webhook o agenda (contato
 // novo). O que ele faz (TCBX, empresa, contratos) é de enrich-contact.test.ts.
@@ -81,7 +85,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   afterCallbacks.length = 0;
   adminClientMock.mockReturnValue({});
-  relayMock.mockResolvedValue(undefined);
+  enqueueMock.mockResolvedValue(true);
+  dispatchMock.mockResolvedValue(undefined);
   downloadMock.mockResolvedValue(null);
   persistMediaMock.mockResolvedValue(null);
   integrationMock.mockResolvedValue({
@@ -306,28 +311,33 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     await runAfter();
 
     expect(response.status).toBe(200);
-    expect(relayMock).toHaveBeenCalledTimes(1);
-    expect(relayMock).toHaveBeenCalledWith(expect.objectContaining({ from: expect.any(Function) }), relayed());
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock).toHaveBeenCalledWith(expect.objectContaining({ from: expect.any(Function) }), relayed());
+    // Enfileirada a mensagem, a tentativa imediata é o dispatch do outbox.
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
     // A mensagem repassada é a linha inserida, com o id que o webhook gerou.
     expect(insertedRowIds).toEqual([expect.stringMatching(UUID)]);
-    expect(relayMock.mock.calls[0][1].messageId).toBe(insertedRowIds[0]);
+    expect(enqueueMock.mock.calls[0][1].messageId).toBe(insertedRowIds[0]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("o repasse fica para DEPOIS da resposta: o webhook responde 200 sem ter chamado o agente", async () => {
+  it("enfileira ANTES de responder (durável); só a tentativa de entrega fica para depois", async () => {
     conversationStatus = "bot";
 
     const response = await POST(webhook(SECRET, inbound));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    // Agendado com after() (o Next o termina antes de sair num deploy), e ainda não rodou.
+    // Enfileirado de forma síncrona: se o processo cair agora, o worker entrega.
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    // A tentativa imediata ficou para o after() (o Next a termina antes de sair
+    // num deploy), e ainda não rodou.
     expect(afterCallbacks).toHaveLength(1);
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
 
     await runAfter();
 
-    expect(relayMock).toHaveBeenCalledTimes(1);
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
   });
 
   it("conversa resolvida: a 1ª mensagem do cliente já vai para a IA", async () => {
@@ -342,8 +352,8 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     expect(conversationReads).toBe(2);
     // A releitura é da conversa do upsert, pelo id dela, e só por ele.
     expect(conversationFilters[1]).toEqual([["id", CONVERSATION_ID]]);
-    expect(relayMock).toHaveBeenCalledTimes(1);
-    expect(relayMock.mock.calls[0][1]).toEqual(relayed());
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock.mock.calls[0][1]).toEqual(relayed());
   });
 
   it("primeiro contato (created): agenda o enriquecimento pela TCBX, depois da resposta", async () => {
@@ -379,14 +389,14 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     expect(enrichMock).not.toHaveBeenCalled();
   });
 
-  it("o envelope segue como chegou: quem tira o token da instância é o repasse", async () => {
+  it("o webhook passa o envelope cru ao enqueue: quem tira o token é o enqueueRelay", async () => {
     conversationStatus = "bot";
     const withToken = { ...inbound, owner: "5511900000000", token: "token-da-instancia" };
 
     await POST(webhook(SECRET, withToken));
     await runAfter();
 
-    expect(relayMock.mock.calls[0][1]).toEqual(relayed({ payload: withToken }));
+    expect(enqueueMock.mock.calls[0][1]).toEqual(relayed({ payload: withToken }));
   });
 
   it("a mídia guardada no bucket vai junto, para o repasse assinar a URL", async () => {
@@ -409,8 +419,8 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     await POST(webhook(SECRET, image));
     await runAfter();
 
-    expect(relayMock).toHaveBeenCalledTimes(1);
-    expect(relayMock.mock.calls[0][1]).toEqual(relayed({ payload: image, media: stored }));
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock.mock.calls[0][1]).toEqual(relayed({ payload: image, media: stored }));
   });
 
   it("reenvio da mesma mensagem pela uazapi não vai de novo à IA, e fica no log", async () => {
@@ -423,7 +433,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
 
     expect(first.status).toBe(200);
     expect(retry.status).toBe(200);
-    expect(relayMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledWith("[webhook/uazapi] inbound repetido, sem relay:", {
       conversationId: CONVERSATION_ID,
@@ -442,7 +452,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     expect(response.status).toBe(200);
     expect(retry.status).toBe(200);
     expect(conversationStatus).toBe("human");
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
     expect(info).not.toHaveBeenCalled();
     info.mockRestore();
   });
@@ -459,7 +469,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     expect(response.status).toBe(200);
     expect(retry.status).toBe(200);
     expect(storedExternalIds.has("WA-OUT-1")).toBe(true);
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
     // O "repetido" é só do que seria repassado.
     expect(info).not.toHaveBeenCalled();
     info.mockRestore();
@@ -482,7 +492,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     await runAfter();
 
     expect(response.status).toBe(200);
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
     expect(insertedRowIds).toEqual([]);
     info.mockRestore();
   });
@@ -498,7 +508,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ ok: false });
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
     error.mockRestore();
   });
 
@@ -513,7 +523,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
 
     expect(response.status).toBe(200);
     expect(storedExternalIds.has("WA-IN-1")).toBe(true);
-    expect(relayMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -528,8 +538,8 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
 
     expect(response.status).toBe(200);
     expect(conversationReads).toBe(2);
-    expect(relayMock).toHaveBeenCalledTimes(1);
-    expect(relayMock.mock.calls[0][1]).toEqual(relayed());
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock.mock.calls[0][1]).toEqual(relayed());
     expect(warn).toHaveBeenCalledWith(
       "[upsertMessage] reler o status da conversa falhou:",
       "timeout"
