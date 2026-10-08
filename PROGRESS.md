@@ -27,6 +27,30 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 7 PR 1: schema de Agenda + Follow-ups (banco)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** fundar o módulo de Agenda + Follow-ups do suporte (núcleo do produto), recuperando as tabelas da clínica (tag `legado-clinica`) REINTERPRETADAS. Só o banco nesta PR; as queries e as telas vêm nas próximas.
+**Arquivos alterados:**
+- banco: `supabase/migrations/20261008160000_agenda_followups.sql` (tabelas `appointments`, `followups`, `agenda_blocks`), `supabase/tests/agenda_followups.sql` (17 casos), `src/lib/supabase/database.types.ts` (regenerado); docs: `PRD.md` §8 (linha Agenda) + este PROGRESS.
+**O que foi feito:**
+- **`appointments`:** `kind` enum fixo (`visita_tecnica`/`treinamento`/`implantacao`/`acesso_remoto`), `ticket_id?`/`customer_id?`/`contact_id?`/`assignee_id?` (técnico) todos **ON DELETE SET NULL** (apagar o pai não apaga o histórico de agenda), `scheduled_at`, `duration_min`, `location`, `status` (`agendado`/`confirmado`/`realizado`/`cancelado`), `notes`, `created_by_user_id`.
+- **`followups`:** `ticket_id` **NOT NULL** (retorno é sempre de um ticket) **ON DELETE CASCADE**, `due_at`, `kind` (`retorno`/`verificacao`/`cobranca`), `status` (`pendente`/`concluido`/`cancelado`) com invariante `(status='concluido') = (done_at is not null)`, índice parcial de pendentes por prazo.
+- **`agenda_blocks`:** bloqueios de disponibilidade, por técnico (`assignee_id`) ou globais (null), `range check` (fim > início).
+- **Segurança:** molde a (como `external_contracts`) — RLS ligada, NENHUMA policy, `revoke all` inclusive de service_role, `grant select/insert/update/delete` só a service_role. `assert_security_baseline()` ✓ (34→**37 tabelas**, 75 funções). Triggers `set_updated_at` nas três.
+**Decisões tomadas (revisar):**
+- **Reinterpretação da clínica → suporte:** saíram `lead_id`, `tipo_ensaio`, Google Calendar e os lembretes `reminder_d3/d0`; `appointments` ganhou vínculo a ticket/empresa/contato e técnico. O `followup` deixou de ser disparo automático de mensagem e virou TAREFA (concluída por humano), presa a ticket.
+- **Sem a config da clínica** (`appointment_types`/`clinic_units`/`agenda_hours`): o tipo é enum fixo (cor por tipo na UI), não tabela configurável. Se você quiser tipos/horários configuráveis depois, é migration nova.
+- **Vocabulário a confirmar:** os valores de `followups.kind` (`retorno`/`verificacao`/`cobranca`) e os `status` são meu palpite razoável — fáceis de ajustar ANTES de telas usarem (migration nova depois).
+- **Molde a (grant direto), não RPC:** agenda/follow-ups são CRUD simples; a autorização é da rota sob sessão, como em `external_contracts`. Tickets usam RPC por causa dos invariantes; aqui não há invariante de transição.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes) · test ✓ (4577/4577) · build ✓ · teste SQL `agenda_followups` ✓ (17 casos). bug-hunter/verification-before-completion: skills não instaladas — revisão à mão.
+**Pendências / próximos passos:**
+- **Fase 7 PR 2:** recuperar da tag `legado-clinica` as queries + telas (`agenda-month-view`, `agenda-time-grid`, `agenda-list-view`, `appointment-dialog`, `followups-table`, `novo-followup-dialog`), adaptando lead/deal/paciente → ticket/customer; menu (`/app/agendamentos`, `/app/follow-ups`) + `allowedRoles`.
+- Do ticket, agendar uma visita e um retorno; os dois na timeline; retorno vencido destacado (critério do plano §Fase 7).
+**Armadilhas descobertas:**
+- **Teste SQL de `followups` precisa de um ticket real** (FK NOT NULL). O setup semeia empresa+técnico(app_user)+contato+conversa(sem integração, para NÃO colidir com o lixo uazapi local) e chama `create_ticket` (id em `#>>'{ticket,id}'`). Os `ON DELETE` são conferidos pelo catálogo (`pg_constraint.confdeltype`), sem depender de guard de delete das tabelas pai.
+- **Reaproveitar o legado é `git show legado-clinica:<caminho>`** — a tag tem o módulo inteiro (migrations, componentes, libs). As telas da PR 2 saem dali, não reescritas.
+
 ## [2026-10-08] Fase 6b-1b: relay à IA migrado para o outbox (durável, at-least-once)
 
 **Agente/Modelo:** Claude Opus 4.8.
