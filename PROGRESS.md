@@ -27,6 +27,26 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 4 · PR 7 — Quadro (kanban de tickets) + chave "Lista | Quadro"
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** a tela que faltava da Fase 4: o Quadro (kanban) dos tickets, arrastando o card entre colunas para mudar o status; e a chave "Lista | Quadro" na tela de Tickets.
+**Arquivos alterados:**
+- novos: `tickets/queries/get-tickets-board.ts` (+teste), `tickets/components/tickets-board.tsx` (+teste), `tickets/components/ticket-view-switch.tsx` (+teste), `tickets/components/cancel-ticket-dialog.tsx` (extraído da lista), `app/(dashboard)/app/tickets/quadro/{page,loading}.tsx`;
+- alterados: `tickets/components/tickets-table.tsx` (usa o `CancelTicketDialog` e o `postTicketAction` extraídos + prop `viewSwitch`), `tickets/lib/ticket-request.ts` (`postTicketAction` compartilhado), `tickets/queries/get-tickets-page.ts` (`buildListQuery` exportado), `tickets/components/ticket-filters.tsx` (`hideStatus`), `tickets/lib/ticket-list-url.ts` (`toListFilters`, `QUADRO_PATH`, `ticketBoardHref/Search`, `countTicketBoardFilters`), `tickets/types.ts` (`TicketsBoard`), `app/(dashboard)/app/tickets/page.tsx` (passa a chave); docs: UI.md §5.24, este PROGRESS.
+**O que foi feito:**
+- **Colunas = status NÃO-TERMINAIS** (status "ativos" = `sla_mode != stopped`): a pilha de trabalho. Terminais (resolvido/fechado/cancelado) não viram coluna — saem do quadro pelo menu "Mover para" do card. `getTicketsBoard` reusa `buildListQuery` forçando "ativos", sem paginação, com teto `BOARD_MAX=500` (avisa `capped`).
+- **Arrastar = transição** (kibo-ui/kanban, dnd-kit): otimista, com véu no card; valida `canTransition` antes de postar; no 409 (versão/transição inválida) **reverte** (via `queueMicrotask`, porque o provider chama meu `onDragEnd` antes do reorder final) e relê. Uma ação por vez (como a lista).
+- **"Mover para"** no card (teclado/mobile) com `allowedTargets`; **Cancelar** abre o diálogo de motivo (extraído da lista, agora compartilhado).
+- **Chave "Lista | Quadro"** nas duas telas, preservando prioridade/fila/responsável/SLA (o quadro não leva status/busca/ordem).
+**Decisões tomadas (revisar):**
+- **Quadro = só colunas ativas** (não resolvido/fechado/cancelado) — mantém o quadro limitado e focado no trabalho em aberto; resolver/fechar/cancelar é pelo menu do card. Se quiser uma coluna "Resolvido", dá pra adicionar.
+- **Alternância por chave, não item de nav próprio** — o plano pede exatamente isso ("a chave 'Lista | Quadro'"); evita dois itens de menu para o mesmo dado.
+- **Extraí `CancelTicketDialog` e `postTicketAction`** da lista para compartilhar com o quadro (a lista segue com 34 testes verdes).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes) · test ✓ (quadro + lista + guards; suíte completa) · build ✓.
+**Pendências / próximos passos:** o quadro não tem Realtime (relê no `visibilitychange` e após ações, como a lista). Sem busca no quadro (num quadro se varre); os filtros são os mesmos da lista. A barra mobile não ganhou o Quadro (a chave já alterna).
+**Armadilhas descobertas:** o `KanbanProvider` muta `data` no `dragOver` e chama o `onDragEnd` de quem usa ANTES do reorder final — reverter síncrono é sobrescrito; reverti com `queueMicrotask`. O `KanbanCard` desestrutura só `{id,name,children,className}` (não espalha no DOM), então dá pra pendurar o ticket inteiro no item com segurança. `[id]` da rota de transição é o UUID, não o protocolo.
+
 ## [2026-10-08] Selo de contrato da TCBX no painel do chat (não "Sem contrato") — fix
 
 **Agente/Modelo:** Claude Opus 4.8.

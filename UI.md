@@ -1360,7 +1360,7 @@ A partir da Fase 3, formulário novo usa **react-hook-form + `zodResolver` com o
 - **CNPJ:** sem `inputMode="numeric"` — o CNPJ alfanumérico tem letras, e o teclado numérico as esconderia. `autoCapitalize="characters"`, formatação ao sair do campo quando válido.
 - **Datas** com `z.iso.date()` (recusa 30/02); **dinheiro** como texto `1500.00` validado por regex e convertido; **vencimento** de 1 a 28, sem valor padrão.
 
-### §5.24 Tickets: lista e detalhe (Fase 4)
+### §5.24 Tickets: lista, quadro e detalhe (Fase 4)
 
 Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/tickets/components/`.
 
@@ -1398,6 +1398,14 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 | Nenhum ativo | "Ver todos os tickets" |
 | Base vazia | "Tickets nascem de uma conversa no WhatsApp." |
 | Filtro sem resultado | "Limpar filtros" |
+
+**Chave "Lista | Quadro"** (`ticket-view-switch`, na barra das duas telas): dois `next/link` num controle segmentado. A vista é a URL; ao alternar, preserva os filtros que valem nos dois (prioridade, fila, responsável, SLA). O quadro **não** leva status, busca nem ordem (lá as colunas SÃO os status).
+
+**Quadro `/app/tickets/quadro`** (kanban, sobre `kibo-ui/kanban`/dnd-kit):
+- **Colunas = os status NÃO-TERMINAIS** (a pilha de trabalho: novo → em atendimento → aguardando…). Os terminais (resolvido/fechado/cancelado) **não viram coluna**: saem do quadro pelo menu "Mover para" do card. A query (`getTicketsBoard`) força "ativos", sem paginação, com teto de 500 (avisa quando corta).
+- **Arrastar um card entre colunas = transição de status**, otimista: o card move na hora, a transição vai ao servidor e, no 409 (versão ou transição inválida), **volta** com toast e relê. O destino que a matriz não permite também volta. Uma ação por vez (como a lista).
+- **Card:** protocolo, selo de SLA (com a barra de acento pela cor do SLA), título (link para o detalhe), empresa · contato, prioridade e fila, responsável. Menu ⋯ com "Abrir conversa", "Mover para" (destinos permitidos; "Cancelado" pede motivo no diálogo) e "Copiar protocolo".
+- **Filtros:** os mesmos da lista (prioridade, fila, responsável, SLA), sem o de status; **sem busca** (num quadro se varre). Sem Realtime: relê no `visibilitychange` e após cada ação.
 
 **Detalhe `/app/tickets/[number]`** (o protocolo na URL):
 - **Cabeçalho:** protocolo com "Copiar", título editável e os selos.
