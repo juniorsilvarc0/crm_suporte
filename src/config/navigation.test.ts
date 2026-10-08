@@ -20,6 +20,7 @@ describe("getDashboardNavigation", () => {
       "/app/chat",
       "/app/clientes",
       "/app/contatos",
+      "/app/agendamentos",
     ]);
   });
 
@@ -30,6 +31,7 @@ describe("getDashboardNavigation", () => {
       "/app/chat",
       "/app/clientes",
       "/app/contatos",
+      "/app/agendamentos",
       "/app/conexao",
       "/app/equipe",
       "/app/configuracoes/atendimento",
@@ -87,9 +89,9 @@ describe("buildTopNavigation", () => {
 
     expect(
       entries.map((entry) => (entry.kind === "link" ? entry.item.title : entry.title))
-    ).toEqual(["Início", "Tickets", "WhatsApp", "Clientes", "Contatos", "Ajustes"]);
+    ).toEqual(["Início", "Tickets", "WhatsApp", "Clientes", "Contatos", "Agenda", "Ajustes"]);
 
-    const ajustes = entries[5];
+    const ajustes = entries[6];
     expect(ajustes.kind).toBe("menu");
     if (ajustes.kind === "menu") {
       expect(ajustes.items.map((item) => item.href)).toEqual([
@@ -144,7 +146,9 @@ describe("buildTopNavigation", () => {
   });
 
   it("módulo novo fora da ordem da barra aparece no fim em vez de sumir", () => {
-    const novo = { title: "Agenda", href: "/app/agendamentos", icon: () => null };
+    // Um href ainda não citado no TOP_NAV_SPEC (ex.: um módulo futuro): cai como
+    // link solto no fim, em vez de sumir da barra.
+    const novo = { title: "Relatórios", href: "/app/relatorios", icon: () => null };
     const entries = buildTopNavigation([...getDashboardNavigation("member"), novo]);
 
     expect(entries.at(-1)).toEqual({ kind: "link", item: novo });
