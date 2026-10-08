@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ContractStatusBadge } from "@/features/contracts/components/contract-status-badge";
+import { ExternalContractBadge } from "@/features/customers/components/external-contract-badge";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import {
   CUSTOMER_SITUATIONS,
@@ -256,7 +257,7 @@ export function CustomersTable({
                       {customer.cnpj ? formatCnpj(customer.cnpj) : <NoData />}
                     </TableCell>
                     <TableCell className="max-w-0 py-3">
-                      <ContractStatusBadge status={customer.contract_status} />
+                      <CustomerContractSeal customer={customer} />
                     </TableCell>
                     <TableCell className="py-3 pr-4 text-right text-sm tabular-nums text-muted-foreground">
                       {formatDate(customer.created_at)}
@@ -287,7 +288,7 @@ export function CustomersTable({
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <CustomerIdentity customer={customer} href={customerHref(customer)} stretched />
                 <div className="min-w-0 max-w-[50%] shrink-0 text-right">
-                  <ContractStatusBadge status={customer.contract_status} />
+                  <CustomerContractSeal customer={customer} />
                 </div>
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -404,4 +405,15 @@ function CustomerIdentity({
 
 function NoData() {
   return <span className="text-muted-foreground">—</span>;
+}
+
+/**
+ * Selo de contrato na lista. O interno (support_contracts) tem prioridade; sem
+ * ele, o espelho da TCBX informa que há contrato ativo; senão, "Sem contrato".
+ * Nunca os dois juntos — mesma regra do cabeçalho da ficha.
+ */
+function CustomerContractSeal({ customer }: { customer: CustomerListItem }) {
+  if (customer.contract_status) return <ContractStatusBadge status={customer.contract_status} />;
+  if (customer.has_external_active) return <ExternalContractBadge />;
+  return <ContractStatusBadge status={null} />;
 }
