@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { reconcileExternalContracts } from "@/features/customers/server/external-contracts";
+import { dispatchRelayBatch } from "@/features/integrations/server/relay-dispatch";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
 
@@ -17,6 +18,7 @@ type Admin = SupabaseClient<Database>;
 const SWEEP_INTERVAL_MS = 60_000; // SLA: carimba estouro e fecha 72h
 const TCBX_INTERVAL_MS = 5 * 60_000; // Espelho de contratos da TCBX fresco
 const MAINTENANCE_INTERVAL_MS = 60 * 60_000; // Purga de chaves/logs expirados
+const RELAY_INTERVAL_MS = 20_000; // Recuperação do relay à IA (janela de 120s)
 const TCBX_BATCH = 20; // empresas por leva (teto de chamadas à TCBX por ciclo)
 
 /** Pega o lease de um job. `claimed:false` = outra réplica está rodando. */
@@ -70,6 +72,20 @@ export async function runTcbxReconcile(supabase: Admin): Promise<void> {
   }
 }
 
+/**
+ * Recuperação do relay à IA: drena os eventos de relay que a tentativa imediata
+ * do webhook não entregou (processo caiu, agente fora do ar). O claim do outbox
+ * serializa por evento, então NÃO usa lease de job — todas as réplicas ajudam.
+ * Nunca lança.
+ */
+export async function runRelayDispatch(supabase: Admin): Promise<void> {
+  try {
+    await dispatchRelayBatch(supabase);
+  } catch (error) {
+    console.error("[jobs] relay_dispatch", error);
+  }
+}
+
 /** Purga chaves de idempotência e logs de integração expirados. Nunca lança. */
 export async function runMaintenance(supabase: Admin): Promise<void> {
   try {
@@ -96,19 +112,23 @@ export function startJobs(): void {
     return;
   }
   store.__crmsupJobsStarted = true;
-  console.info("[jobs] worker iniciado (SLA 60s · TCBX 5min · manutenção 1h).");
+  console.info("[jobs] worker iniciado (SLA 60s · relay 20s · TCBX 5min · manutenção 1h).");
 
   const supabase = createSupabaseAdminClient();
   const schedule = (fn: () => void, ms: number) => setInterval(fn, ms).unref?.();
 
   const sla = () => void runSlaSweep(supabase);
+  const relay = () => void runRelayDispatch(supabase);
   const tcbx = () => void runTcbxReconcile(supabase);
   const maintenance = () => void runMaintenance(supabase);
 
-  // Tentativas imediatas no boot (manutenção não precisa).
+  // Tentativas imediatas no boot: drena o que ficou pendente antes do restart
+  // (manutenção não precisa).
   sla();
+  relay();
   tcbx();
   schedule(sla, SWEEP_INTERVAL_MS);
+  schedule(relay, RELAY_INTERVAL_MS);
   schedule(tcbx, TCBX_INTERVAL_MS);
   schedule(maintenance, MAINTENANCE_INTERVAL_MS);
 }

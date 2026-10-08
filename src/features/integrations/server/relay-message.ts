@@ -32,6 +32,18 @@ export const RELAY_USER_AGENT = `crm-suporte-relay/${RELAY_VERSION}`;
 /** Abaixo disso, procurar a credencial no corpo acharia texto comum. */
 const MIN_SCANNABLE_SECRET = 16;
 
+/**
+ * A credencial da instância NÃO pode sair do CRM, venha onde vier no payload do
+ * provedor — nem numa chave de raiz com outro nome, nem aninhada, nem no meio de
+ * um texto. Abaixo de MIN_SCANNABLE_SECRET um token é curto demais para procurar
+ * sem casar palavra comum. Usado ao ENFILEIRAR, fail-closed: um envelope que a
+ * traz não é gravado no outbox nem entregue. A fatia `slice(1, -1)` tira as aspas
+ * que o `JSON.stringify` põe, para achar o token já com o escape do JSON.
+ */
+export function envelopeLeaksToken(body: string, token: string): boolean {
+  return token.length >= MIN_SCANNABLE_SECRET && body.includes(JSON.stringify(token).slice(1, -1));
+}
+
 export type RelayDelivery = RelayMessage & {
   /** O token da instância uazapi: o repasse confere que ele NÃO está no corpo. */
   instanceToken: string;
@@ -103,7 +115,7 @@ export async function postRelayEvent(
 }
 
 /** `null` = sem agente configurado: não há o que repassar nem o que registrar. */
-async function attempt(supabase: Admin, message: RelayDelivery): Promise<Outcome | null> {
+async function attempt(supabase: Admin, message: RelayMessage): Promise<Outcome | null> {
   // 1) Para onde. Leitura que falha não é "sem agente": fica registrada.
   let rawUrl: string | null;
   try {
@@ -140,15 +152,10 @@ async function attempt(supabase: Admin, message: RelayDelivery): Promise<Outcome
   const body = JSON.stringify(relayEnvelope(message.payload, fields.value));
   const secret = signingSecret.value;
 
-  // A credencial da instância não sai do CRM, venha onde vier no payload do
-  // provedor. A da raiz já saiu em relayEnvelope; aqui é a rede de segurança.
-  const { instanceToken } = message;
-  if (instanceToken.length >= MIN_SCANNABLE_SECRET && body.includes(JSON.stringify(instanceToken).slice(1, -1))) {
-    return { error: "O envelope trazia a credencial da instância: nada foi enviado." };
-  }
-
   // 3) O envio. Sem chave no cofre, sai sem assinatura (um agente que a exige
-  //    recusa).
+  //    recusa). A credencial da instância já ficou de fora ao ENFILEIRAR
+  //    (enqueueRelay + envelopeLeaksToken, fail-closed): o payload guardado no
+  //    outbox é limpo, então aqui não há token a vazar.
   return postRelayEvent(target, secret, { name: RELAY_EVENT, id: message.messageId, body });
 }
 
@@ -159,19 +166,24 @@ async function attempt(supabase: Admin, message: RelayDelivery): Promise<Outcome
  * antes): por isso esta função nunca rejeita, e o desfecho vai para
  * `integration_logs` (provider `relay`), com status e latência.
  *
- * ⚠️ É "no máximo uma vez": o que chegou a sair nunca é enviado de novo. Só há
- * 2ª tentativa quando uma LEITURA falhou antes do envio. Quem traz a
- * retentativa de verdade é o outbox da Fase 6; o `message_id` do corpo já é
- * estável para o agente descartar repetição.
+ * Uma só tentativa de envio aqui (com uma 2ª só quando uma LEITURA falhou antes
+ * do envio). A retentativa DURÁVEL é do outbox (Fase 6b): esta função é a
+ * entrega de UM evento, e devolve o desfecho para o dispatch decidir o settle
+ * (sent/retry). `null` = sem agente, ou falha inesperada já registrada no
+ * console. Nunca rejeita. O `message_id` do corpo é estável para o agente
+ * descartar repetição.
  */
-export async function relayInboundMessage(supabase: Admin, message: RelayDelivery): Promise<void> {
+export async function relayInboundMessage(
+  supabase: Admin,
+  message: RelayMessage
+): Promise<RelayOutcome | null> {
   try {
     let outcome = await attempt(supabase, message);
     if (outcome?.retry) {
       await delay(RELAY_RETRY_DELAY_MS);
       outcome = await attempt(supabase, message);
     }
-    if (!outcome) return;
+    if (!outcome) return null;
     if (outcome.error) {
       // "Sem confirmação", não "não entregue": num 500, num corte de conexão ou
       // num estouro de prazo o agente pode ter recebido.
@@ -187,7 +199,9 @@ export async function relayInboundMessage(supabase: Admin, message: RelayDeliver
       httpStatus: outcome.httpStatus,
       latencyMs: outcome.latencyMs,
     });
+    return { error: outcome.error, httpStatus: outcome.httpStatus, latencyMs: outcome.latencyMs };
   } catch (error) {
     console.error("[relay] falha inesperada:", error);
+    return null;
   }
 }

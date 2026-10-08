@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpcMock, envMock, createMock, reconcileMock } = vi.hoisted(() => ({
+const { rpcMock, envMock, createMock, reconcileMock, dispatchMock } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
   envMock: vi.fn(() => true),
   createMock: vi.fn(),
   reconcileMock: vi.fn(),
+  dispatchMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -15,9 +16,13 @@ vi.mock("@/lib/supabase/admin", () => ({
 vi.mock("@/features/customers/server/external-contracts", () => ({
   reconcileExternalContracts: reconcileMock,
 }));
+vi.mock("@/features/integrations/server/relay-dispatch", () => ({
+  dispatchRelayBatch: dispatchMock,
+}));
 
 import {
   runMaintenance,
+  runRelayDispatch,
   runSlaSweep,
   runTcbxReconcile,
   startJobs,
@@ -64,6 +69,7 @@ beforeEach(() => {
   envMock.mockReturnValue(true);
   createMock.mockReturnValue(client);
   reconcileMock.mockResolvedValue(report());
+  dispatchMock.mockResolvedValue(undefined);
   defaultRpc();
   (globalThis as Store).__crmsupJobsStarted = undefined;
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -119,6 +125,19 @@ describe("runTcbxReconcile", () => {
   });
 });
 
+describe("runRelayDispatch", () => {
+  it("drena a leva pelo dispatch do outbox", async () => {
+    await runRelayDispatch(client);
+    expect(dispatchMock).toHaveBeenCalledWith(client);
+  });
+
+  it("engole erro (nunca derruba o worker)", async () => {
+    dispatchMock.mockRejectedValueOnce(new Error("boom"));
+    await expect(runRelayDispatch(client)).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("runMaintenance", () => {
   it("com o lease, purga chaves e logs", async () => {
     claimGranted();
@@ -142,22 +161,23 @@ describe("startJobs", () => {
     expect(setInterval).not.toHaveBeenCalled();
   });
 
-  it("inicia os três jobs; segunda chamada não duplica", () => {
+  it("inicia os quatro jobs; segunda chamada não duplica", () => {
     const setInterval = vi
       .spyOn(globalThis, "setInterval")
       .mockReturnValue({ unref: vi.fn() } as never);
 
     startJobs();
-    // Imediato no boot: sla_sweep + o job_claim do tcbx.
+    // Imediato no boot: sla_sweep, o dispatch do relay e o job_claim do tcbx.
     expect(rpcMock).toHaveBeenCalledWith("sla_sweep");
+    expect(dispatchMock).toHaveBeenCalledWith(client);
     expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "tcbx_reconcile", p_seconds: 290 });
-    // Três intervalos (SLA, TCBX, manutenção).
-    expect(setInterval).toHaveBeenCalledTimes(3);
+    // Quatro intervalos (SLA, relay, TCBX, manutenção).
+    expect(setInterval).toHaveBeenCalledTimes(4);
     expect((globalThis as Store).__crmsupJobsStarted).toBe(true);
 
     const before = rpcMock.mock.calls.length;
     startJobs(); // guarda
     expect(rpcMock.mock.calls.length).toBe(before);
-    expect(setInterval).toHaveBeenCalledTimes(3);
+    expect(setInterval).toHaveBeenCalledTimes(4);
   });
 });

@@ -24,7 +24,7 @@ import {
   storedMediaMetadata,
 } from "@/features/chat/lib/media/stored-media";
 import { overridableFrom } from "@/features/chat/lib/delivery-status";
-import { relayInboundMessage } from "@/features/integrations/server/relay-message";
+import { dispatchRelayBatch, enqueueRelay } from "@/features/integrations/server/relay-dispatch";
 import { safeEqual } from "@/lib/security/safe-equal";
 import type { Json } from "@/lib/supabase/types";
 
@@ -291,24 +291,25 @@ export async function POST(request: Request) {
     // 5) Repassa ao agente/automação só inbound, só mensagem NOVA e enquanto
     // status='bot'. Um reenvio da uazapi (a mesma mensagem de novo) não insere
     // nada, e repassá-lo faria a IA responder duas vezes.
-    // ⚠️ É "no máximo uma vez": se a mensagem foi gravada e a resposta do banco
-    // se perdeu (500 aqui), o reenvio não repassa, e a IA não a recebe. O log
-    // abaixo torna isso visível; o conserto é o outbox (Fase 6).
     if (normalized.direction === "inbound" && conv?.status === "bot") {
       if (conv.messageId) {
-        const delivery = {
+        // ENFILEIRA antes de responder (síncrono → durável): se o processo cair
+        // depois, o worker entrega dentro da janela de 120s. enqueueRelay tira a
+        // credencial da instância e só grava o evento se o envelope estiver limpo
+        // (fail-closed). Idempotente por messageId.
+        const enqueued = await enqueueRelay(supabase, {
           payload,
           conversationId: conv.id,
           contactId: identity.contactId,
           messageId: conv.messageId,
           media: stored,
           instanceToken: integration.token,
-        };
-        // Depois da resposta: o agente tem até 10 s, e a uazapi espera este
-        // 200. Com after(), o Next termina o repasse em curso antes de sair
-        // num deploy (um `void` solto morreria ali). relayInboundMessage nunca
-        // rejeita: o desfecho de cada repasse vai para integration_logs.
-        after(() => relayInboundMessage(supabase, delivery));
+        });
+        // Depois da resposta (after(), que o Next drena antes de sair num
+        // deploy): tentativa imediata de baixa latência. O worker é a rede de
+        // segurança — re-reivindica o que esta não entregou. O claim skip-locked
+        // serializa, então os dois não enviam a mesma mensagem duas vezes.
+        if (enqueued) after(() => dispatchRelayBatch(supabase));
       } else {
         console.info("[webhook/uazapi] inbound repetido, sem relay:", { conversationId: conv.id });
       }
