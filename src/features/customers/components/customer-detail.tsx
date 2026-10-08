@@ -89,7 +89,7 @@ export function CustomerDetail(props: CustomerDetailProps) {
 
       <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         <div className="min-w-0 space-y-6 lg:col-span-2">
-          <ContractsSection {...props} />
+          <ContractsSection {...props} hasActiveExternal={hasActiveExternal} />
           <ExternalContractsCard
             customerId={customer.id}
             contracts={externalContracts}
@@ -298,7 +298,7 @@ function CustomerHeader({
   );
 }
 
-function ContractsSection(props: CustomerDetailProps) {
+function ContractsSection(props: CustomerDetailProps & { hasActiveExternal: boolean }) {
   const router = useRouter();
   const reasonId = useId();
   const { customer } = props;
@@ -328,10 +328,14 @@ function ContractsSection(props: CustomerDetailProps) {
     const closed = props.contracts.filter((contract) => !isCurrent(contract));
     return (
       <>
-        <Section title="Contrato">
-          {current ? (
+        {/* Com contrato ativo na TCBX, o "Sem contrato vigente" interno some —
+            o contrato está no bloco "Contratos (TCBX)" abaixo. */}
+        {current ? (
+          <Section title="Contrato">
             <ContractCard role="admin" contract={current} {...context} />
-          ) : (
+          </Section>
+        ) : props.hasActiveExternal ? null : (
+          <Section title="Contrato">
             <NoCurrentContract>
               <ContractFormDialog
                 {...context}
@@ -344,8 +348,8 @@ function ContractsSection(props: CustomerDetailProps) {
                 </p>
               ) : null}
             </NoCurrentContract>
-          )}
-        </Section>
+          </Section>
+        )}
         {closed.length > 0 ? (
           <Section title="Contratos anteriores">
             <ContractHistory role="admin" contracts={closed} />
@@ -359,9 +363,15 @@ function ContractsSection(props: CustomerDetailProps) {
   const closed = props.contracts.filter((contract) => !isCurrent(contract));
   return (
     <>
-      <Section title="Contrato">
-        {current ? <ContractCard role="member" contract={current} /> : <NoCurrentContract />}
-      </Section>
+      {current ? (
+        <Section title="Contrato">
+          <ContractCard role="member" contract={current} />
+        </Section>
+      ) : props.hasActiveExternal ? null : (
+        <Section title="Contrato">
+          <NoCurrentContract />
+        </Section>
+      )}
       {closed.length > 0 ? (
         <Section title="Contratos anteriores">
           <ContractHistory role="member" contracts={closed} />

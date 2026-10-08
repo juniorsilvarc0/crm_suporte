@@ -43,6 +43,15 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 **Pendências / próximos passos:** o relay e o enriquecimento são dois `after()` independentes; se um dia virar gargalo, um outbox (Fase 6) coordena. PR 3 (webhook/polling da TCBX) mantém o espelho fresco depois.
 **Armadilhas descobertas:** o webhook é hotspot crítico (nunca pode quebrar) — o enriquecimento entra SÓ por `after()` e `enrichContactFromSource` nunca lança, então uma falha de TCBX/DB não derruba a mensagem. `identity.created` é o sinal de "1º contato" (vem da RPC `resolve_contact_identity`); num reenvio da 1ª mensagem, `created=false`, e não re-dispara.
 
+## [2026-10-08] Esconder "Sem contrato vigente" quando há contrato ativo na TCBX — fix
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** com contrato ativo na TCBX, a ficha mostrava o selo "Contrato ativo (TCBX)" no topo MAS ainda a seção interna "Sem contrato vigente"/"Novo contrato" — contraditório. O dono pediu para sumir.
+**Arquivos alterados:** `customers/components/customer-detail.tsx` (ContractsSection recebe `hasActiveExternal`; esconde a seção "Contrato" interna quando não há contrato interno e há ativo na TCBX); docs: UI.md §5.1, este PROGRESS.
+**O que foi feito:** quando `!current` (sem contrato interno vigente) e `hasActiveExternal`, a seção "Contrato" não renderiza (nem "Sem contrato vigente", nem "Novo contrato") — o contrato aparece no bloco "Contratos (TCBX)" abaixo. Vale para admin e member. Sem contrato ativo na TCBX, tudo como antes.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ (clientes) · build ✓.
+**Pendências:** nenhuma. (Em paralelo: PR do enriquecimento automático no 1º contato pelo WhatsApp.)
+
 ## [2026-10-07] Contratos da TCBX ESPELHADOS no banco (read-only) + reconciliação — PR 3a
 
 **Agente/Modelo:** Claude Opus 4.8.
