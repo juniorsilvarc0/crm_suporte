@@ -27,6 +27,33 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-07] Contratos da TCBX ESPELHADOS no banco (read-only) + reconciliação — PR 3a
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** persistir no CRM, read-only, os contratos que o cliente tem na TCBX (a fonte da verdade): reconciliar as empresas já cadastradas (estavam "sem contrato") e já trazer nas novas. Ninguém cria contrato à mão.
+**Arquivos alterados:**
+- **banco:** `supabase/migrations/20261007170000_contratos_externos.sql` (tabela `external_contracts`), `src/lib/supabase/database.types.ts` (regenerado);
+- **domínio:** `customers/server/external-contracts.ts` (store/sync/reconcile, +teste), `customers/queries/get-external-contracts.ts`, `customers/queries/get-customers-page.ts` (selo da lista, +teste), `customers/types.ts` (`StoredExternalContract`/`ReconcileContractsReport`/`has_external_active`), `customer-source/active-contract.ts` (tipo mais largo), `customers/server/backfill-external.ts` (grava o espelho na importação, reusa o contexto), `api/customers/route.ts` (sincroniza no cadastro manual);
+- **rotas:** `api/customers/sync-contracts/route.ts` (reconciliação em massa), `api/customers/[id]/sync-contracts/route.ts` (uma empresa);
+- **UI:** `customers/components/external-contracts-card.tsx` (reescrito: lê do banco + botão admin, +teste), `external-contract-badge.tsx` (selo verde, novo), `sync-contracts-button.tsx` (reconciliação em massa, +teste), `customer-detail.tsx` (bloco + selo no cabeçalho), `customers-table.tsx` (selo na lista), `clientes/[id]/page.tsx` e `clientes/page.tsx` (carrega o espelho / botão); docs: UI.md §5.1 + §5.7.12, este PROGRESS.
+
+**O que foi feito:**
+- **Tabela `external_contracts`** (espelho read-only): escrita só pelo servidor (service_role), RLS ligada e sem policy, upsert por `(customer_id, provider, external_id)`. `assert_security_baseline()` passou (32 tabelas).
+- **Sincronização** (`syncExternalContracts`): consulta a TCBX pelo CNPJ e grava; `not_found` esvazia o espelho (a fonte é a verdade), `unavailable`/`ambiguous` preservam o que havia. `storeExternalContracts` faz upsert e poda o que sumiu (marca com `synced_at` e apaga o anterior).
+- **Reconciliação em massa** por cursor: rota + botão admin "Sincronizar contratos (TCBX)" em /app/clientes. **Empresa nova** já nasce com os contratos (importação reusa o contexto já buscado; cadastro manual sincroniza).
+- **Exibição**: a ficha lê o espelho (bloco + "Atualizar da TCBX" + "atualizado em"); lista e cabeçalho ganham o selo **"Contrato ativo (TCBX)"** quando não há contrato interno — nunca junto com "Sem contrato".
+
+**Decisões tomadas (revisar):**
+- **Selo TCBX separado**, não mexe no `customers.contract_status` (que é do trigger/support_contracts). Precedência: interno → TCBX ativo → "Sem contrato".
+- **"Ativo" na lista/índice usa `status_vigencia = 'ativo'`** (campo canônico; a TCBX manda minúsculo — verificado por curl: `CT-2026-000261` veio `status_vigencia: "ativo"`). `isActiveContract` (ficha) cai em `status` na ausência — divergência só teórica (a TCBX sempre manda `status_vigencia`).
+- **`not_found` apaga o espelho da empresa.** Um 404 transitório da fonte limparia; risco aceito (a TCBX é a fonte da verdade).
+- **Chat continua AO VIVO** (sob demanda no atendimento); a ficha é o espelho persistido. Propósitos diferentes, de propósito.
+- O **chat não migrou** para o espelho: `use-external-context` segue servindo o grupo "Cliente (TCBX)" do chat.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes em `verify-webhook.test.ts`) · test ✓ (um instável conhecido — `contact-info-sheet`/`media-key` — oscila na suíte paralela, passa isolado e no CI) · build ✓. Migration aplicada no DB local + tipos regenerados (`pnpm db:types`). bug-hunter/verification-before-completion indisponíveis no ambiente ("Unknown skill") → revisão manual do diff (achou e corrigiu a falta do botão de reconciliação).
+**Pendências / próximos passos:** rodar "Sincronizar contratos (TCBX)" em produção (escreve em `external_contracts`, tabela nova e isolada); PR 3 (webhook/polling + id externo) mantém o espelho fresco sem ação manual. Rotas thin (`sync-contracts`) cobertas por api-guards + testes de domínio, sem teste de rota dedicado.
+**Armadilhas descobertas:** migration que cria tabela precisa satisfazer `assert_security_baseline()` (RLS ligada, zero grant anon/authenticated, zero policy fora do chat, service_role sem TRUNCATE/TRIGGER/REFERENCES — DELETE é permitido); o baseline checa PROPRIEDADES, não contagem fixa, então criar tabela é ok. O DB local do projeto é o compose próprio (`crm-suporte-db` na 54322), **não** `supabase start`; aplicar com `scripts/db-local-apply.sh` (exige o container de pé + schema `storage`).
+
 ## [2026-10-07] Contratos ativos da TCBX na ficha da empresa (somente leitura) — PR 2e
 
 **Agente/Modelo:** Claude Opus 4.8.
