@@ -364,6 +364,19 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"job_leases": {
+                  Row: {
+                    "job_cursor": string | null,"locked_until": string,"name": string,"updated_at": string
+                  }
+                  Insert: {
+                    "job_cursor"?: string | null,"locked_until"?: string,"name": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "job_cursor"?: string | null,"locked_until"?: string,"name"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"products": {
                   Row: {
                     "archived_at": string | null,"color": string,"created_at": string,"id": string,"name": string,"niche": string | null,"updated_at": string
@@ -904,6 +917,12 @@ isOneToOne: false
 { Args: { "p_actor_id": string,"p_customer_id": string }; Returns: {
               "contract_id": string,"monthly_amount": number
             }[]
+                           },
+"job_claim":
+{ Args: { "p_name": string,"p_seconds": number }; Returns: Json
+                           },
+"job_cursor_set":
+{ Args: { "p_cursor": string,"p_name": string }; Returns: undefined
                            },
 "normalize_phone":
 { Args: { "p_phone": string }; Returns: string
