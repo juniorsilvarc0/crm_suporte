@@ -5,7 +5,32 @@ export type Database = {
   
   "public": {
           Tables: {
-            "api_idempotency_keys": {
+            "agenda_blocks": {
+                  Row: {
+                    "all_day": boolean,"assignee_id": string | null,"created_at": string,"created_by_user_id": string | null,"ends_at": string,"id": string,"reason": string | null,"starts_at": string,"updated_at": string
+                  }
+                  Insert: {
+                    "all_day"?: boolean,"assignee_id"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"ends_at": string,"id"?: string,"reason"?: string | null,"starts_at": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "all_day"?: boolean,"assignee_id"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"ends_at"?: string,"id"?: string,"reason"?: string | null,"starts_at"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "agenda_blocks_assignee_id_fkey"
+      columns: ["assignee_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agenda_blocks_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"api_idempotency_keys": {
                   Row: {
                     "api_token_id": string,"attempt_id": string | null,"completed_at": string | null,"created_at": string,"expires_at": string,"id": string,"idempotency_key": string,"locked_until": string | null,"method": string,"request_hash": string,"response_body": Json | null,"response_status": number | null,"route": string,"state": string
                   }
@@ -81,6 +106,55 @@ isOneToOne: false
                   }
                   Relationships: [
                     
+                  ]
+                },"appointments": {
+                  Row: {
+                    "assignee_id": string | null,"contact_id": string | null,"created_at": string,"created_by_user_id": string | null,"customer_id": string | null,"duration_min": number | null,"id": string,"kind": string,"location": string | null,"notes": string | null,"scheduled_at": string,"status": string,"ticket_id": string | null,"title": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "assignee_id"?: string | null,"contact_id"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"customer_id"?: string | null,"duration_min"?: number | null,"id"?: string,"kind": string,"location"?: string | null,"notes"?: string | null,"scheduled_at": string,"status"?: string,"ticket_id"?: string | null,"title"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "assignee_id"?: string | null,"contact_id"?: string | null,"created_at"?: string,"created_by_user_id"?: string | null,"customer_id"?: string | null,"duration_min"?: number | null,"id"?: string,"kind"?: string,"location"?: string | null,"notes"?: string | null,"scheduled_at"?: string,"status"?: string,"ticket_id"?: string | null,"title"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "appointments_assignee_id_fkey"
+      columns: ["assignee_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "appointments_contact_id_fkey"
+      columns: ["contact_id"]
+isOneToOne: false
+      referencedRelation: "contacts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "appointments_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "appointments_customer_id_fkey"
+      columns: ["customer_id"]
+isOneToOne: false
+      referencedRelation: "customers"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "appointments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "appointments_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
                   ]
                 },"chat_conversations": {
                   Row: {
@@ -355,6 +429,37 @@ isOneToOne: false
       columns: ["customer_id"]
 isOneToOne: false
       referencedRelation: "customers"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"followups": {
+                  Row: {
+                    "created_at": string,"created_by_user_id": string | null,"done_at": string | null,"due_at": string,"id": string,"kind": string,"notes": string | null,"status": string,"ticket_id": string,"updated_at": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"created_by_user_id"?: string | null,"done_at"?: string | null,"due_at": string,"id"?: string,"kind"?: string,"notes"?: string | null,"status"?: string,"ticket_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by_user_id"?: string | null,"done_at"?: string | null,"due_at"?: string,"id"?: string,"kind"?: string,"notes"?: string | null,"status"?: string,"ticket_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "followups_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "followups_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "followups_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
       referencedColumns: ["id"]
     }
                   ]
