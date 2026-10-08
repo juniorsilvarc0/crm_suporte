@@ -27,6 +27,24 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 6a — SLA automático: sla_sweep + worker in-process (RUN_JOBS)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o SLA do CRM passar a estourar e fechar sozinho, sem container novo: carimbar `*_breached_at` uma vez por ticket e fechar o resolvido após 72h.
+**Arquivos alterados:**
+- banco: `supabase/migrations/20261008120000_sla_sweep.sql` (função `sla_sweep`), `supabase/tests/sla_sweep.sql` (+teste SQL), `src/lib/supabase/database.types.ts` (regenerado);
+- domínio: `src/lib/jobs/worker.ts` (`startJobs`/`runSlaSweep`, +teste), `src/instrumentation.ts` (hook do Next, liga o worker só com `RUN_JOBS=true`); docs: UI.md §5.24, este PROGRESS.
+**O que foi feito:**
+- **`sla_sweep()`** (SECURITY DEFINER, dona = papel das migrations; `service_role` só EXECUTE, porque não pode escrever em `tickets` — assert §14 de _tickets): (1) carimba `first_response_breached_at`/`resolution_breached_at` no **critério EXATO da view `ticket_queue`** (`sla_mode<>'stopped'`, 1ª resposta com `now()`, resolução com `coalesce(sla_paused_at, now())`); (2) fecha resolvido→fechado (há >72h) pelo helper interno `ticket_apply_transition(...,'system',null,null,...)`, replicando o travamento (conversa FOR UPDATE antes do ticket FOR NO KEY UPDATE), em levas de 200. Advisory lock (`pg_try_advisory_xact_lock`) garante **uma réplica por ciclo**.
+- **Worker in-process** (`src/instrumentation.ts` → `startJobs`): a cada 60s chama `sla_sweep`; guarda em `globalThis` (HMR), `timer.unref`, nunca lança. Ligado **só com `RUN_JOBS=true`** e runtime Node.
+**Decisões tomadas (revisar):**
+- **Worker in-process nas réplicas** (aprovado pelo dono), não container novo; o advisory lock dedupe entre réplicas. `RUN_JOBS` default **OFF**.
+- O fechamento automático **sobe `version`** (status é coluna de negócio) — esperado, invalida o form aberto; o sweep não passa `expected_version` (lê+trava, como a RPC). Carimbar breach **não** sobe version (só `updated_at`).
+- 6a faz **só `sla_sweep`**; os purges (`api_idempotency_purge`, `purge_integration_logs`) que o mesmo worker deveria chamar ficam para a 6b (pedido nos headers das migrations da Fase 5).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros) · test ✓ (worker + suíte completa) · build ✓. Migration aplicada no DB local + tipos regenerados; **smoke real no seed**: `{first_response:1, resolution:2, closed:1}`, 2ª passada `{0,0,0}` (idempotente), `service_role` executa, `anon` barrado. Teste SQL `sla_sweep.sql` (completude vs. a própria view + idempotência): 4 casos ok. (As falhas de `conversas.sql`/`segredo_integracao.sql` no teste SQL LOCAL são lixo do DB — uma `chat_integration` commitada em 2026-09-26; no CI o banco é limpo.)
+**Pendências / próximos passos:** ⚠️ **ATIVAR em produção = `RUN_JOBS=true` no `.env` do servidor** (edição de `.env` + recriar o web → autorização do dono, §3.9). Até lá, a migration está no ar mas o sweep não roda. Depois: 6b (outbox + webhooks, base do webhook da TCBX).
+**Armadilhas descobertas:** `service_role` NÃO escreve em `tickets` (assert local) → o sweep TEM que ser função SECURITY DEFINER. O `ticket_transition` público recusa ator "sistema" e exige versão → use o helper `ticket_apply_transition` direto, replicando o lock. O critério de breach precisa casar a view (`coalesce(sla_paused_at, now())` na resolução), senão carimba fora de hora.
+
 ## [2026-10-08] Fase 4 · PR 7 — Quadro (kanban de tickets) + chave "Lista | Quadro"
 
 **Agente/Modelo:** Claude Opus 4.8.
