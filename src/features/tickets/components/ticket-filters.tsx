@@ -135,6 +135,7 @@ export function TicketFilterFields({
   viewerId,
   items,
   protocolSearch,
+  hideStatus = false,
 }: {
   filters: TicketListFilters;
   onChange: (patch: Partial<TicketListFilters>) => void;
@@ -148,6 +149,8 @@ export function TicketFilterFields({
   items: readonly TicketListItem[];
   /** A busca é um protocolo: o servidor ignora o status. */
   protocolSearch: boolean;
+  /** No Quadro as colunas SÃO os status: o filtro de status não se aplica. */
+  hideStatus?: boolean;
 }) {
   const queueName = items.find((item) => item.product?.id === filters.fila)?.product?.name;
   const assigneeName = items.find((item) => item.assignee?.id === filters.responsavel)?.assignee?.name;
@@ -174,17 +177,19 @@ export function TicketFilterFields({
 
   return (
     <>
-      <FilterField label="Status">
-        <FormSelect
-          aria-label="Status"
-          value={filters.status}
-          onValueChange={(value) => onChange({ status: toStatusFilter(value) })}
-          options={statusOptions(statuses, filters.status)}
-        />
-        {protocolSearch ? (
-          <p className="text-xs text-muted-foreground">A busca por protocolo ignora o status.</p>
-        ) : null}
-      </FilterField>
+      {hideStatus ? null : (
+        <FilterField label="Status">
+          <FormSelect
+            aria-label="Status"
+            value={filters.status}
+            onValueChange={(value) => onChange({ status: toStatusFilter(value) })}
+            options={statusOptions(statuses, filters.status)}
+          />
+          {protocolSearch ? (
+            <p className="text-xs text-muted-foreground">A busca por protocolo ignora o status.</p>
+          ) : null}
+        </FilterField>
+      )}
       <FilterField label="Prioridade">
         <FormSelect
           aria-label="Prioridade"

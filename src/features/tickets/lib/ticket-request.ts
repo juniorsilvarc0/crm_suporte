@@ -77,6 +77,24 @@ export async function ticketRequest<
   }
 }
 
+export type TicketAction = "assign" | "transition";
+
+/**
+ * POST a uma ação de ticket (`/api/tickets/[id]/assign|transition`). No sucesso
+ * só `ok` importa (a tela relê do servidor); no erro, o corpo de erro das rotas.
+ * Compartilhado pela lista e pelo quadro.
+ */
+export function postTicketAction(
+  ticketId: string,
+  action: TicketAction,
+  body: Record<string, unknown>
+): Promise<TicketRequestResult<unknown>> {
+  return ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}/${action}`, {
+    method: "POST",
+    body,
+  });
+}
+
 /**
  * A 1ª mensagem de campo do corpo de erro (`errors`, o do zod e o do serviço),
  * ou `undefined`. É o texto do toast quando o erro é de um input. Serve ao

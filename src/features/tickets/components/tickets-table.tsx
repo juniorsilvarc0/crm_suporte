@@ -2,7 +2,6 @@
 
 import {
   useEffect,
-  useId,
   useMemo,
   useOptimistic,
   useRef,
@@ -13,9 +12,6 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import type { z } from "zod";
 import {
   ArrowRightIcon,
   CopyIcon,
@@ -35,9 +31,7 @@ import {
   ToolbarSearch,
 } from "@/components/data-display/data-toolbar";
 import { EmptyState } from "@/components/data-display/empty-state";
-import { ModalFooterActions, ModalShell } from "@/components/layout/modal-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,7 +41,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Table,
   TableBody,
@@ -56,9 +49,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { WhatsAppIcon } from "@/features/chat/components/whatsapp-icon";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
+import { CancelTicketDialog } from "@/features/tickets/components/cancel-ticket-dialog";
 import { SLA_TONE_STYLE, SlaBadge } from "@/features/tickets/components/sla-badge";
 import {
   TicketFilterFields,
@@ -84,11 +77,10 @@ import {
 import { formatProtocol, parseProtocolQuery } from "@/features/tickets/lib/protocol";
 import { allowedTargets } from "@/features/tickets/lib/state-machine";
 import {
-  ticketRequest,
+  postTicketAction,
+  type TicketAction,
   type TicketRequestFailure,
-  type TicketRequestResult,
 } from "@/features/tickets/lib/ticket-request";
-import { ticketTransitionSchema } from "@/features/tickets/schemas/ticket";
 import type {
   TicketListItem,
   TicketListParams,
@@ -113,21 +105,6 @@ export type TicketsTableCatalog = {
   transitions: TicketTransition[] | null;
   queues: TicketFilterQueue[] | null;
 };
-
-type TicketAction = "assign" | "transition";
-
-// POST /api/tickets/[id]/assign e /transition: no sucesso só `ok` importa (a
-// lista relê do servidor); no erro, o corpo de erro das rotas de ticket.
-function postTicketAction(
-  ticketId: string,
-  action: TicketAction,
-  body: Record<string, unknown>
-): Promise<TicketRequestResult<unknown>> {
-  return ticketRequest(`/api/tickets/${encodeURIComponent(ticketId)}/${action}`, {
-    method: "POST",
-    body,
-  });
-}
 
 function ticketHref(ticket: Pick<TicketListItem, "number">): string {
   return `/app/tickets/${ticket.number}`;
@@ -183,6 +160,7 @@ export function TicketsTable({
   catalog,
   users,
   viewerId,
+  viewSwitch,
 }: {
   page: TicketsPage;
   params: TicketListParams;
@@ -190,6 +168,8 @@ export function TicketsTable({
   /** `null` = a leitura da equipe falhou. */
   users: readonly TicketFilterUser[] | null;
   viewerId: string;
+  /** A chave "Lista | Quadro" (TicketViewSwitch), na barra. */
+  viewSwitch?: ReactNode;
 }) {
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
@@ -605,6 +585,7 @@ export function TicketsTable({
           onChange={(event) => setSearchQuery(event.target.value)}
         />
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {viewSwitch}
           <FilterButton activeCount={filterCount}>
             <TicketFilterFields
               filters={filters}
@@ -780,137 +761,5 @@ function TicketRowMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-type CancelFormValues = z.input<typeof ticketTransitionSchema>;
-type CancelFormOutput = z.output<typeof ticketTransitionSchema>;
-
-type CancelTicketDialogProps = {
-  ticket: TicketListItem | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCancelled: (ticket: TicketListItem) => void;
-  onFailure: (ticket: TicketListItem, result: TicketRequestFailure) => void;
-};
-
-/**
- * "Mover para Cancelado" pede o motivo (a rota exige; a RPC confere de novo).
- * Cada abertura é um formulário novo, com a versão que a lista leu.
- */
-function CancelTicketDialog({ ticket, open, ...props }: CancelTicketDialogProps) {
-  // Mesmo ajuste durante o render do formulário de empresa: o estado do
-  // react-hook-form sobreviveria entre aberturas, com o motivo da anterior.
-  const [session, setSession] = useState(0);
-  const [wasOpen, setWasOpen] = useState(open);
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) setSession((current) => current + 1);
-  }
-
-  if (!ticket) return null;
-  return <CancelTicketForm key={`${ticket.id}:${session}`} ticket={ticket} open={open} {...props} />;
-}
-
-function CancelTicketForm({
-  ticket,
-  open,
-  onOpenChange,
-  onCancelled,
-  onFailure,
-}: Omit<CancelTicketDialogProps, "ticket"> & { ticket: TicketListItem }) {
-  const fieldId = useId();
-  const [pending, setPending] = useState(false);
-  // Trava de duplo envio: o `pending` só desabilita o botão no próximo render.
-  const submitting = useRef(false);
-  const protocol = formatProtocol(ticket.number);
-
-  const {
-    register,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<CancelFormValues, unknown, CancelFormOutput>({
-    resolver: zodResolver(ticketTransitionSchema),
-    defaultValues: { to: "cancelado", version: ticket.version, reason: "" },
-  });
-
-  function handleOpenChange(next: boolean) {
-    // Não fecha no meio do envio: a resposta ainda vai pintar erro aqui.
-    if (!next && submitting.current) return;
-    onOpenChange(next);
-  }
-
-  async function onValid(values: CancelFormOutput) {
-    if (submitting.current) return;
-    submitting.current = true;
-    setPending(true);
-    const result = await postTicketAction(ticket.id, "transition", values);
-    submitting.current = false;
-    setPending(false);
-
-    if (result.ok) {
-      onOpenChange(false);
-      onCancelled(ticket);
-      return;
-    }
-    const reasonError = result.body?.errors?.reason?.[0];
-    if (reasonError) {
-      setError("reason", { type: "server", message: reasonError }, { shouldFocus: true });
-      return;
-    }
-    // Conflito: o ticket mudou, e o motivo já não vale para o que está lá.
-    if (result.status === 409 || result.status === 404) onOpenChange(false);
-    onFailure(ticket, result);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <ModalShell
-        size="compact"
-        title={`Cancelar ${protocol}?`}
-        description={ticket.title}
-        onSubmit={(event) => void handleSubmit(onValid)(event)}
-        footer={
-          <ModalFooterActions>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleOpenChange(false)}
-              disabled={pending}
-              className="h-11 sm:h-9"
-            >
-              Voltar
-            </Button>
-            <Button type="submit" variant="destructive" disabled={pending} className="h-11 sm:h-9">
-              {pending ? <Loader2Icon className="animate-spin" data-icon="inline-start" /> : null}
-              Cancelar ticket
-            </Button>
-          </ModalFooterActions>
-        }
-      >
-        <FieldGroup aria-busy={pending}>
-          <Field>
-            <FieldLabel htmlFor={`${fieldId}-reason`}>
-              <span>
-                Motivo do cancelamento<span className="text-primary" aria-hidden> *</span>
-              </span>
-            </FieldLabel>
-            <Textarea
-              id={`${fieldId}-reason`}
-              rows={3}
-              maxLength={500}
-              aria-required
-              aria-invalid={errors.reason ? true : undefined}
-              aria-describedby={errors.reason ? `${fieldId}-reason-error` : undefined}
-              {...register("reason")}
-            />
-            <FieldError id={`${fieldId}-reason-error`} className="text-xs">
-              {errors.reason?.message}
-            </FieldError>
-          </Field>
-        </FieldGroup>
-      </ModalShell>
-    </Dialog>
   );
 }

@@ -11,6 +11,19 @@ export const TICKETS_PATH = "/app/tickets";
 // Os filtros sem a página: é o que a barra edita e o que a paginação repete.
 export type TicketListFilters = Omit<TicketListParams, "page">;
 
+/** Os filtros (sem a página) a partir dos parâmetros lidos da URL. */
+export function toListFilters(params: TicketListParams): TicketListFilters {
+  return {
+    q: params.q,
+    status: params.status,
+    prioridade: params.prioridade,
+    fila: params.fila,
+    responsavel: params.responsavel,
+    sla: params.sla,
+    ordem: params.ordem,
+  };
+}
+
 export const DEFAULT_TICKET_LIST_FILTERS: TicketListFilters = {
   q: "",
   status: "ativos",
@@ -47,6 +60,39 @@ export function ticketListHref(filters: TicketListFilters): string {
 export function countTicketFilters(filters: TicketListFilters): number {
   return (
     Number(filters.status !== DEFAULT_TICKET_LIST_FILTERS.status) +
+    Number(filters.prioridade !== null) +
+    Number(filters.fila !== null) +
+    Number(filters.responsavel !== null) +
+    Number(filters.sla !== null)
+  );
+}
+
+// ── Quadro (/app/tickets/quadro) ──────────────────────────────────────────
+// As colunas SÃO os status, então o quadro não tem filtro de status, nem busca,
+// nem ordem (é sempre por prazo). Só prioridade, fila, responsável e SLA viajam
+// na URL — e são os mesmos que a chave "Lista | Quadro" preserva ao alternar.
+
+export const QUADRO_PATH = "/app/tickets/quadro";
+
+/** Os parâmetros da URL do quadro: prioridade, fila, responsável e SLA. */
+export function ticketBoardSearch(filters: TicketListFilters): Record<string, string> {
+  const search: Record<string, string> = {};
+  if (filters.prioridade) search.prioridade = filters.prioridade;
+  if (filters.fila) search.fila = filters.fila;
+  if (filters.responsavel) search.responsavel = filters.responsavel;
+  if (filters.sla) search.sla = filters.sla;
+  return search;
+}
+
+/** URL do quadro com os filtros que se aplicam a ele. */
+export function ticketBoardHref(filters: TicketListFilters): string {
+  const query = new URLSearchParams(ticketBoardSearch(filters)).toString();
+  return query ? `${QUADRO_PATH}?${query}` : QUADRO_PATH;
+}
+
+/** Quantos filtros do quadro fogem do padrão (sem status). */
+export function countTicketBoardFilters(filters: TicketListFilters): number {
+  return (
     Number(filters.prioridade !== null) +
     Number(filters.fila !== null) +
     Number(filters.responsavel !== null) +

@@ -476,6 +476,16 @@ export type TicketsPage = {
   fetchedAt: string;
 };
 
+// O Quadro (kanban): os tickets ATIVOS (não-terminais), sem paginação, para
+// agrupar por coluna de status na tela. `items: null` = a leitura falhou
+// (a tela diz "não foi possível carregar", nunca "nenhum ticket"). `capped` =
+// bateu no teto BOARD_MAX e há mais tickets ativos do que o quadro mostra.
+export type TicketsBoard = {
+  items: TicketListItem[] | null;
+  capped: boolean;
+  fetchedAt: string;
+};
+
 // Uma seção do Início (getTicketQueue): até 8 itens, e `total` para o
 // "Ver todos (N)". `failed` isola a falha na seção.
 export type TicketQueueSection = {
