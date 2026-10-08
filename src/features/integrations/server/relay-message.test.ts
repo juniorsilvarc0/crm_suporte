@@ -370,51 +370,10 @@ describe("relayInboundMessage: o que sai", () => {
   });
 });
 
-describe("relayInboundMessage: a credencial da instância não sai", () => {
-  it.each([
-    ["dentro da mensagem", { ...payload, message: { ...payload.message, instance: { token: INSTANCE_TOKEN } } }],
-    ["numa chave de raiz com outro nome", { ...payload, apikey: INSTANCE_TOKEN }],
-    ["no meio de um texto", { ...payload, chat: { note: `use ${INSTANCE_TOKEN} para enviar` } }],
-  ])("token %s: nada é enviado, e o motivo fica no registro", async (_label, hostile) => {
-    await relay({ payload: hostile as RelayDelivery["payload"] });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(delayMock).not.toHaveBeenCalled();
-    expect(logged()).toEqual([errorRow("O envelope trazia a credencial da instância: nada foi enviado.")]);
-    expect(JSON.stringify(logged())).not.toContain(INSTANCE_TOKEN);
-    expect(JSON.stringify([...warn.mock.calls, ...error.mock.calls])).not.toContain(INSTANCE_TOKEN);
-  });
-
-  it("token com caractere que o JSON escapa também é achado", async () => {
-    const odd = 'tok"en\\com-aspas-e-barra-0001';
-
-    await relay({ instanceToken: odd, payload: { ...payload, chat: { k: odd } } as RelayDelivery["payload"] });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(logged()).toEqual([errorRow("O envelope trazia a credencial da instância: nada foi enviado.")]);
-  });
-
-  it("token curto demais para ser procurado não bloqueia mensagem que tenha a palavra", async () => {
-    await relay({
-      instanceToken: "token",
-      payload: { ...payload, token: "token", message: { ...payload.message, text: "qual é o token?" } },
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(sentBody()).message.text).toBe("qual é o token?");
-    expect(JSON.parse(sentBody())).not.toHaveProperty("token");
-  });
-
-  it("15 caracteres ainda é curto; 16 já é procurado", async () => {
-    const short = "a1b2c3d4e5f6g7h";
-    await relay({ instanceToken: short, payload: { ...payload, chat: { k: short } } as RelayDelivery["payload"] });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    const long = `${short}8`;
-    await relay({ instanceToken: long, payload: { ...payload, chat: { k: long } } as RelayDelivery["payload"] });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-});
+// A credencial da instância NÃO sai do CRM: isso agora é garantido ao ENFILEIRAR
+// (enqueueRelay tira o token e faz o leak-scan fail-closed). Os casos estão em
+// relay-dispatch.test.ts > "a credencial da instância não é enfileirada". Aqui,
+// o payload que chega já está limpo (o outbox nunca guardou o token).
 
 describe("relayInboundMessage: o registro em integration_logs", () => {
   it("entrega: status ok, o HTTP do agente e a latência do envio", async () => {
@@ -765,7 +724,8 @@ describe("relayInboundMessage: nunca rejeita (quem chama não espera)", () => {
   it("registro que o banco recusa: resolve mesmo assim", async () => {
     h.tables.integration_logs = () => ({ data: null, error: { message: "permission denied" } });
 
-    await expect(relay()).resolves.toBeUndefined();
+    // O log falhou em silêncio, mas a entrega valeu: devolve o desfecho de sucesso.
+    await expect(relay()).resolves.toMatchObject({ error: null });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -776,7 +736,8 @@ describe("relayInboundMessage: nunca rejeita (quem chama não espera)", () => {
       throw failure;
     };
 
-    await expect(relay()).resolves.toBeUndefined();
+    // Falha inesperada é engolida: devolve null (nada a settlar como entrega).
+    await expect(relay()).resolves.toBeNull();
 
     expect(error).toHaveBeenCalledWith("[relay] falha inesperada:", failure);
   });
@@ -786,7 +747,7 @@ describe("relayInboundMessage: nunca rejeita (quem chama não espera)", () => {
     vi.spyOn(response.body!, "cancel").mockRejectedValue(new Error("stream travado"));
     agent(() => response);
 
-    await expect(relay()).resolves.toBeUndefined();
+    await expect(relay()).resolves.toMatchObject({ error: null });
 
     expect(logged()).toEqual([expect.objectContaining({ status: "ok", http_status: 200 })]);
   });
