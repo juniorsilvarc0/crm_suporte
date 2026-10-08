@@ -7,6 +7,7 @@ const {
   secretMock,
   identityMock,
   relayMock,
+  enrichMock,
   downloadMock,
   persistMediaMock,
   afterCallbacks,
@@ -16,6 +17,7 @@ const {
   secretMock: vi.fn(),
   identityMock: vi.fn(),
   relayMock: vi.fn(),
+  enrichMock: vi.fn(),
   downloadMock: vi.fn(),
   persistMediaMock: vi.fn(),
   // O que o webhook agenda com after(): no Next, roda depois da resposta.
@@ -43,6 +45,11 @@ vi.mock("@/features/contacts/queries/resolve-contact-identity", () => ({
 // Aqui fica QUANDO o webhook repassa, e com o quê.
 vi.mock("@/features/integrations/server/relay-message", () => ({
   relayInboundMessage: relayMock,
+}));
+// Enriquecimento no 1º contato: aqui fica QUANDO o webhook o agenda (contato
+// novo). O que ele faz (TCBX, empresa, contratos) é de enrich-contact.test.ts.
+vi.mock("@/features/customers/server/enrich-contact", () => ({
+  enrichContactFromSource: enrichMock,
 }));
 vi.mock("@/features/chat/lib/connection/uazapi", () => ({
   downloadUazapiMedia: downloadMock,
@@ -282,6 +289,7 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
       normalizedPhone: "11999998888",
       created: false,
     });
+    enrichMock.mockResolvedValue({ state: "not_found" });
     // Nada aqui pode sair para a rede: o repasse é de mentira.
     fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -336,6 +344,39 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
     expect(conversationFilters[1]).toEqual([["id", CONVERSATION_ID]]);
     expect(relayMock).toHaveBeenCalledTimes(1);
     expect(relayMock.mock.calls[0][1]).toEqual(relayed());
+  });
+
+  it("primeiro contato (created): agenda o enriquecimento pela TCBX, depois da resposta", async () => {
+    conversationStatus = "bot";
+    identityMock.mockResolvedValue({
+      contactId: "contact-1",
+      normalizedPhone: "11999998888",
+      created: true,
+    });
+
+    const response = await POST(webhook(SECRET, inbound));
+
+    expect(response.status).toBe(200);
+    // Enriquecimento + relay, os dois com after(): ainda não rodaram.
+    expect(afterCallbacks).toHaveLength(2);
+    expect(enrichMock).not.toHaveBeenCalled();
+
+    await runAfter();
+
+    expect(enrichMock).toHaveBeenCalledTimes(1);
+    expect(enrichMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ contactId: "contact-1", phone: expect.any(String) })
+    );
+  });
+
+  it("contato já existente (created=false): não enriquece", async () => {
+    conversationStatus = "bot";
+
+    await POST(webhook(SECRET, inbound));
+    await runAfter();
+
+    expect(enrichMock).not.toHaveBeenCalled();
   });
 
   it("o envelope segue como chegou: quem tira o token da instância é o repasse", async () => {

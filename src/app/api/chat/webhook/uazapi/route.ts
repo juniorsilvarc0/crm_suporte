@@ -11,6 +11,7 @@ import {
   type UazapiEnvelope,
 } from "@/features/chat/lib/normalizers/uazapi";
 import { upsertMessage } from "@/features/chat/lib/upsert-message";
+import { enrichContactFromSource } from "@/features/customers/server/enrich-contact";
 import { resolveContactIdentity } from "@/features/contacts/queries/resolve-contact-identity";
 import {
   getChatIntegrationSecret,
@@ -271,6 +272,21 @@ export async function POST(request: Request) {
     });
 
     const conv = await upsertMessage(integration.id, identity.contactId, normalized, stored);
+
+    // 4.1) Primeiro contato deste número: procura o cliente na TCBX e, se achar a
+    //      empresa (PJ com CNPJ), vincula o contato e espelha os contratos.
+    //      Depois da resposta (after()), best-effort — enrichContactFromSource
+    //      nunca lança, e o webhook responde 200 sem esperar por isso. Número
+    //      fora da base (ou PF): o contato fica SEM empresa (já foi criado por
+    //      resolveContactIdentity). `created` garante uma vez só por contato.
+    if (identity.created) {
+      after(() =>
+        enrichContactFromSource(supabase, {
+          contactId: identity.contactId,
+          phone: normalized.contact_phone,
+        })
+      );
+    }
 
     // 5) Repassa ao agente/automação só inbound, só mensagem NOVA e enquanto
     // status='bot'. Um reenvio da uazapi (a mesma mensagem de novo) não insere
