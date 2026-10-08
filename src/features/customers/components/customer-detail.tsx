@@ -32,9 +32,15 @@ import type {
   SupportPlanOption,
 } from "@/features/contracts/types";
 import { CustomerFormDialog } from "@/features/customers/components/customer-form-dialog";
+import { ExternalContractBadge } from "@/features/customers/components/external-contract-badge";
 import { ExternalContractsCard } from "@/features/customers/components/external-contracts-card";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
-import type { CustomerContact, CustomerRecord } from "@/features/customers/types";
+import { isActiveContract } from "@/features/customer-source/active-contract";
+import type {
+  CustomerContact,
+  CustomerRecord,
+  StoredExternalContract,
+} from "@/features/customers/types";
 import type { ProductOption } from "@/features/products/types";
 import { formatCnpj } from "@/lib/formatters/cnpj";
 import { formatDate, formatDateTime } from "@/lib/formatters/date";
@@ -44,6 +50,8 @@ type CustomerDetailBase = {
   customer: CustomerRecord;
   /** `null` = a leitura falhou: "não foi possível carregar", nunca "nenhum". */
   contacts: CustomerContact[] | null;
+  /** Contratos espelhados da TCBX (read-only). Vazio = nenhum espelhado. */
+  externalContracts: StoredExternalContract[];
 };
 
 /**
@@ -72,16 +80,21 @@ function isCurrent(contract: ContractView): boolean {
 
 /** Ficha da empresa: cabeçalho, contrato, histórico, contatos e observações. */
 export function CustomerDetail(props: CustomerDetailProps) {
-  const { customer, contacts } = props;
+  const { customer, contacts, externalContracts } = props;
+  const hasActiveExternal = externalContracts.some(isActiveContract);
 
   return (
     <div className="space-y-6 lg:space-y-8">
-      <CustomerHeader customer={customer} role={props.role} />
+      <CustomerHeader customer={customer} role={props.role} hasActiveExternal={hasActiveExternal} />
 
       <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         <div className="min-w-0 space-y-6 lg:col-span-2">
           <ContractsSection {...props} />
-          <ExternalContractsCard customerId={customer.id} hasCnpj={Boolean(customer.cnpj)} />
+          <ExternalContractsCard
+            customerId={customer.id}
+            contracts={externalContracts}
+            canSync={props.role === "admin" && Boolean(customer.cnpj)}
+          />
         </div>
         <div className="min-w-0 space-y-6">
           <ContactsSection contacts={contacts} />
@@ -103,9 +116,11 @@ export function CustomerDetail(props: CustomerDetailProps) {
 function CustomerHeader({
   customer,
   role,
+  hasActiveExternal,
 }: {
   customer: CustomerRecord;
   role: "admin" | "member";
+  hasActiveExternal: boolean;
 }) {
   const router = useRouter();
   const fieldId = useId();
@@ -196,7 +211,17 @@ function CustomerHeader({
           <p className="mt-1 break-words text-sm text-muted-foreground tabular-nums">{subtitle}</p>
           <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
             <div className="min-w-0">
-              <ContractStatusBadge status={customer.contract_status} />
+              {/* Selo interno (support_contracts) tem prioridade; sem ele, o
+                  espelho da TCBX informa que há contrato ativo; senão, "Sem
+                  contrato". Nunca os dois juntos (evita "Sem contrato" ao lado
+                  de "Ativo (TCBX)"). */}
+              {customer.contract_status ? (
+                <ContractStatusBadge status={customer.contract_status} />
+              ) : hasActiveExternal ? (
+                <ExternalContractBadge />
+              ) : (
+                <ContractStatusBadge status={null} />
+              )}
             </div>
             {archived ? (
               <Badge variant="outline" className="text-muted-foreground">

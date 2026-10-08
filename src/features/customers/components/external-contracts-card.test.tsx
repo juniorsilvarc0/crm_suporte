@@ -3,10 +3,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ExternalContractsCard } from "@/features/customers/components/external-contracts-card";
-import type {
-  CustomerContext,
-  CustomerContextResult,
-} from "@/features/customer-source/types";
+import type { StoredExternalContract } from "@/features/customers/types";
+
+const { refreshMock, successMock, errorMock } = vi.hoisted(() => ({
+  refreshMock: vi.fn(),
+  successMock: vi.fn(),
+  errorMock: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: refreshMock }) }));
+vi.mock("sonner", () => ({ toast: { success: successMock, error: errorMock } }));
 
 const fetchMock = vi.fn();
 
@@ -18,29 +24,28 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-function context(contratos: CustomerContext["contratos"]): CustomerContext {
+function contract(overrides: Partial<StoredExternalContract>): StoredExternalContract {
   return {
-    externalId: "33",
-    tipoPessoa: "PJ",
-    documento: "12321030000189",
-    razaoSocial: "Peteco Peças",
-    nomeFantasia: null,
-    status: "ativo",
-    emailPrincipal: null,
-    emailFinanceiro: null,
-    telefonePrincipal: null,
-    telefoneSecundario: null,
-    contratos,
-    titulosEmAberto: [],
+    id: "ec1",
+    externalId: "261",
+    numero: "CT-2026-000261",
+    modalidade: "Suporte mensal",
+    status: "assinado",
+    statusVigencia: "ativo",
+    dataInicio: "2026-01-15",
+    dataFim: null,
+    vencimentoDia: 10,
+    dataAtivacao: "2026-01-15",
+    syncedAt: "2026-10-07T23:00:00.000Z",
+    ...overrides,
   };
-}
-
-function result(body: CustomerContextResult): void {
-  fetchMock.mockResolvedValue(jsonResponse({ ok: true, result: body }));
 }
 
 beforeEach(() => {
   fetchMock.mockReset();
+  refreshMock.mockReset();
+  successMock.mockReset();
+  errorMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -49,97 +54,59 @@ afterEach(() => {
 });
 
 describe("ExternalContractsCard", () => {
-  it("não consulta nem renderiza quando a empresa não tem CNPJ", () => {
-    render(<ExternalContractsCard customerId="c1" hasCnpj={false} />);
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("não renderiza quando não há contrato espelhado e não pode sincronizar", () => {
+    render(<ExternalContractsCard customerId="c1" contracts={[]} canSync={false} />);
     expect(screen.queryByText("Contratos (TCBX)")).not.toBeInTheDocument();
   });
 
-  it("some por completo quando a integração está desligada", async () => {
-    result({ state: "not_configured" });
-    render(<ExternalContractsCard customerId="c1" hasCnpj />);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/customers/c1/external-context"));
-    expect(screen.queryByText("Contratos (TCBX)")).not.toBeInTheDocument();
-  });
-
-  it("lista só os contratos ativos, com número, período e vencimento", async () => {
-    result({
-      state: "ok",
-      context: context([
-        {
-          id: 1,
-          numero: "0001",
-          modalidade: "Suporte mensal",
-          vigencia: null,
-          dataInicio: "2026-01-15",
-          dataFim: null,
-          vencimentoDia: 10,
-          status: "assinado",
-          statusVigencia: "ativo",
-          dataAtivacao: "2026-01-15",
-        },
-        {
-          id: 2,
-          numero: "0002",
-          modalidade: "Antigo",
-          vigencia: null,
-          dataInicio: "2020-01-01",
-          dataFim: "2021-01-01",
-          vencimentoDia: null,
-          status: "encerrado",
-          statusVigencia: "encerrado",
-          dataAtivacao: null,
-        },
-      ]),
-    });
-    render(<ExternalContractsCard customerId="c1" hasCnpj />);
-
-    expect(await screen.findByText("Contrato 0001")).toBeInTheDocument();
+  it("lista os contratos com a situação e a data de sincronização", () => {
+    render(
+      <ExternalContractsCard
+        customerId="c1"
+        canSync={false}
+        contracts={[
+          contract({ id: "a", numero: "CT-1", statusVigencia: "ativo" }),
+          contract({ id: "b", numero: "CT-2", status: "encerrado", statusVigencia: "encerrado" }),
+        ]}
+      />
+    );
+    expect(screen.getByText("Contratos (TCBX)")).toBeInTheDocument();
+    expect(screen.getByText("Contrato CT-1")).toBeInTheDocument();
     expect(screen.getByText("Ativo")).toBeInTheDocument();
-    expect(screen.getByText("Suporte mensal")).toBeInTheDocument();
-    expect(screen.getByText("Vencimento: dia 10")).toBeInTheDocument();
-    // O contrato encerrado não entra.
-    expect(screen.queryByText("Contrato 0002")).not.toBeInTheDocument();
+    expect(screen.getByText("Contrato CT-2")).toBeInTheDocument();
+    expect(screen.getByText("encerrado")).toBeInTheDocument();
+    expect(screen.getByText(/Atualizado da TCBX em/)).toBeInTheDocument();
+    // Member não vê o botão de sincronizar.
+    expect(screen.queryByRole("button", { name: "Atualizar da TCBX" })).not.toBeInTheDocument();
   });
 
-  it("avisa quando há cadastro mas nenhum contrato ativo", async () => {
-    result({
-      state: "ok",
-      context: context([
-        {
-          id: 3,
-          numero: "0003",
-          modalidade: null,
-          vigencia: null,
-          dataInicio: null,
-          dataFim: null,
-          vencimentoDia: null,
-          status: "encerrado",
-          statusVigencia: "encerrado",
-          dataAtivacao: null,
-        },
-      ]),
-    });
-    render(<ExternalContractsCard customerId="c1" hasCnpj />);
-    expect(await screen.findByText("Nenhum contrato ativo na TCBX.")).toBeInTheDocument();
+  it("admin sem contrato vê o aviso e o botão de atualizar", () => {
+    render(<ExternalContractsCard customerId="c1" contracts={[]} canSync />);
+    expect(screen.getByText("Contratos (TCBX)")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum contrato da TCBX para esta empresa.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Atualizar da TCBX" })).toBeInTheDocument();
   });
 
-  it("mostra 'sem cadastro' quando a TCBX não acha a empresa", async () => {
-    result({ state: "not_found" });
-    render(<ExternalContractsCard customerId="c1" hasCnpj />);
-    expect(await screen.findByText("Sem cadastro na TCBX.")).toBeInTheDocument();
+  it("atualizar da TCBX chama a rota e recarrega quando dá certo", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true, result: { state: "ok" } }));
+    render(<ExternalContractsCard customerId="c1" contracts={[]} canSync />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Atualizar da TCBX" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/customers/c1/sync-contracts", { method: "POST" })
+    );
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(successMock).toHaveBeenCalled();
   });
 
-  it("mostra indisponível com 'Tentar de novo' e reconsulta ao clicar", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: false }, 500));
-    render(<ExternalContractsCard customerId="c1" hasCnpj />);
+  it("atualizar avisa e NÃO recarrega quando a integração está desligada", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true, result: { state: "not_configured" } }));
+    render(<ExternalContractsCard customerId="c1" contracts={[]} canSync />);
 
-    const retry = await screen.findByRole("button", { name: "Tentar de novo" });
-    expect(screen.getByText("Não foi possível consultar a TCBX.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Atualizar da TCBX" }));
 
-    result({ state: "not_found" });
-    await userEvent.click(retry);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Sem cadastro na TCBX.")).toBeInTheDocument();
+    await waitFor(() => expect(errorMock).toHaveBeenCalled());
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

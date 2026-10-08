@@ -8,8 +8,10 @@ import { getSupportPlans } from "@/features/contracts/queries/get-support-plans"
 import type { AdminContractView } from "@/features/contracts/types";
 import { CustomerDetail } from "@/features/customers/components/customer-detail";
 import { getCustomerDetail } from "@/features/customers/queries/get-customer-detail";
+import { getExternalContracts } from "@/features/customers/queries/get-external-contracts";
 import { getProducts } from "@/features/products/queries/get-products";
 import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,10 +38,11 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     if (detail.status === "not_found") notFound();
     if (detail.status === "error") return <DetailUnavailable />;
 
-    const [amounts, products, plans] = await Promise.all([
+    const [amounts, products, plans, externalContracts] = await Promise.all([
       getContractAmounts(viewer.id, id),
       getProducts(),
       getSupportPlans(),
+      getExternalContracts(createSupabaseAdminClient(), id),
     ]);
     // Valor ausente (RPC falhou, ou o contrato não veio nela) = "Valor
     // indisponível" na tela, nunca R$ 0.
@@ -60,6 +63,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
           contracts={contracts}
           products={products}
           plans={plans}
+          externalContracts={externalContracts}
         />
       </main>
     );
@@ -69,6 +73,8 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   if (detail.status === "not_found") notFound();
   if (detail.status === "error") return <DetailUnavailable />;
 
+  const externalContracts = await getExternalContracts(createSupabaseAdminClient(), id);
+
   return (
     <main className={PAGE_CLASS}>
       <CustomerDetail
@@ -76,6 +82,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         customer={detail.customer}
         contacts={detail.contacts}
         contracts={detail.contracts}
+        externalContracts={externalContracts}
       />
     </main>
   );

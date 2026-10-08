@@ -4,6 +4,7 @@ import { ListPagination } from "@/components/data-display/list-pagination";
 import { BackfillExternalButton } from "@/features/customers/components/backfill-external-button";
 import { CustomerFormDialog } from "@/features/customers/components/customer-form-dialog";
 import { CustomersTable } from "@/features/customers/components/customers-table";
+import { SyncContractsButton } from "@/features/customers/components/sync-contracts-button";
 import {
   getCustomersPage,
   parseCustomerListParams,
@@ -38,6 +39,7 @@ export default async function ClientesPage({
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {viewer.role === "admin" ? <BackfillExternalButton /> : null}
+            {viewer.role === "admin" ? <SyncContractsButton /> : null}
             <CustomerFormDialog />
           </div>
         }

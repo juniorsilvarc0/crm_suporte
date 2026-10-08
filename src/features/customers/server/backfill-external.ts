@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveCustomerByPhone } from "@/features/customer-source/resolve-by-phone";
+import { storeExternalContracts } from "@/features/customers/server/external-contracts";
 import type { BackfillReport } from "@/features/customers/types";
 import { normalizeCnpj } from "@/lib/formatters/cnpj";
 import type { Database } from "@/lib/supabase/types";
@@ -144,6 +145,13 @@ export async function backfillExternalCustomers(
       if (linkError) {
         report.errors += 1;
         continue;
+      }
+
+      // A empresa nova já nasce com os contratos da TCBX: reaproveita o contexto
+      // que a resolução por telefone JÁ trouxe (sem uma 2ª chamada à fonte).
+      // Best-effort: falha aqui não desfaz o vínculo (storeExternalContracts loga).
+      if (customerId) {
+        await storeExternalContracts(supabase, customerId, result.context.contratos);
       }
     }
     report.linked += 1;

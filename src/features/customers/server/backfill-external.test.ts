@@ -58,6 +58,12 @@ function makeClient(contacts: Contact[], existingCnpjs: Record<string, string> =
           }),
         };
       }
+      if (table === "external_contracts") {
+        // O backfill grava o espelho dos contratos (storeExternalContracts). O
+        // contexto `pj()` traz `contratos: []`, então só o prune (delete) roda.
+        const del = { eq: () => del, lt: () => Promise.resolve({ error: null }) };
+        return { upsert: () => Promise.resolve({ error: null }), delete: () => del };
+      }
       // customers
       let cnpj = "";
       const customers = {
