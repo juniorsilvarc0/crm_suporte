@@ -339,6 +339,14 @@ paginação compartilhada
 - No Chat, `contact_phone` é apresentação canônica e pode ter máscara; ações de envio usam a identidade original do canal (`external_id`). Nunca converta o campo exibido em destinatário do provedor.
 - Se uma pessoa tiver mais de uma oportunidade ativa, alterar sua etapa geral mostra conflito e orienta mover o card correto no Funil; a interface nunca escolhe uma oportunidade silenciosamente.
 
+### §5.1.1 Agenda — lista (`/app/agendamentos`)
+
+Recuperada da clínica, reinterpretada para suporte (Fase 7). A **2a entrega a lista**: tela de dados (§5.1) com uma tabela de compromissos — quando, **tipo** (selo), assunto, empresa, técnico, **situação** (selo) e ações (editar/excluir). O "Novo agendamento" e o editar usam o **mesmo diálogo** (ModalShell); a empresa é escolhida pelo `CustomerPicker` (o mesmo do chat/contatos), o técnico por `FormSelect` de `/api/app-users`, e data/hora pelos dois campos de `DateTimeFields` (nunca `datetime-local` — §geometria mobile).
+
+- **Dois códigos de cor, de propósito** (como o §3.4 já previa): o **tipo** (`appointmentKindColor`: visita_tecnica=sky, treinamento=violet, implantacao=emerald, acesso_remoto=amber) e a **situação** (`appointmentStatusColor`: agendado=slate, confirmado=blue, realizado=emerald, cancelado=rose). Ambos pelo sistema de 19 cores — `getColorStyle(name).badge`, **sem hex no componente** (§3).
+- **Tipo e situação são enum fixo**, não tabela configurável (a clínica tinha `appointment_types`/`clinic_units`/`agenda_hours`; aqui não).
+- **Views de calendário (mês/grade/semana/dia) e follow-ups ficam para as fatias 2b/2c.** O vínculo a ticket/contato nasce do contexto quando o compromisso vem de um ticket (2c); o diálogo standalone liga só empresa + técnico.
+
 ### §5.2 Funil (`/app/funil`)
 
 Kanban com `@dnd-kit`. Colunas vêm do banco (`board_columns`), com cor e `stage_type`. Um lead pode ter N cards (deals).

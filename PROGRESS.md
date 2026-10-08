@@ -27,6 +27,34 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 7 PR 2a: Agenda — lista + criar/editar/excluir + menu
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** primeira tela da Agenda — `/app/agendamentos` com a LISTA de compromissos e o diálogo de criar/editar/excluir. As views de calendário (mês/grade/semana/dia) e os follow-ups ficam para as próximas fatias.
+**Arquivos alterados:**
+- domínio/feature: `src/features/appointments/lib/appointment-kind.ts` + `appointment-status.ts` (enum fixo, rótulo e cor por `ColorName`, +testes), `schemas/appointment.ts` (zod compartilhado dialog↔rota, +teste), `types.ts` (Appointment + embeds), `queries/get-appointments.ts` (leitura resiliente com embeds FK-hinted);
+- back: `src/app/api/appointments/route.ts` (POST) e `[id]/route.ts` (PATCH+DELETE), com `requireDashboardUser` na 1ª linha;
+- UI: `components/date-time-fields.tsx` (recuperado do legado, puro), `appointment-dialog.tsx` (criar/editar, estado controlado), `appointments-table.tsx` (lista + excluir com confirmação), `app/(dashboard)/app/agendamentos/{page,loading}.tsx`, `src/config/navigation.ts` (+item "Agenda" em Operação e no TOP_NAV_SPEC) + `navigation.test.ts`; docs: `UI.md` + este PROGRESS.
+**O que foi feito:**
+- **Enum fixo de tipo e status** (substitui a tabela configurável `appointment_types` + o combobox da clínica): `appointmentKind{Label,Color,Options}` / `appointmentStatus{Label,Color,Options}`, cor pelo sistema de 19 cores (`getColorStyle(name).badge`) — sem hex no componente (UI.md §cores).
+- **Lista** (`appointments-table`): colunas quando/tipo/assunto/empresa/técnico/situação + ações; selo por tipo e por status; vazio com `EmptyState`.
+- **Dialog**: tipo, título, data/hora (DateTimeFields) + duração, local, situação, técnico (select de `/api/app-users`, que já existia "para o dialog de agendamento"), empresa (via `CustomerPicker`, mesmo seletor do chat/contatos), observações. POST/PATCH; erro de campo pintado a partir do `errors` da rota.
+- **Rotas CRUD** (molde a, insert/update direto na tabela — sem RPC): FK inválida → 422; `created_by_user_id` vem do viewer, não do corpo.
+**Decisões tomadas (revisar):**
+- **Vínculo só a EMPRESA + TÉCNICO no dialog standalone.** `ticket_id`/`contact_id` nascerão do CONTEXTO quando o compromisso for criado a partir de um ticket (2c) — evita construir combobox de contato/ticket agora (não existe pronto; `CustomerPicker` é lista de busca).
+- **Status é campo editável** no criar/editar (a cascata de funil da clínica morreu); sem botão "Marcar realizado" dedicado.
+- **Menu em Operação** (todos), não admin — como no legado.
+- **2a NÃO desvincula empresa** pelo dialog (trocar sim, limpar não): o `optionalUuid` trata `""`/null como "não mexe". Limpar vínculo fica para quando precisar (migration/schema não muda, só a rota).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os mesmos 9 warnings pré-existentes em `verify-webhook.test.ts`, 0 novos) · test ✓ (4596/4596; `api-guards`/`pages-guard` cobrem a rota e a página novas) · build ✓ (rota `/app/agendamentos` registrada). bug-hunter/verification-before-completion: skills não instaladas — revisão à mão.
+**Pendências / próximos passos:**
+- **2b:** views de calendário (mês, grade de horários, semana/dia) — recuperar `agenda-month-view`/`agenda-time-grid`/`agenda-list-view`/`agenda-toolbar` + `time-grid-layout`/`appointment-conflicts` (libs puras) + bloqueios (`agenda_blocks`) + aviso de conflito.
+- **2c:** follow-ups (`followups-table`, `novo-followup-dialog`, `/app/follow-ups`) + o laço do ticket (agendar visita/retorno a partir do ticket; timeline; retorno vencido destacado) — aí os vínculos ticket/contato entram por contexto.
+- Abas mobile: o plano quer `/app/agendamentos` nas abas; deixei de fora (barra tem 4) — rever na 2b/2c.
+**Armadilhas descobertas:**
+- **`navigation.test.ts` já usava `/app/agendamentos`** como o exemplo de "módulo fora do TOP_NAV_SPEC que aparece no fim". Ao adicionar a Agenda ao spec, troquei o exemplo para `/app/relatorios` (fictício) e somei "Agenda"/"/app/agendamentos" às listas de href (membro/admin) e aos títulos do topo (Ajustes virou `entries[6]`).
+- **Embeds da query exigem hint de FK pelo nome** (`customers!appointments_customer_id_fkey`): `appointments.ticket_id` tem duas relações no gerador (tickets e a view `ticket_queue`) → sem hint o PostgREST responde PGRST201.
+- **`EmptyState` recebe só `children`** (não `title`/`description`). **`/api/app-users` já existia** feito para este dialog (devolve `{users:[{id,name}], currentUserId}`).
+
 ## [2026-10-08] Fase 7 PR 1: schema de Agenda + Follow-ups (banco)
 
 **Agente/Modelo:** Claude Opus 4.8.
