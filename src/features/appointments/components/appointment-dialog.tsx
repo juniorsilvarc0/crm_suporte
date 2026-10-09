@@ -60,6 +60,8 @@ type AppointmentDialogProps = {
   appointment?: AppointmentListItem | null;
   /** Só na criação: o vínculo vem do ticket, não de um seletor. */
   context?: AppointmentTicketContext | null;
+  /** Só na criação: o dia em que o compromisso começa (AAAA-MM-DD); padrão, hoje. */
+  dateKey?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -76,6 +78,7 @@ type AppointmentDialogProps = {
 export function AppointmentDialog({
   appointment = null,
   context = null,
+  dateKey,
   open: openProp,
   onOpenChange,
 }: AppointmentDialogProps) {
@@ -108,6 +111,7 @@ export function AppointmentDialog({
         key={`${appointment?.id ?? "new"}:${session}`}
         appointment={appointment}
         context={appointment ? null : context}
+        dateKey={dateKey}
         open={open}
         onOpenChange={setOpen}
       />
@@ -118,11 +122,13 @@ export function AppointmentDialog({
 function AppointmentForm({
   appointment,
   context,
+  dateKey,
   open,
   onOpenChange,
 }: {
   appointment: AppointmentListItem | null;
   context: AppointmentTicketContext | null;
+  dateKey: string | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -135,7 +141,7 @@ function AppointmentForm({
   const [when, setWhen] = useState(
     appointment
       ? formatDateTimeLocalInput(appointment.scheduled_at)
-      : defaultDateTimeLocalForDateKey(getTodayAppDateKey())
+      : defaultDateTimeLocalForDateKey(dateKey ?? getTodayAppDateKey())
   );
   const [duration, setDuration] = useState(appointment?.duration_min ? String(appointment.duration_min) : "60");
   const [location, setLocation] = useState(appointment?.location ?? "");

@@ -16,16 +16,26 @@ const APPOINTMENT_SELECT = `
   assignee:app_users!appointments_assignee_id_fkey(id, name)
 `;
 
-/** Os compromissos, do mais recente para o mais antigo. */
-export async function getAppointments(): Promise<AppointmentListItem[]> {
+// Teto por período: um mês de agenda de suporte fica muito abaixo disto; se um
+// dia passar, a tela mostra os 500 primeiros do período em vez de cair.
+const PERIOD_LIMIT = 500;
+
+/** Os compromissos de um período [início, fim), do mais cedo ao mais tarde. */
+export async function getAppointments(range: {
+  startIso: string;
+  endIso: string;
+}): Promise<AppointmentListItem[]> {
   if (!hasSupabaseAdminEnv()) return [];
   try {
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from("appointments")
       .select(APPOINTMENT_SELECT)
-      .order("scheduled_at", { ascending: false })
-      .limit(500);
+      .gte("scheduled_at", range.startIso)
+      .lt("scheduled_at", range.endIso)
+      .order("scheduled_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(PERIOD_LIMIT);
     if (error) {
       console.error("[appointments] getAppointments", error.code, error.message);
       return [];
