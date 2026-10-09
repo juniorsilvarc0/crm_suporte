@@ -24,7 +24,16 @@ export type UazapiStatusResult = {
   connected: boolean;
   state: ConnectionState;
   owner: string | null; // telefone dono da instância (só dígitos)
+  /**
+   * Motivo da última desconexão, quando o provedor informa (o nome do campo
+   * varia entre versões; ausente = null). Só texto curto: nunca o corpo inteiro
+   * da resposta, que traz o token da instância.
+   */
+  reason: string | null;
 };
+
+/** Teto do motivo guardado (o mesmo do check de chat_connection_events.reason). */
+const REASON_MAX = 300;
 
 const TIMEOUT_MS = 15000;
 
@@ -199,10 +208,21 @@ export async function getUazapiStatus(
     "owner",
     "wid",
   ]);
+  const reason = connected
+    ? null
+    : firstString(json, [
+        "instance.lastDisconnectReason",
+        "instance.last_disconnect_reason",
+        "instance.disconnectReason",
+        "lastDisconnectReason",
+        "status.lastDisconnectReason",
+        "status.reason",
+      ]);
   return {
     connected,
     state: mapState(connected, instanceStatus),
     owner: ownerToPhone(owner),
+    reason: reason?.trim() ? reason.trim().slice(0, REASON_MAX) : null,
   };
 }
 

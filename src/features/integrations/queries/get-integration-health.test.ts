@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { clientMock, hasEnvMock, relayConfigMock, integrationMock, statusMock } = vi.hoisted(() => ({
+const { clientMock, hasEnvMock, relayConfigMock, integrationMock, statusMock, eventsMock } = vi.hoisted(() => ({
   clientMock: vi.fn(),
   hasEnvMock: vi.fn(),
   relayConfigMock: vi.fn(),
   integrationMock: vi.fn(),
   statusMock: vi.fn(),
+  eventsMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -19,6 +20,9 @@ vi.mock("@/features/settings/lib/get-relay-url", async (importOriginal) => ({
 }));
 vi.mock("@/features/chat/lib/connection/integration", () => ({ getUazapiIntegration: integrationMock }));
 vi.mock("@/features/chat/lib/connection/uazapi", () => ({ getUazapiStatus: statusMock }));
+// O histórico da conexão tem teste próprio (get-connection-events / monitor):
+// aqui só interessa que ele entra na Saúde e falha sozinho.
+vi.mock("@/features/connection/queries/get-connection-events", () => ({ getConnectionEvents: eventsMock }));
 
 import { createHarness, has, where, type Call, type Result } from "@/app/api/v1/test-harness";
 import {
@@ -86,6 +90,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.reset([]);
   hasEnvMock.mockReturnValue(true);
+  eventsMock.mockResolvedValue([]);
   relayConfigMock.mockResolvedValue({ configuredUrl: "https://agente.exemplo.com/webhook", state: "active", reason: null });
   integrationMock.mockResolvedValue(INTEGRATION);
   statusMock.mockResolvedValue({ connected: true, state: "open", owner: "5511999990000" });
@@ -106,6 +111,7 @@ describe("readIntegrationHealth", () => {
       windowHours: 24,
       whatsapp: { state: "open", instance: "5511999990000" },
       lastInbound: { state: "ok", at: at("10:59"), exact: true },
+      connectionHistory: { state: "ok", events: [] },
       relay: {
         config: "active",
         reason: null,
@@ -438,6 +444,19 @@ describe("readIntegrationHealth", () => {
     });
   });
 
+  it("o histórico da conexão entra na Saúde e falha sozinho", async () => {
+    eventsMock.mockResolvedValueOnce([{ state: "close", reason: "logged out", occurredAt: at("09:00") }]);
+    const lida = await readIntegrationHealth(NOW);
+    expect(lida.connectionHistory).toEqual({
+      state: "ok",
+      events: [{ state: "close", reason: "logged out", occurredAt: at("09:00") }],
+    });
+
+    eventsMock.mockResolvedValueOnce(null);
+    const falhou = await readIntegrationHealth(new Date(NOW.getTime() + 60_000));
+    expect(falhou.connectionHistory).toEqual({ state: "unavailable" });
+  });
+
   it("sem o Supabase configurado: nada é lido, nem a configuração do agente", async () => {
     hasEnvMock.mockReturnValue(false);
     clientMock.mockClear();
@@ -447,6 +466,7 @@ describe("readIntegrationHealth", () => {
       windowHours: 24,
       whatsapp: { state: "unavailable", cause: "crm", instance: null },
       lastInbound: { state: "unavailable" },
+      connectionHistory: { state: "unavailable" },
       relay: { config: "unreadable", reason: null, deliveries: { state: "unavailable" } },
       api: { calls: { state: "unavailable" } },
     });

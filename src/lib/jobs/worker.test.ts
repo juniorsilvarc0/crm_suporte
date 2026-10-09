@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpcMock, envMock, createMock, reconcileMock, dispatchMock } = vi.hoisted(() => ({
+const { rpcMock, envMock, createMock, reconcileMock, dispatchMock, checkMock } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
   envMock: vi.fn(() => true),
   createMock: vi.fn(),
   reconcileMock: vi.fn(),
   dispatchMock: vi.fn(),
+  checkMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -19,12 +20,16 @@ vi.mock("@/features/customers/server/external-contracts", () => ({
 vi.mock("@/features/integrations/server/relay-dispatch", () => ({
   dispatchRelayBatch: dispatchMock,
 }));
+vi.mock("@/features/connection/server/connection-monitor", () => ({
+  checkWhatsappConnection: checkMock,
+}));
 
 import {
   runMaintenance,
   runRelayDispatch,
   runSlaSweep,
   runTcbxReconcile,
+  runWhatsappMonitor,
   startJobs,
 } from "@/lib/jobs/worker";
 
@@ -161,7 +166,7 @@ describe("startJobs", () => {
     expect(setInterval).not.toHaveBeenCalled();
   });
 
-  it("inicia os quatro jobs; segunda chamada não duplica", () => {
+  it("inicia os cinco jobs; segunda chamada não duplica", () => {
     const setInterval = vi
       .spyOn(globalThis, "setInterval")
       .mockReturnValue({ unref: vi.fn() } as never);
@@ -171,13 +176,42 @@ describe("startJobs", () => {
     expect(rpcMock).toHaveBeenCalledWith("sla_sweep");
     expect(dispatchMock).toHaveBeenCalledWith(client);
     expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "tcbx_reconcile", p_seconds: 290 });
-    // Quatro intervalos (SLA, relay, TCBX, manutenção).
-    expect(setInterval).toHaveBeenCalledTimes(4);
+    expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "whatsapp_monitor", p_seconds: 110 });
+    // Cinco intervalos (SLA, relay, TCBX, manutenção, WhatsApp).
+    expect(setInterval).toHaveBeenCalledTimes(5);
     expect((globalThis as Store).__crmsupJobsStarted).toBe(true);
 
     const before = rpcMock.mock.calls.length;
     startJobs(); // guarda
     expect(rpcMock.mock.calls.length).toBe(before);
-    expect(setInterval).toHaveBeenCalledTimes(4);
+    expect(setInterval).toHaveBeenCalledTimes(5);
+  });
+});
+
+describe("runWhatsappMonitor", () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+    checkMock.mockReset();
+    checkMock.mockResolvedValue({ status: "unchanged", state: "open" });
+  });
+
+  it("com o lease, roda a checagem (uma réplica por ciclo)", async () => {
+    claimGranted();
+    await runWhatsappMonitor(client);
+    expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "whatsapp_monitor", p_seconds: 110 });
+    expect(checkMock).toHaveBeenCalledWith(client);
+  });
+
+  it("sem o lease (outra réplica rodando), não checa", async () => {
+    defaultRpc();
+    await runWhatsappMonitor(client);
+    expect(checkMock).not.toHaveBeenCalled();
+  });
+
+  it("nunca derruba o processo", async () => {
+    claimGranted();
+    checkMock.mockRejectedValue(new Error("boom"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(runWhatsappMonitor(client)).resolves.toBeUndefined();
   });
 });

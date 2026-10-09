@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { checkWhatsappConnection } from "@/features/connection/server/connection-monitor";
 import { reconcileExternalContracts } from "@/features/customers/server/external-contracts";
 import { dispatchRelayBatch } from "@/features/integrations/server/relay-dispatch";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -19,6 +20,7 @@ const SWEEP_INTERVAL_MS = 60_000; // SLA: carimba estouro e fecha 72h
 const TCBX_INTERVAL_MS = 5 * 60_000; // Espelho de contratos da TCBX fresco
 const MAINTENANCE_INTERVAL_MS = 60 * 60_000; // Purga de chaves/logs expirados
 const RELAY_INTERVAL_MS = 20_000; // Recuperação do relay à IA (janela de 120s)
+const WHATSAPP_INTERVAL_MS = 2 * 60_000; // Monitor de conexão do WhatsApp (só leitura)
 const TCBX_BATCH = 20; // empresas por leva (teto de chamadas à TCBX por ciclo)
 
 /** Pega o lease de um job. `claimed:false` = outra réplica está rodando. */
@@ -86,6 +88,21 @@ export async function runRelayDispatch(supabase: Admin): Promise<void> {
   }
 }
 
+/**
+ * Monitor de conexão do WhatsApp: lê o status da instância (só leitura, nunca
+ * toca a sessão) e grava quando o estado muda. Lease de job: uma réplica por
+ * ciclo, senão as duas gravariam a mesma mudança. Nunca lança.
+ */
+export async function runWhatsappMonitor(supabase: Admin): Promise<void> {
+  try {
+    const lease = await claim(supabase, "whatsapp_monitor", 110);
+    if (!lease.claimed) return;
+    await checkWhatsappConnection(supabase);
+  } catch (error) {
+    console.error("[jobs] whatsapp_monitor", error);
+  }
+}
+
 /** Purga chaves de idempotência e logs de integração expirados. Nunca lança. */
 export async function runMaintenance(supabase: Admin): Promise<void> {
   try {
@@ -112,7 +129,7 @@ export function startJobs(): void {
     return;
   }
   store.__crmsupJobsStarted = true;
-  console.info("[jobs] worker iniciado (SLA 60s · relay 20s · TCBX 5min · manutenção 1h).");
+  console.info("[jobs] worker iniciado (SLA 60s · relay 20s · WhatsApp 2min · TCBX 5min · manutenção 1h).");
 
   const supabase = createSupabaseAdminClient();
   const schedule = (fn: () => void, ms: number) => setInterval(fn, ms).unref?.();
@@ -121,14 +138,17 @@ export function startJobs(): void {
   const relay = () => void runRelayDispatch(supabase);
   const tcbx = () => void runTcbxReconcile(supabase);
   const maintenance = () => void runMaintenance(supabase);
+  const whatsapp = () => void runWhatsappMonitor(supabase);
 
   // Tentativas imediatas no boot: drena o que ficou pendente antes do restart
   // (manutenção não precisa).
   sla();
   relay();
   tcbx();
+  whatsapp();
   schedule(sla, SWEEP_INTERVAL_MS);
   schedule(relay, RELAY_INTERVAL_MS);
   schedule(tcbx, TCBX_INTERVAL_MS);
   schedule(maintenance, MAINTENANCE_INTERVAL_MS);
+  schedule(whatsapp, WHATSAPP_INTERVAL_MS);
 }

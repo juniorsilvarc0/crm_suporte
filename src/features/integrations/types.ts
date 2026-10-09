@@ -1,6 +1,7 @@
 import type { ConnectionState } from "@/features/chat/lib/connection/uazapi";
 import type { RelayConfig } from "@/features/settings/lib/get-relay-url";
 import type { Database, IntegrationStatus } from "@/lib/supabase/types";
+import type { ConnectionEvent } from "@/features/connection/types";
 
 export type IntegrationLog =
   Database["public"]["Tables"]["integration_logs"]["Row"];
@@ -98,6 +99,12 @@ export type IntegrationHealth = {
    * nova é essa ou outra mais recente (ver getLastInboundAt).
    */
   lastInbound: HealthPart<{ at: string | null; exact: boolean }>;
+  /**
+   * As mudanças mais recentes do estado da conexão, gravadas pelo monitor
+   * (worker), da mais nova para a mais antiga. Vazio = o monitor ainda não
+   * gravou nada (ou não há instância).
+   */
+  connectionHistory: HealthPart<{ events: ConnectionEvent[] }>;
   relay: {
     config: RelayConfig["state"];
     /** Por que a URL salva é recusada, quando `config` é `refused`. */

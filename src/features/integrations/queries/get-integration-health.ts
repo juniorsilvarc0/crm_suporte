@@ -1,5 +1,6 @@
 import { getUazapiIntegration } from "@/features/chat/lib/connection/integration";
 import { getUazapiStatus } from "@/features/chat/lib/connection/uazapi";
+import { getConnectionEvents } from "@/features/connection/queries/get-connection-events";
 import { RELAY_EVENT } from "@/features/integrations/server/relay-message";
 import type { IntegrationHealth } from "@/features/integrations/types";
 import { getRelayConfig } from "@/features/settings/lib/get-relay-url";
@@ -14,6 +15,8 @@ export const HEALTH_WINDOW_HOURS = 24;
 export const HEALTH_TTL_MS = 10_000;
 // A última mensagem recebida é procurada nas conversas mais recentes.
 const RECENT_CONVERSATIONS = 50;
+/** Quantas mudanças de estado da conexão a aba mostra. */
+export const CONNECTION_HISTORY_LIMIT = 10;
 
 const unavailable = { state: "unavailable" } as const;
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : error);
@@ -232,6 +235,7 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
       windowHours: HEALTH_WINDOW_HOURS,
       whatsapp: { state: "unavailable", cause: "crm", instance: null },
       lastInbound: unavailable,
+      connectionHistory: unavailable,
       relay: { config: "unreadable", reason: null, deliveries: unavailable },
       api: { calls: unavailable },
     };
@@ -239,7 +243,7 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
 
   const admin = supabase;
   const since = new Date(now.getTime() - HEALTH_WINDOW_HOURS * 3_600_000).toISOString();
-  const [relay, whatsapp, lastInbound, deliveries, calls] = await Promise.all([
+  const [relay, whatsapp, lastInbound, deliveries, calls, connectionHistory] = await Promise.all([
     settle<Pick<IntegrationHealth["relay"], "config" | "reason">>(
       "agente",
       async () => {
@@ -256,6 +260,14 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
     settle<IntegrationHealth["lastInbound"]>("última mensagem", () => getLastInboundAt(admin), unavailable),
     settle<IntegrationHealth["relay"]["deliveries"]>("repasse", () => relayDeliveries(admin, since), unavailable),
     settle<IntegrationHealth["api"]["calls"]>("api", () => apiCalls(admin, since), unavailable),
+    settle<IntegrationHealth["connectionHistory"]>(
+      "histórico da conexão",
+      async () => {
+        const events = await getConnectionEvents(admin, CONNECTION_HISTORY_LIMIT);
+        return events === null ? unavailable : { state: "ok", events };
+      },
+      unavailable
+    ),
   ]);
 
   return {
@@ -263,6 +275,7 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
     windowHours: HEALTH_WINDOW_HOURS,
     whatsapp,
     lastInbound,
+    connectionHistory,
     relay: { ...relay, deliveries },
     api: { calls },
   };
