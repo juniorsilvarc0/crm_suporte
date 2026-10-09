@@ -25,6 +25,9 @@ import type {
 } from "@/features/tickets/types";
 import { TicketFollowups } from "@/features/followups/components/ticket-followups";
 import type { FollowupListItem } from "@/features/followups/types";
+import { TicketAppointments } from "@/features/appointments/components/ticket-appointments";
+import type { AppointmentListItem } from "@/features/appointments/types";
+import { customerDisplayName } from "@/features/customers/lib/customer-display";
 
 // Aviso não tem token semântico: a paleta de domínio, como o tom `warn` do
 // selo de SLA.
@@ -41,6 +44,8 @@ export type TicketDetailViewProps = {
   team: TicketTeamMember[] | null;
   /** Os retornos (follow-ups) deste ticket; `[]` se não houver ou se falhou. */
   followups: FollowupListItem[];
+  /** Os compromissos de agenda deste ticket; `[]` se não houver ou se falhou. */
+  appointments: AppointmentListItem[];
   viewerId: string;
   /** O instante da leitura (ISO): começa o relógio do selo de SLA. */
   fetchedAt: string;
@@ -62,6 +67,7 @@ export function TicketDetailView({
   catalog,
   team,
   followups,
+  appointments,
   viewerId,
   fetchedAt,
 }: TicketDetailViewProps) {
@@ -159,6 +165,19 @@ export function TicketDetailView({
               followups={followups}
               editable={!ticket.is_terminal}
               now={now}
+            />
+          </Section>
+          <Section title="Agendamentos">
+            <TicketAppointments
+              context={{
+                ticket: { id: ticket.id, number: ticket.number, title: ticket.title },
+                customer: ticket.customer
+                  ? { id: ticket.customer.id, name: customerDisplayName(ticket.customer) }
+                  : null,
+                contactId: ticket.contact.id,
+              }}
+              appointments={appointments}
+              editable={!ticket.is_terminal}
             />
           </Section>
           <Section title="Anexos">
