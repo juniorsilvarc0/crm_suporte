@@ -27,6 +27,33 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 7 PR 2b-1: Agenda em Mês, Semana, Dia e Lista
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** a Agenda deixa de ser só uma lista e vira calendário: mês, semana e dia, com o período na URL, criar num dia tocando o `+` e editar tocando o compromisso. Os bloqueios ficam para a 2b-2.
+**Arquivos alterados:**
+- lib (pura, testada): `features/appointments/lib/agenda-view.ts` (+`.test.ts`, 14 casos: parse da URL, intervalo da consulta, links de período/abas, título, agrupamento por dia, minutos no fuso do app) e `lib/time-grid-layout.ts` (+`.test.ts`, 10 casos), recuperado da tag `legado-clinica` sem mudança;
+- query: `queries/get-appointments.ts` (`getAppointments(range)` com `gte`/`lt`, ordem crescente, teto de 500 por período — o único chamador é a página);
+- UI: `components/agenda-calendar.tsx` (composição + diálogos, +`.test.tsx`, 9 casos), `agenda-toolbar.tsx`, `agenda-view-tabs.tsx` (+`.test.tsx`, 4 casos), `agenda-nav-progress.tsx` (recuperado), `agenda-month-view.tsx`, `agenda-time-grid.tsx`, `agenda-event.tsx` (o card único); `appointment-dialog.tsx` (prop `dateKey` na criação); `appointments-table.tsx` (sem o cabeçalho próprio; vazio fala "neste mês");
+- página: `app/(dashboard)/app/agendamentos/{page,loading}.tsx` (tela cheia, `panel-float`, skeleton da grade); docs: `UI.md` §5.1.1, `PRD.md` §6, este PROGRESS.
+**O que foi feito:**
+- Recuperado da clínica, reinterpretado: a mesma faixa de duas linhas (§5.20), as abas otimistas com `aria-current` honesto e a barra de 2 px do `useLinkStatus` (§5.21), a grade de 1 px por minuto com faixas paralelas (§5.15), o minicalendário do telefone. Saíram: lead, Google Agenda, "Visitou", venda, configurações da agenda (tipos/unidades/horários), filtros de serviço.
+- **Card único** (`AgendaEvent`) no mês, na semana, no dia e na lista do telefone: opaco (`bg-card` + tinta do TIPO + barra lateral), hora e assunto (ou o tipo) na 1ª linha, empresa/contato na 2ª; nome acessível com tudo, inclusive a situação.
+- **"Hoje" sai do servidor** (`getTodayAppDateKey()` na página) e desce por prop: o mesmo dia no HTML e na hidratação.
+**Decisões tomadas (revisar):**
+- **Padrão = Mês** (era a lista de todos os compromissos). A Lista continua a um toque e agora é do mês em tela, em ordem crescente.
+- **Valores da URL em português** (`mes`, `semana`, `dia`, `lista`); o legado misturava `month`/`list` com `semana`/`dia`.
+- **Abas no desenho do "Lista | Quadro" dos tickets**, não no gradiente da linguagem 2.0 da clínica.
+- **Sem filtros nesta fatia** (situação, tipo, técnico): entram se o uso pedir.
+- **Excluir continua só na Lista** (o diálogo de edição não tem excluir).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4676/4676; 37 novos) · build ✓. Sem teste de browser (AGENTS §3.12): a revisão visual em 320/375/tablet/desktop, claro e escuro (UI.md §10) **não foi feita** por mim.
+**Pendências / próximos passos:**
+- **2b-2:** bloqueios (`agenda_blocks`): rotas, cadastro, desenho no mês e na grade (UI.md §5.17) e aviso de bloqueio/conflito no diálogo.
+**Armadilhas descobertas:**
+- **No mês, o desktop e o telefone estão os dois no DOM** (um some por CSS). Em teste, `getByText` acha os dois: mire a grade do desktop (`role="grid"` que contém `section`) ou use o `aria-live` da faixa.
+- **O `console` é silenciado no setup do Vitest.** Para inspecionar um valor num teste descartável, jogue-o num `throw new Error(JSON.stringify(...))`.
+- **Formatos reais do `date.ts`:** `formatLongDate` não traz o ano ("Sexta-feira, 09 de outubro"), dia com dois dígitos; `formatMonthShort` sem ponto ("out").
+
 ## [2026-10-09] Fase 7 PR 2c-3: a fila de retornos (`/app/follow-ups`)
 
 **Agente/Modelo:** Claude Opus 5.5.
