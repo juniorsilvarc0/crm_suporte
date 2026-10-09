@@ -27,6 +27,28 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 6c-4: aviso ao cliente sem duplicar (claim/finalize) — fecha a Fase 6c
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** quem avisa o cliente na troca de status (o agente, pelo WhatsApp) nunca manda o mesmo aviso duas vezes, mesmo recebendo o evento repetido: reivindica o passo antes de enviar e o fecha depois (decisão 6 e §C do plano: "só `claimed:true` autoriza o envio").
+**Arquivos alterados:** `supabase/migrations/20261009150000_ticket_notices.sql`, `supabase/tests/ticket_notices.sql` (28 casos), `supabase/tests/event_outbox.sql` (conserto do CI, abaixo), `src/lib/supabase/database.types.ts` (regenerado); `src/lib/api/v1/notices.ts`, `src/features/tickets/server/ticket-notices.ts`, `src/app/api/v1/tickets/[ref]/notices/[step]/{claim,finalize}/route.ts`, `src/lib/api/v1/openapi.ts`, `src/lib/api/v1/scopes.ts` (comentário), `src/app/api/v1/notices.test.ts` (13); docs: `docs/GUIA-AGENTE-IA.md` §2.9, `docs/API.md`, `docs/CONTRATO-WEBHOOKS.md`, `PRD.md` §7.4, este PROGRESS.
+**O que foi feito:**
+- **`ticket_notices`** (único por `ticket_id, step`), só por RPC: o service_role não tem grant na tabela.
+- **`ticket_notice_claim`:** passo livre → `claimed: true` com `claim_token` e lease (30 s a 15 min, padrão 2 min); já enviado → `already_sent`; lease valendo → `in_progress`; lease vencida sem finalize, ou falha anterior → reivindica de novo (attempts + 1). A trava da linha serializa duas reivindicações simultâneas.
+- **`ticket_notice_finalize`:** só com o `claim_token` atual (fencing → `claim_lost`). `sent` fecha para sempre; `failed` libera na hora. Repetir o mesmo desfecho é seguro; outro desfecho depois de fechado → `already_finalized`.
+- **API v1:** `POST /tickets/{ref}/notices/{step}/claim` (200 também na recusa, com `reason`; corpo opcional) e `/finalize` (409 `notice_claim_lost` / `notice_already_finalized`, com `current`), escopo `notices:claim`, no OpenAPI.
+**Decisões tomadas (revisar):**
+- **O claim não aceita `Idempotency-Key`:** repetir a resposta guardada daria `claimed: true` às duas entregas do mesmo evento. Resposta perdida → a lease segura o passo e depois ele volta: o aviso atrasa, não duplica.
+- **O passo é escolhido por quem avisa** (o `id` do evento = um aviso por evento; um nome fixo = um aviso por ticket). O plano não fixava o vocabulário.
+- **O preset "IA de triagem" continua sem `notices:claim`**, e o guia manda usar token do tipo integração (`api`) para avisar: token `ai` só envia em conversa `bot`, e a troca de status quase sempre acontece com a conversa `human` ou `resolved`.
+- **O CRM não manda o aviso sozinho:** ele só garante que quem manda não duplica (o texto e o canal são de quem avisa).
+**Conserto do CI (vermelho na `main` desde o #74):** `event_outbox.sql` afirmava "service_role NÃO lê event_outbox direto", regra que a migration da 6c-2 (`20261009140000`) mudou de propósito (SELECT por coluna, sem a lease). O caso agora confere a regra nova: lê o status, NÃO lê a lease, NÃO escreve. Produção não foi afetada (só o job "banco" do CI). Na 6c-2 eu tinha rodado só o teste SQL dos webhooks. No CI desta PR, o job "qualidade" pegou um teste intermitente do aviso de WhatsApp (`whatsapp-connection-banner.test.tsx`, do #72): a altura do aviso é publicada num efeito logo depois de ele entrar no DOM, e a asserção corria entre os dois. Agora espera (`waitFor`).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos de sempre) · test ✓ (4890/4890) · build ✓ · SQL: `ticket_notices` 28 ✓, `event_outbox` 19 ✓, demais verdes (`baseline.sql` e `segredo_integracao.sql` falham só no banco LOCAL, pelo resto de uma integração antiga; no CI passam) · migration reaplicada sem efeito; baseline 40 tabelas/88 funções · smoke do serviço real contra o PostgREST local (claim → in_progress → claim_lost → sent → already_sent → 404s) ✓.
+**Pendências / próximos passos:** Fase 6c concluída. Do plano restam: Fase 10 (política de privacidade definitiva, cópia do backup fora do servidor) e as pendências fora do plano (log do `/api/v1/` no nginx; assinar o evento `connection` da uazapi na próxima reconexão).
+**Armadilhas descobertas:**
+- **Migration que mexe em grant quebra teste SQL de outra área.** Rode `./scripts/db-local-test.sh` inteiro antes de commitar, e confira o CI da `main` depois do merge (`gh run list --branch main`).
+- **O gateway local reinicia em laço sem o container `storage`** (a config dele aponta para ele): para um smoke contra o PostgREST local, suba `rest`, `storage` e `gateway`.
+
 ## [2026-10-09] Fase 6c-3: aba Webhooks em Integrações
 
 **Agente/Modelo:** Claude Opus 5.5.

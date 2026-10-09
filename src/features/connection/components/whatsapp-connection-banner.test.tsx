@@ -78,7 +78,11 @@ describe("WhatsappConnectionBanner", () => {
     render(<WhatsappConnectionBanner isAdmin />);
 
     await screen.findByRole("alert");
-    expect(document.documentElement.style.getPropertyValue("--app-alert-height")).not.toBe("");
+    // A altura sai num efeito, logo DEPOIS de o aviso entrar no DOM: esperar,
+    // senão a asserção corre entre os dois (intermitente no CI).
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue("--app-alert-height")).not.toBe("")
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);

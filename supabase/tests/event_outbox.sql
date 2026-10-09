@@ -31,14 +31,32 @@ insert into r values (
   (select payload->>'a' from public.event_outbox where event_key = 'k1') = '1',
   'enqueue repetido não sobrescreve o payload', null);
 
--- 2. service_role NÃO lê a tabela direto (só pelas RPCs).
+-- 2. service_role lê as colunas da entrega (20261009140000, a lista de entregas
+--    dos webhooks), mas NUNCA a lease: ler não serve para finalizar a alheia. A
+--    escrita segue só pelas RPCs.
 set role service_role;
 do $$
 begin
-  perform pg_catalog.count(*) from public.event_outbox;
-  insert into r values (false, 'service_role NÃO lê event_outbox direto', 'leu sem erro');
+  perform pg_catalog.count(*) from public.event_outbox where status is not null;
+  insert into r values (true, 'service_role lê o status das entregas', null);
 exception when insufficient_privilege then
-  insert into r values (true, 'service_role NÃO lê event_outbox direto', 'barrado (ok)');
+  insert into r values (false, 'service_role lê o status das entregas', 'barrado');
+end
+$$;
+do $$
+begin
+  perform o.lease_token from public.event_outbox o limit 1;
+  insert into r values (false, 'service_role NÃO lê a lease do event_outbox', 'leu sem erro');
+exception when insufficient_privilege then
+  insert into r values (true, 'service_role NÃO lê a lease do event_outbox', 'barrado (ok)');
+end
+$$;
+do $$
+begin
+  update public.event_outbox set status = 'sent' where false;
+  insert into r values (false, 'service_role NÃO escreve event_outbox direto', 'escreveu sem erro');
+exception when insufficient_privilege then
+  insert into r values (true, 'service_role NÃO escreve event_outbox direto', 'barrado (ok)');
 end
 $$;
 reset role;

@@ -746,6 +746,37 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"ticket_notices": {
+                  Row: {
+                    "attempts": number,"claim_token": string,"claimed_by_token_id": string | null,"created_at": string,"finalized_at": string | null,"id": string,"last_error": string | null,"lease_expires_at": string,"status": string,"step": string,"ticket_id": string,"updated_at": string
+                  }
+                  Insert: {
+                    "attempts"?: number,"claim_token"?: string,"claimed_by_token_id"?: string | null,"created_at"?: string,"finalized_at"?: string | null,"id"?: string,"last_error"?: string | null,"lease_expires_at": string,"status"?: string,"step": string,"ticket_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "attempts"?: number,"claim_token"?: string,"claimed_by_token_id"?: string | null,"created_at"?: string,"finalized_at"?: string | null,"id"?: string,"last_error"?: string | null,"lease_expires_at"?: string,"status"?: string,"step"?: string,"ticket_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_notices_claimed_by_token_id_fkey"
+      columns: ["claimed_by_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_notices_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_notices_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"ticket_status_history": {
                   Row: {
                     "actor_token_id": string | null,"actor_type": string,"actor_user_id": string | null,"from_status": string | null,"id": string,"occurred_at": string,"reason": string | null,"seq": number,"ticket_id": string,"to_status": string
@@ -1209,6 +1240,12 @@ isOneToOne: false
                            },
 "ticket_current_contract":
 { Args: { "p_customer_id": string }; Returns: string
+                           },
+"ticket_notice_claim":
+{ Args: { "p_lease_seconds"?: number,"p_step": string,"p_ticket_id": string,"p_token_id": string }; Returns: Json
+                           },
+"ticket_notice_finalize":
+{ Args: { "p_claim_token": string,"p_error"?: string,"p_outcome": string,"p_step": string,"p_ticket_id": string }; Returns: Json
                            },
 "ticket_record_event":
 { Args: { "p_actor_token_id": string,"p_actor_type": string,"p_actor_user_id": string,"p_event_key"?: string,"p_event_type": string,"p_metadata"?: Json,"p_ticket_id": string }; Returns: undefined

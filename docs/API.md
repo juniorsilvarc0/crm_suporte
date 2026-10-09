@@ -255,6 +255,8 @@ Todos os caminhos começam com `/api/v1`. `{ref}` de ticket é o id (UUID) ou o 
 | POST | `/tickets/{ref}/attachments` | `attachments:write` | anexa um arquivo (multipart, campo `file`, até 50 MB) |
 | GET | `/tickets/{ref}/attachments/{attachment_id}` | `attachments:read` | link assinado do arquivo, válido por 10 minutos |
 | GET | `/tickets/{ref}/timeline` | `tickets:read` | a timeline do ticket, da mais nova para a mais antiga |
+| POST | `/tickets/{ref}/notices/{step}/claim` | `notices:claim` | reivindica um aviso ao cliente antes de mandá-lo; só `claimed: true` autoriza o envio |
+| POST | `/tickets/{ref}/notices/{step}/finalize` | `notices:claim` | fecha a reivindicação: `sent` (não sai de novo) ou `failed` (volta a ser reivindicável) |
 | GET | `/conversations/{id}` | `conversations:read` | a conversa: quem conduz, o ticket em foco e o contato |
 | GET | `/conversations/{id}/messages` | `conversations:read` | as mensagens, da mais nova para a mais antiga |
 | POST | `/conversations/{id}/messages` | `messages:send` | envia um texto ao cliente pelo WhatsApp |
@@ -267,6 +269,7 @@ Pontos que costumam surpreender:
 - **`POST /conversations/{id}/handoff`** em conversa que já está com um humano responde `200` com `changed: false`, e aí `ticket_id` e `note_id` vêm `null`. Em conversa encerrada (`resolved`): `409 conversation_not_owned_by_ai`.
 - **`PUT /conversations/{id}/active-ticket`** e o handoff devolvem o resultado da operação, e não a conversa. Para lê-la, `GET /conversations/{id}`.
 - **`POST /tickets/{ref}/transitions`** fora da matriz: `409 invalid_transition`, com `allowed` e `current`. Cancelar exige `reason`. A matriz é fixa; `GET /ticket-statuses` a mostra.
+- **Avisos ao cliente (`/notices/{step}/claim` e `/finalize`):** o claim responde `200` também quando recusa (`claimed: false`, com `reason`: `already_sent` ou `in_progress`). Ele não aceita `Idempotency-Key` de propósito: repetir a resposta daria `claimed: true` a duas entregas do mesmo evento. Se a resposta do claim se perder, a lease (2 min por padrão) segura o passo, e depois ele volta a ser reivindicável: o aviso atrasa, mas não duplica. No finalize, `409 notice_claim_lost` quer dizer que outra reivindicação assumiu o passo (a sua lease venceu): não reenvie. O passo a passo está em [`GUIA-AGENTE-IA.md`](GUIA-AGENTE-IA.md), seção 2.9.
 - **Mensagens e timeline não trazem mídia por URL.** A mensagem traz só `media_mime_type`. O anexo do ticket sai por `GET /tickets/{ref}/attachments/{attachment_id}`.
 - **`POST /tickets/{ref}/attachments`:** no `Content-Disposition` da parte, `name="file"` e `filename="..."` vão entre aspas, sem `filename*`. É o padrão do curl, do `requests` do Python e do n8n. O `HttpClient` do .NET, no padrão, manda sem aspas e com `filename*`, e recebe `400 invalid_multipart`: monte o cabeçalho da parte à mão.
 
