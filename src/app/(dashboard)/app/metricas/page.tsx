@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/data-display/empty-state";
 import { buttonVariants } from "@/components/ui/button";
+import { AiVsHuman } from "@/features/metrics/components/ai-vs-human";
+import { MetricsBreakdowns } from "@/features/metrics/components/metrics-breakdowns";
 import { MetricsPeriodSwitch } from "@/features/metrics/components/metrics-period-switch";
 import { MetricsSummary } from "@/features/metrics/components/metrics-summary";
 import { OpenedResolvedChart } from "@/features/metrics/components/opened-resolved-chart";
@@ -52,6 +54,8 @@ export default async function MetricasPage({
         <>
           <MetricsSummary metrics={metrics} days={days} />
           <OpenedResolvedChart data={metrics.daily} days={days} />
+          <AiVsHuman metrics={metrics.aiVsHuman} resolved={metrics.resolved} days={days} />
+          <MetricsBreakdowns breakdowns={metrics.breakdowns} days={days} />
         </>
       )}
     </main>

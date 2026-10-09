@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 9 PR 2: recortes (fila, analista, clientes) e IA × analista
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** completar as métricas do plano (§E, Fase 9): ver por fila, por analista e por cliente, e separar o que a IA fez do que o analista fez.
+**Arquivos alterados:** `src/features/metrics/types.ts` (linhas com fila/cliente/responsável, `OpenTicketRow`, `BreakdownRow`, `SupportBreakdowns`, `AiVsHuman`), `lib/summarize.ts` (+`groupBy`, `topCustomerIds`, recortes e IA × analista) + `summarize.test.ts` (16), `queries/get-support-metrics.ts` (colunas a mais, linhas dos em aberto, 2ª fase de nomes) + `.test.ts` (5), `components/metrics-breakdowns.tsx` e `ai-vs-human.tsx` (novos) + `metrics-components.test.tsx` (13), `app/(dashboard)/app/metricas/page.tsx`; docs: `UI.md` §5.25, `PRD.md` §6, este PROGRESS.
+**O que foi feito:**
+- **Mesmas leituras, mais colunas:** abertos e resolvidos trazem fila, cliente e responsável (e a 1ª resposta da IA); "em aberto" passou de contagem para linhas (o total segue o `count` exato). Depois de agregar, uma 2ª fase lê os nomes: filas e equipe inteiras (são poucas), clientes só os do ranking (`.in`).
+- **Recortes:** por fila (mais abertos primeiro), por analista (responsável ATUAL; carga em aberto primeiro; "Sem responsável" mostra o que ninguém pegou) e os 10 clientes que mais abriram ("Sem empresa" fora do ranking). Cada linha: abertos, resolvidos, em aberto agora, mediana da 1ª resposta com a amostra.
+- **IA × analista:** quem abriu (IA, analista, integração), mediana da 1ª resposta da IA e resolvidos sem nenhuma resposta do analista.
+- A amostra parcial agora também considera os em aberto (passou do teto, os recortes são amostra).
+**Decisões tomadas (revisar):**
+- **Analista = responsável atual**, não "quem respondeu" (o banco não guarda o autor da 1ª resposta no ticket). O subtítulo da tabela diz isso.
+- **Recortes em tabela**, não gráfico (muitas classes; comparação número a número).
+- **Falha ao ler os nomes = falha da tela**, como as outras leituras: uma tabela cheia de "—" pareceria dado.
+**Verificação:** typecheck ✓ (0) · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4755/4755; 34 da feature) · build ✓. As seis leituras rodaram no PostgREST local (200). Sem teste de browser.
+**Pendências / próximos passos:** a Fase 9 do plano está completa com este PR. Próximos itens abertos: Fase 6c (webhooks de saída + avisos de ticket), endurecer o log de `/api/v1/` no nginx (deploy/), e a política de privacidade definitiva (Fase 10).
+**Armadilhas descobertas:**
+- **`app_users` tem SELECT por coluna para o `service_role`** (sem `password_hash`): `select("id, name")` funciona; `select("*")` falharia.
+
+## [2026-10-09] Deploy: métricas de suporte no ar (#69)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "mergeado"):** `deploy/publicar.sh` a partir de `origin/main` @ `1667770c12e7`, ~04:37–04:42 UTC. Sem migration. Rodízio limpo, apoio intocado. (Antes, no mesmo dia: o #68 subiu às ~04:22 UTC como `00bbfc81fc0f`, também sem migration e verificado.)
+**Verificação:** réplicas em `1667770c12e7` healthy; `verificar` ✓ (37 tabelas, 75 funções, sem porta pública, sharp ✓); `/app/metricas` responde 307 sem sessão; WhatsApp intacto (uazapi ativa, 361 conversas e 15059 mensagens, iguais à foto de antes); logs sem erro; worker reiniciado.
+**Como reverter:** `prd-rollback` = `00bbfc81fc0f` (#68).
+
 ## [2026-10-09] Fase 9 PR 1: métricas de suporte (`/app/metricas`) — e a Fase 8 sai do plano
 
 **Agente/Modelo:** Claude Opus 5.5.
