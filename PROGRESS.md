@@ -27,6 +27,31 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-08] Fase 7 PR 2c-1: Follow-ups ligados ao ticket (laço do ticket)
+
+**Agente/Modelo:** Claude Opus 4.8.
+**Objetivo:** o laço do ticket da Fase 7 (metade retornos): do ticket cria-se um RETORNO (follow-up), que aparece na própria ficha com o vencido em destaque, e pode ser concluído/cancelado/reaberto ali. Fecha parte do critério de aceite do plano.
+**Arquivos alterados:**
+- domínio/feature nova `src/features/followups/`: `lib/followup-kind.ts` + `followup-status.ts` (enum fixo, rótulo+cor, +testes), `schemas/followup.ts` (zod; `done_at` fora — a rota deriva; +teste), `types.ts`, `queries/get-followups.ts` (`getTicketFollowups`, embed do ticket FK-hinted);
+- back: `src/app/api/followups/route.ts` (POST) e `[id]/route.ts` (PATCH+DELETE), `requireDashboardUser` na 1ª linha; a PATCH deriva `done_at` do status (concluído→agora; pendente/cancelado→null);
+- UI: `components/followup-dialog.tsx` (criar/editar), `ticket-followups.tsx` (painel do ticket: lista + "Novo retorno" + concluir/cancelar/reabrir/editar/excluir, vencido destacado);
+- integração: `features/tickets/components/ticket-detail.tsx` (prop `followups` + `now` + `Section` "Retornos") e `app/(dashboard)/app/tickets/[number]/page.tsx` (busca `getTicketFollowups` no `Promise.all`) + `ticket-detail.test.tsx` (3 renders com `followups={[]}`); docs: `UI.md` + este PROGRESS.
+**O que foi feito:**
+- Feature de follow-ups paralela à de appointments (2a): mesmos moldes (enum fixo + `getColorStyle`, schema compartilhado, query resiliente, rotas molde a com guard).
+- No detalhe do ticket, a seção **"Retornos"** (coluna direita, ao lado dos Detalhes/Anexos): cria com contexto (`ticket_id` do ticket), lista por prazo, destaca o **vencido** (pendente + `due_at` < agora), e conclui/cancela/reabre por PATCH direto. `now` vem do `useNow(fetchedAt)` do próprio detalhe (seguro para hidratação).
+**Decisões tomadas (revisar):**
+- **`done_at` derivado no servidor** (não no corpo): a PATCH carimba `done_at` conforme o status, para honrar o invariante `(status='concluido') = (done_at not null)` sem o cliente precisar saber disso.
+- **Retorno mora na ficha do ticket**, não na timeline (o plano fala em timeline): a timeline é um hotspot próprio; a seção "Retornos" entrega o mesmo valor (ver + vencido destacado) com risco menor. A fila `/app/follow-ups` (cross-ticket) e o "Agendar visita" (appointment pelo ticket) ficam para a 2c-2.
+- **Sem re-gate de concluir/cancelar no banco** (não há RPC): são PATCH simples; a autorização é do guard da rota. O ticket terminal (`is_terminal`) esconde as ações (só leitura).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; 9 warnings pré-existentes, 0 novos) · test ✓ (4611/4611; `api-guards` cobre as rotas novas) · build ✓. bug-hunter/verification-before-completion: skills não instaladas — revisão à mão.
+**Pendências / próximos passos:**
+- **2c-2:** fila `/app/follow-ups` (pendentes/vencidos cruzando tickets) + menu; "Agendar visita" a partir do ticket (estender `AppointmentDialog` com contexto inicial de ticket/empresa/contato) + mostrar os compromissos do ticket.
+- **2b (adiada):** views de calendário (mapa já levantado nesta sessão) — mês/grade/semana/dia + bloqueios.
+**Armadilhas descobertas:**
+- **`setState` síncrono em `useEffect` é ERRO de lint** (`react-hooks/set-state-in-effect`). Para "agora do cliente" sem quebrar hidratação, o padrão do repo é o hook `useNow(fetchedAt)` (o setState dele mora num `setInterval`, não dispara a regra). Passei `now` por prop em vez de um effect próprio.
+- **supabase `.update()` recusa `Record<string, unknown>`** — tipar o objeto como `Database["public"]["Tables"]["followups"]["Update"]`.
+- **Embed do ticket exige hint de FK** (`tickets!followups_ticket_id_fkey`): `ticket_id` tem duas relações (tickets + view ticket_queue) → sem hint, PGRST201.
+
 ## [2026-10-08] Fase 7 PR 2a: Agenda — lista + criar/editar/excluir + menu
 
 **Agente/Modelo:** Claude Opus 4.8.
