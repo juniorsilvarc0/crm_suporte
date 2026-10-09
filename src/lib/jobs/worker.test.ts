@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpcMock, envMock, createMock, reconcileMock, dispatchMock, checkMock } = vi.hoisted(() => ({
+const { rpcMock, envMock, createMock, reconcileMock, dispatchMock, checkMock, webhookMock } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
   envMock: vi.fn(() => true),
   createMock: vi.fn(),
   reconcileMock: vi.fn(),
   dispatchMock: vi.fn(),
   checkMock: vi.fn(),
+  webhookMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -23,12 +24,16 @@ vi.mock("@/features/integrations/server/relay-dispatch", () => ({
 vi.mock("@/features/connection/server/connection-monitor", () => ({
   checkWhatsappConnection: checkMock,
 }));
+vi.mock("@/features/webhooks/server/dispatch", () => ({
+  dispatchWebhookBatch: webhookMock,
+}));
 
 import {
   runMaintenance,
   runRelayDispatch,
   runSlaSweep,
   runTcbxReconcile,
+  runWebhookDispatch,
   runWhatsappMonitor,
   startJobs,
 } from "@/lib/jobs/worker";
@@ -75,6 +80,7 @@ beforeEach(() => {
   createMock.mockReturnValue(client);
   reconcileMock.mockResolvedValue(report());
   dispatchMock.mockResolvedValue(undefined);
+  webhookMock.mockResolvedValue(undefined);
   defaultRpc();
   (globalThis as Store).__crmsupJobsStarted = undefined;
   vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -143,6 +149,33 @@ describe("runRelayDispatch", () => {
   });
 });
 
+describe("runWebhookDispatch", () => {
+  it("drena a fila de webhooks", async () => {
+    await runWebhookDispatch(client);
+    expect(webhookMock).toHaveBeenCalledWith(client);
+  });
+
+  it("não empilha levas: com uma em curso, a próxima não começa", async () => {
+    let finish: () => void = () => undefined;
+    webhookMock.mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)));
+    const first = runWebhookDispatch(client);
+    await runWebhookDispatch(client);
+    expect(webhookMock).toHaveBeenCalledTimes(1);
+    finish();
+    await first;
+    await runWebhookDispatch(client);
+    expect(webhookMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("engole erro e libera a trava (nunca derruba o worker)", async () => {
+    webhookMock.mockRejectedValueOnce(new Error("boom"));
+    await expect(runWebhookDispatch(client)).resolves.toBeUndefined();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    await runWebhookDispatch(client);
+    expect(webhookMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("runMaintenance", () => {
   it("com o lease, purga chaves e logs", async () => {
     claimGranted();
@@ -166,7 +199,7 @@ describe("startJobs", () => {
     expect(setInterval).not.toHaveBeenCalled();
   });
 
-  it("inicia os cinco jobs; segunda chamada não duplica", () => {
+  it("inicia os seis jobs; segunda chamada não duplica", () => {
     const setInterval = vi
       .spyOn(globalThis, "setInterval")
       .mockReturnValue({ unref: vi.fn() } as never);
@@ -177,14 +210,15 @@ describe("startJobs", () => {
     expect(dispatchMock).toHaveBeenCalledWith(client);
     expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "tcbx_reconcile", p_seconds: 290 });
     expect(rpcMock).toHaveBeenCalledWith("job_claim", { p_name: "whatsapp_monitor", p_seconds: 110 });
-    // Cinco intervalos (SLA, relay, TCBX, manutenção, WhatsApp).
-    expect(setInterval).toHaveBeenCalledTimes(5);
+    expect(webhookMock).toHaveBeenCalledWith(client);
+    // Seis intervalos (SLA, relay, TCBX, manutenção, WhatsApp, webhooks).
+    expect(setInterval).toHaveBeenCalledTimes(6);
     expect((globalThis as Store).__crmsupJobsStarted).toBe(true);
 
     const before = rpcMock.mock.calls.length;
     startJobs(); // guarda
     expect(rpcMock.mock.calls.length).toBe(before);
-    expect(setInterval).toHaveBeenCalledTimes(5);
+    expect(setInterval).toHaveBeenCalledTimes(6);
   });
 });
 

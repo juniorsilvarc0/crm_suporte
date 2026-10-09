@@ -2,14 +2,18 @@ import type { ConnectionState } from "@/features/chat/lib/connection/uazapi";
 import type { RelayConfig } from "@/features/settings/lib/get-relay-url";
 import type { Database, IntegrationStatus } from "@/lib/supabase/types";
 import type { ConnectionEvent } from "@/features/connection/types";
+import { WEBHOOK_AUDIT_ACTIONS } from "@/features/webhooks/catalog";
 
 export type IntegrationLog =
   Database["public"]["Tables"]["integration_logs"]["Row"];
 
 // ---- Registros (aba da Conexão) ---------------------------------------------
 
-/** Quem grava em `integration_logs` hoje: a API v1 (`withApi`) e o repasse ao agente. */
-export const INTEGRATION_LOG_PROVIDERS = ["api_v1", "relay"] as const;
+/**
+ * Quem grava em `integration_logs` hoje: a API v1 (`withApi`), o repasse ao
+ * agente e a trilha dos destinos de webhook.
+ */
+export const INTEGRATION_LOG_PROVIDERS = ["api_v1", "relay", "webhooks"] as const;
 export type IntegrationLogProvider = (typeof INTEGRATION_LOG_PROVIDERS)[number];
 
 /**
@@ -26,6 +30,8 @@ export const INTEGRATION_LOG_ACTIONS = {
     "signing_secret.rotated",
     "signing_secret.removed",
   ],
+  // Vem do catálogo dos webhooks, que é de onde as rotas tiram a ação.
+  webhooks: WEBHOOK_AUDIT_ACTIONS,
 } as const satisfies Record<IntegrationLogProvider, readonly string[]>;
 export type IntegrationLogAction = (typeof INTEGRATION_LOG_ACTIONS)[IntegrationLogProvider][number];
 

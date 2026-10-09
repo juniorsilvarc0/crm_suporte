@@ -14,11 +14,11 @@ import {
 } from "@/features/integrations/types";
 
 describe("rótulos dos registros", () => {
-  it("toda integração, ação do repasse e período que o filtro aceita tem rótulo próprio", () => {
+  it("toda integração, ação do repasse e dos webhooks e período que o filtro aceita tem rótulo próprio", () => {
     for (const provider of INTEGRATION_LOG_PROVIDERS) {
       expect(INTEGRATION_PROVIDER_LABELS[provider]).toBeTruthy();
     }
-    for (const action of INTEGRATION_LOG_ACTIONS.relay) {
+    for (const action of [...INTEGRATION_LOG_ACTIONS.relay, ...INTEGRATION_LOG_ACTIONS.webhooks]) {
       expect(integrationActionLabel(action)).not.toBe(action);
     }
     for (const period of INTEGRATION_LOG_PERIODS) {
