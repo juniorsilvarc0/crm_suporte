@@ -168,4 +168,18 @@ describe("INTEGRATION_LOG_ACTIONS confere com quem grava", () => {
       [RELAY_EVENT, PING_EVENT, ...trail.map((action) => `signing_secret.${action}`)].sort()
     );
   });
+
+  it("webhooks: cada ação da trilha é gravada por uma rota de /api/webhooks", () => {
+    const dir = path.join(process.cwd(), "src/app/api/webhooks");
+    const written = new Set<string>();
+    for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
+      if (path.basename(file) !== "route.ts") continue;
+      const source = readFileSync(path.join(dir, file), "utf8");
+      for (const match of source.matchAll(/auditWebhook\(supabase, (?:"([\w.]+)"|(PING_EVENT))/g)) {
+        written.add(match[1] ?? PING_EVENT);
+      }
+    }
+
+    expect([...INTEGRATION_LOG_ACTIONS.webhooks].sort()).toEqual([...written].sort());
+  });
 });

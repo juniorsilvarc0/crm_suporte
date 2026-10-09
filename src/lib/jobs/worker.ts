@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkWhatsappConnection } from "@/features/connection/server/connection-monitor";
 import { reconcileExternalContracts } from "@/features/customers/server/external-contracts";
 import { dispatchRelayBatch } from "@/features/integrations/server/relay-dispatch";
+import { dispatchWebhookBatch } from "@/features/webhooks/server/dispatch";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
 
@@ -21,6 +22,7 @@ const TCBX_INTERVAL_MS = 5 * 60_000; // Espelho de contratos da TCBX fresco
 const MAINTENANCE_INTERVAL_MS = 60 * 60_000; // Purga de chaves/logs expirados
 const RELAY_INTERVAL_MS = 20_000; // Recuperação do relay à IA (janela de 120s)
 const WHATSAPP_INTERVAL_MS = 2 * 60_000; // Monitor de conexão do WhatsApp (só leitura)
+const WEBHOOK_INTERVAL_MS = 20_000; // Webhooks de saída (fila com backoff)
 const TCBX_BATCH = 20; // empresas por leva (teto de chamadas à TCBX por ciclo)
 
 /** Pega o lease de um job. `claimed:false` = outra réplica está rodando. */
@@ -88,6 +90,28 @@ export async function runRelayDispatch(supabase: Admin): Promise<void> {
   }
 }
 
+// Um ciclo de webhooks por vez neste processo: com destino lento, uma leva leva
+// até 50 s (5 × 10 s) e o intervalo é de 20 s. A fila já não entrega em dobro;
+// a trava só evita empilhar levas.
+let webhookDispatchRunning = false;
+
+/**
+ * Webhooks de saída: drena a fila `webhook` do outbox (assina e envia). Como o
+ * relay, o claim serializa por evento — sem lease de job, as réplicas ajudam.
+ * Nunca lança.
+ */
+export async function runWebhookDispatch(supabase: Admin): Promise<void> {
+  if (webhookDispatchRunning) return;
+  webhookDispatchRunning = true;
+  try {
+    await dispatchWebhookBatch(supabase);
+  } catch (error) {
+    console.error("[jobs] webhook_dispatch", error);
+  } finally {
+    webhookDispatchRunning = false;
+  }
+}
+
 /**
  * Monitor de conexão do WhatsApp: lê o status da instância (só leitura, nunca
  * toca a sessão) e grava quando o estado muda. Lease de job: uma réplica por
@@ -129,7 +153,7 @@ export function startJobs(): void {
     return;
   }
   store.__crmsupJobsStarted = true;
-  console.info("[jobs] worker iniciado (SLA 60s · relay 20s · WhatsApp 2min · TCBX 5min · manutenção 1h).");
+  console.info("[jobs] worker iniciado (SLA 60s · relay 20s · webhooks 20s · WhatsApp 2min · TCBX 5min · manutenção 1h).");
 
   const supabase = createSupabaseAdminClient();
   const schedule = (fn: () => void, ms: number) => setInterval(fn, ms).unref?.();
@@ -139,6 +163,7 @@ export function startJobs(): void {
   const tcbx = () => void runTcbxReconcile(supabase);
   const maintenance = () => void runMaintenance(supabase);
   const whatsapp = () => void runWhatsappMonitor(supabase);
+  const webhooks = () => void runWebhookDispatch(supabase);
 
   // Tentativas imediatas no boot: drena o que ficou pendente antes do restart
   // (manutenção não precisa).
@@ -146,9 +171,11 @@ export function startJobs(): void {
   relay();
   tcbx();
   whatsapp();
+  webhooks();
   schedule(sla, SWEEP_INTERVAL_MS);
   schedule(relay, RELAY_INTERVAL_MS);
   schedule(tcbx, TCBX_INTERVAL_MS);
   schedule(maintenance, MAINTENANCE_INTERVAL_MS);
   schedule(whatsapp, WHATSAPP_INTERVAL_MS);
+  schedule(webhooks, WEBHOOK_INTERVAL_MS);
 }

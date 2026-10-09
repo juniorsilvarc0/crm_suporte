@@ -21,6 +21,8 @@ Só a API v1 é contrato para quem está fora do CRM. As rotas da tela mudam jun
 
 O caminho inverso, do CRM para o agente (o repasse de cada mensagem do cliente), está em [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md).
 
+Os eventos de ticket que o CRM envia a sistemas de fora (webhooks de saída, assinados com HMAC) estão em [`CONTRATO-WEBHOOKS.md`](CONTRATO-WEBHOOKS.md).
+
 ## 2. API v1: regras gerais
 
 ### 2.1 Autenticação
@@ -320,13 +322,19 @@ Estas rotas existem para o app. Não são contrato de integração: o formato mu
 | POST | `/api/connection/qr` | pede o QR code de conexão |
 | GET | `/api/connection/state` | estado da conexão, sem pedir QR |
 | POST | `/api/connection/disconnect` | desconecta; opcionalmente apaga o histórico ou a instância |
-| GET | `/api/connection/logs` | registros de integração (API v1 e repasse), com filtros na URL e cursor |
+| GET | `/api/connection/logs` | registros de integração (API v1, repasse e a trilha dos webhooks), com filtros na URL e cursor |
 | GET | `/api/connection/health` | saúde das integrações: WhatsApp, última mensagem recebida e contagens das últimas 24 h |
 | POST | `/api/connection/agent/test` | envia um `webhook.ping` ao endereço salvo do agente |
 | POST, DELETE | `/api/connection/agent/signing-secret` | gera (mostra uma vez) ou remove a chave de assinatura do repasse |
 | GET, PATCH | `/api/settings/automation` | endereço do agente (repasse); vazio desliga |
 | GET, PATCH | `/api/settings/bot-signature` | configuração da assinatura das mensagens da IA |
 | POST, DELETE | `/api/settings/environment-variables` | variáveis do cofre (aba Variáveis) |
+| GET, POST | `/api/webhooks` | destinos de webhook; cadastrar gera o segredo e o mostra uma vez |
+| PATCH, DELETE | `/api/webhooks/[id]` | altera (nome, URL, eventos, pausa) ou exclui o destino |
+| POST | `/api/webhooks/[id]/secret` | troca o segredo do destino (o novo aparece uma vez) |
+| POST | `/api/webhooks/[id]/ping` | envia um `webhook.ping` assinado ao destino, na hora |
+| GET | `/api/webhooks/deliveries` | entregas mais recentes, por destino e status |
+| POST | `/api/webhooks/deliveries/[id]/requeue` | devolve à fila uma entrega que esgotou as tentativas |
 
 **Tokens da API v1 (admin)**
 
@@ -438,3 +446,4 @@ O que a rota faz com cada evento:
 | Rotas da v1 | `src/app/api/v1/**/route.ts` |
 | Sessão e trava de origem | `src/lib/auth/session.ts`, `src/lib/auth/route-guard.ts`, `src/proxy.ts` |
 | Webhook do WhatsApp | `src/app/api/chat/webhook/uazapi/route.ts` |
+| Webhooks de saída (catálogo, envio, despachante) | `src/features/webhooks/`, `src/lib/jobs/worker.ts` |

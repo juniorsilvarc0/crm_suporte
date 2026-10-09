@@ -11,6 +11,7 @@ import type {
 export const INTEGRATION_PROVIDER_LABELS: Record<IntegrationLogProvider, string> = {
   api_v1: "API do CRM",
   relay: "Agente de IA",
+  webhooks: "Webhooks",
 };
 
 const RELAY_ACTION_LABELS: Record<string, string> = {
@@ -19,6 +20,14 @@ const RELAY_ACTION_LABELS: Record<string, string> = {
   "signing_secret.generated": "Chave gerada",
   "signing_secret.rotated": "Chave trocada",
   "signing_secret.removed": "Chave removida",
+};
+
+const WEBHOOK_ACTION_LABELS: Record<string, string> = {
+  "subscription.created": "Destino cadastrado",
+  "subscription.updated": "Destino alterado",
+  "subscription.deleted": "Destino excluído",
+  "secret.rotated": "Segredo trocado",
+  "delivery.requeued": "Entrega reenviada",
 };
 
 export const INTEGRATION_LOG_PERIOD_LABELS: Record<IntegrationLogPeriod, string> = {
@@ -35,7 +44,7 @@ export function integrationProviderLabel(provider: string): string {
 /** A ação como a tela a mostra. Na API é o método HTTP, que já se lê como está. */
 export function integrationActionLabel(action: string | null): string {
   if (!action) return "—";
-  return RELAY_ACTION_LABELS[action] ?? action;
+  return RELAY_ACTION_LABELS[action] ?? WEBHOOK_ACTION_LABELS[action] ?? action;
 }
 
 /** Quem fez: o token da chamada, ou o usuário da trilha da chave. */

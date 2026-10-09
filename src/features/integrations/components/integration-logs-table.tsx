@@ -164,7 +164,7 @@ export function IntegrationLogsTable({
     change({
       integracao,
       acao: integracao && filters.acao && !actions.includes(filters.acao) ? null : filters.acao,
-      token: integracao === "relay" ? null : filters.token,
+      token: integracao && integracao !== "api_v1" ? null : filters.token,
     });
   }
 
@@ -263,7 +263,7 @@ export function IntegrationLogsTable({
                 ]}
               />
             </FilterField>
-            {filters.integracao === "relay" ? null : (
+            {filters.integracao && filters.integracao !== "api_v1" ? null : (
               <FilterField label="Token">
                 <FormSelect
                   aria-label="Filtrar por token"
