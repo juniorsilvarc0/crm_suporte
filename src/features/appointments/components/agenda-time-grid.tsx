@@ -4,6 +4,12 @@ import { PlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { AgendaEvent } from "@/features/appointments/components/agenda-event";
+import {
+  blockMinutesInDay,
+  blocksForDateKey,
+  describeAgendaBlockForDate,
+  type AgendaBlock,
+} from "@/features/appointments/lib/agenda-blocks";
 import { capitalizeFirst, groupAppointmentsByDay, startMinutesOf } from "@/features/appointments/lib/agenda-view";
 import {
   GRID_END_HOUR,
@@ -34,6 +40,7 @@ export function AgendaTimeGrid({
   mode,
   dateKey,
   appointments,
+  blocks,
   todayKey,
   onOpen,
   onCreate,
@@ -41,6 +48,7 @@ export function AgendaTimeGrid({
   mode: "week" | "day";
   dateKey: string;
   appointments: AppointmentListItem[];
+  blocks: AgendaBlock[];
   todayKey: string;
   onOpen: (appointment: AppointmentListItem) => void;
   onCreate: (dateKey: string) => void;
@@ -102,7 +110,13 @@ export function AgendaTimeGrid({
               ))}
             </div>
             {dayKeys.map((key) => (
-              <DayColumn key={key} appointments={byDay.get(key) ?? []} onOpen={onOpen} />
+              <DayColumn
+                key={key}
+                dateKey={key}
+                appointments={byDay.get(key) ?? []}
+                blocks={blocksForDateKey(blocks, key)}
+                onOpen={onOpen}
+              />
             ))}
           </div>
         </div>
@@ -112,10 +126,14 @@ export function AgendaTimeGrid({
 }
 
 function DayColumn({
+  dateKey,
   appointments,
+  blocks,
   onOpen,
 }: {
+  dateKey: string;
   appointments: AppointmentListItem[];
+  blocks: AgendaBlock[];
   onOpen: (appointment: AppointmentListItem) => void;
 }) {
   const placements = layoutTimeGrid(
@@ -132,6 +150,42 @@ function DayColumn({
       {HOURS.map((hour) => (
         <div key={hour} style={{ height: HOUR_HEIGHT }} className="border-b border-border/30" />
       ))}
+
+      {/*
+        Bloqueio = faixa de fundo (UI.md §5.17): recortada no dia, ANTES dos
+        cards no fluxo e `pointer-events-none` — leitura de fundo, nunca cobre
+        nem rouba o clique de um compromisso marcado por cima.
+      */}
+      {blocks.map((block) => {
+        const span = blockMinutesInDay(block, dateKey);
+        const description = describeAgendaBlockForDate(block, dateKey);
+        if (!span || !description) return null;
+        const top = Math.max(0, span.startMinutes - GRID_START_HOUR * 60);
+        const height = Math.min(span.endMinutes - Math.max(span.startMinutes, GRID_START_HOUR * 60), GRID_HEIGHT - top);
+        if (height <= 0) return null;
+        return (
+          <div
+            key={block.id}
+            role="note"
+            title={description.label}
+            aria-label={`Bloqueio: ${description.label}`}
+            className="pointer-events-none absolute inset-x-0 min-w-0 overflow-hidden border-y border-muted-foreground/10 bg-muted/20"
+            style={{ top, height }}
+          >
+            <span
+              aria-hidden
+              className="absolute inset-0 bg-[repeating-linear-gradient(135deg,var(--color-muted-foreground)_0,var(--color-muted-foreground)_1px,transparent_1px,transparent_7px)] opacity-[0.14]"
+            />
+            {height >= 22 ? (
+              <span className="relative flex min-w-0 items-center gap-1 overflow-hidden px-1.5 pt-0.5 text-[10px] font-medium leading-tight text-muted-foreground">
+                <span className="shrink-0 whitespace-nowrap tabular-nums">{description.period}</span>
+                <span aria-hidden>·</span>
+                <span className="min-w-0 flex-1 truncate">{description.reason}</span>
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
 
       {placements.map((placement) => {
         const appointment = byId.get(placement.id);

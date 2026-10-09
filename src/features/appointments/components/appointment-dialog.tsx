@@ -2,29 +2,43 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2Icon, Loader2Icon, PlusIcon, TicketIcon, XIcon } from "lucide-react";
+import { Building2Icon, CalendarOffIcon, Loader2Icon, PlusIcon, TicketIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormSelect } from "@/components/forms/form-select";
 import { ModalFooterActions, ModalShell } from "@/components/layout/modal-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { DateTimeFields } from "@/features/appointments/components/date-time-fields";
+import {
+  describeAgendaBlockForDate,
+  findBlocksForRange,
+  localToIso,
+  relevantBlocks,
+  type AgendaBlock,
+} from "@/features/appointments/lib/agenda-blocks";
 import { appointmentKindOptions } from "@/features/appointments/lib/appointment-kind";
 import { appointmentStatusOptions } from "@/features/appointments/lib/appointment-status";
 import type { AppointmentListItem } from "@/features/appointments/types";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerSummary } from "@/features/customers/types";
+import { getColorStyle } from "@/features/tags/schemas/colors";
 import { formatProtocol } from "@/features/tickets/lib/protocol";
 import {
+  addDaysToAppDateKey,
   defaultDateTimeLocalForDateKey,
   formatDateTimeLocalInput,
   getTodayAppDateKey,
+  localDateTimeToIso,
 } from "@/lib/formatters/date";
+
+// Aviso não tem token semântico: a paleta de domínio, como no detalhe do ticket.
+const WARN = getColorStyle("amber");
 
 const DURATION_OPTIONS = [
   { value: "30", label: "30 min" },
@@ -161,6 +175,37 @@ function AppointmentForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
+
+  // Bloqueios do dia escolhido, para o aviso (UI.md §5.17: avisa, não impede).
+  // Guardados com o dia: trocar a data não mostra o aviso do dia anterior.
+  const dayKey = when.slice(0, 10);
+  const [dayBlocks, setDayBlocks] = useState<{ day: string; blocks: AgendaBlock[] } | null>(null);
+  useEffect(() => {
+    if (!open || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return;
+    let active = true;
+    const from = localToIso(dayKey, "00:00");
+    const to = localToIso(addDaysToAppDateKey(dayKey, 1), "00:00");
+    void fetch(`/api/agenda-blocks?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { blocks?: unknown } | null) => {
+        if (active && Array.isArray(data?.blocks)) setDayBlocks({ day: dayKey, blocks: data.blocks as AgendaBlock[] });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [open, dayKey]);
+
+  const startIso = localDateTimeToIso(when);
+  // Sem duração, conta 1 hora — o mesmo que a grade da Agenda desenha.
+  const blockedBy =
+    dayBlocks && dayBlocks.day === dayKey && startIso
+      ? findBlocksForRange({
+          blocks: relevantBlocks(dayBlocks.blocks, assigneeId || null),
+          startIso,
+          durationMin: Number(duration) || 60,
+        })
+      : [];
 
   // A equipe (id + nome) para o select de técnico: client não lê app_users direto.
   useEffect(() => {
@@ -357,6 +402,17 @@ function AppointmentForm({
               />
             </Field>
           </div>
+
+          {blockedBy.length > 0 ? (
+            <Alert className={WARN.panel}>
+              <CalendarOffIcon aria-hidden className={WARN.text} />
+              <AlertTitle>Horário com bloqueio</AlertTitle>
+              <AlertDescription>
+                {blockedBy.map((block) => describeAgendaBlockForDate(block, dayKey)?.label).filter(Boolean).join("; ")}.
+                Dá para agendar mesmo assim.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
           <Field>
             <FieldLabel>Empresa</FieldLabel>

@@ -22,6 +22,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { AgendaCalendar } from "@/features/appointments/components/agenda-calendar";
+import { localToIso, type AgendaBlock } from "@/features/appointments/lib/agenda-blocks";
 import type { AgendaPeriod } from "@/features/appointments/lib/agenda-view";
 import type { AppointmentListItem } from "@/features/appointments/types";
 
@@ -101,9 +102,27 @@ function desktopMonth() {
   return within(grid);
 }
 
+const FERIADO: AgendaBlock = {
+  id: "b1",
+  startsAt: localToIso("2026-10-12", "00:00"),
+  endsAt: localToIso("2026-10-13", "00:00"),
+  allDay: true,
+  reason: "Feriado",
+  assignee: null,
+};
+
+const ALMOCO_ANA: AgendaBlock = {
+  id: "b2",
+  startsAt: localToIso("2026-10-09", "12:00"),
+  endsAt: localToIso("2026-10-09", "13:00"),
+  allDay: false,
+  reason: "Almoço",
+  assignee: { id: "u1", name: "Ana Lima" },
+};
+
 describe("AgendaCalendar", () => {
   it("mostra o período, a contagem e o compromisso no dia dele, com o resumo no nome acessível", () => {
-    render(<AgendaCalendar period={period()} todayKey={TODAY} appointments={[appointment()]} />);
+    render(<AgendaCalendar period={period()} todayKey={TODAY} blocks={[]} appointments={[appointment()]} />);
 
     expect(screen.getByRole("heading", { name: "Outubro de 2026" })).toBeInTheDocument();
     // A contagem da faixa (o cabeçalho do dia no celular repete o texto, sem aria-live).
@@ -127,7 +146,7 @@ describe("AgendaCalendar", () => {
     render(
       <AgendaCalendar
         period={period()}
-        todayKey={TODAY}
+        todayKey={TODAY} blocks={[]}
         // 28 de setembro aparece na 1ª linha da grade de outubro.
         appointments={[appointment(), appointment({ id: "a2", scheduled_at: "2026-09-28T13:00:00+00:00" })]}
       />
@@ -147,7 +166,7 @@ describe("AgendaCalendar", () => {
   it("tocar no compromisso abre a edição dele", async () => {
     const user = userEvent.setup();
     stubTeam();
-    render(<AgendaCalendar period={period()} todayKey={TODAY} appointments={[appointment()]} />);
+    render(<AgendaCalendar period={period()} todayKey={TODAY} blocks={[]} appointments={[appointment()]} />);
 
     await user.click(desktopMonth().getByRole("button", { name: /Trocar a impressora fiscal/ }));
 
@@ -160,7 +179,7 @@ describe("AgendaCalendar", () => {
   it("o '+' de um dia abre a criação naquele dia", async () => {
     const user = userEvent.setup();
     stubTeam();
-    render(<AgendaCalendar period={period()} todayKey={TODAY} appointments={[]} />);
+    render(<AgendaCalendar period={period()} todayKey={TODAY} blocks={[]} appointments={[]} />);
 
     await user.click(desktopMonth().getByRole("button", { name: "Agendar em Quarta-feira, 21 de outubro" }));
 
@@ -173,7 +192,7 @@ describe("AgendaCalendar", () => {
     const user = userEvent.setup();
     stubTeam();
     render(
-      <AgendaCalendar period={period({ view: "semana", dateKey: "2026-10-14" })} todayKey={TODAY} appointments={[]} />
+      <AgendaCalendar period={period({ view: "semana", dateKey: "2026-10-14" })} todayKey={TODAY} blocks={[]} appointments={[]} />
     );
 
     await user.click(screen.getByRole("button", { name: "Novo agendamento" }));
@@ -183,7 +202,7 @@ describe("AgendaCalendar", () => {
 
   it("a semana mostra os sete dias e o compromisso na coluna dele", () => {
     render(
-      <AgendaCalendar period={period({ view: "semana" })} todayKey={TODAY} appointments={[appointment()]} />
+      <AgendaCalendar period={period({ view: "semana" })} todayKey={TODAY} blocks={[]} appointments={[appointment()]} />
     );
 
     expect(screen.getByRole("heading", { name: "04–10 de out" })).toBeInTheDocument();
@@ -192,7 +211,7 @@ describe("AgendaCalendar", () => {
   });
 
   it("a lista é a tabela do mês, com editar e excluir na linha", () => {
-    render(<AgendaCalendar period={period({ view: "lista" })} todayKey={TODAY} appointments={[appointment()]} />);
+    render(<AgendaCalendar period={period({ view: "lista" })} todayKey={TODAY} blocks={[]} appointments={[appointment()]} />);
 
     const table = within(screen.getByRole("table"));
     expect(table.getByText("Trocar a impressora fiscal")).toBeInTheDocument();
@@ -201,7 +220,7 @@ describe("AgendaCalendar", () => {
   });
 
   it("lista vazia fala do mês, não da agenda inteira", () => {
-    render(<AgendaCalendar period={period({ view: "lista" })} todayKey={TODAY} appointments={[]} />);
+    render(<AgendaCalendar period={period({ view: "lista" })} todayKey={TODAY} blocks={[]} appointments={[]} />);
 
     expect(screen.getByText("Nenhum agendamento neste mês")).toBeInTheDocument();
   });
@@ -210,12 +229,40 @@ describe("AgendaCalendar", () => {
     render(
       <AgendaCalendar
         period={period({ view: "dia" })}
-        todayKey={TODAY}
+        todayKey={TODAY} blocks={[]}
         appointments={[appointment({ status: "cancelado" })]}
       />
     );
 
     const event = screen.getByRole("button", { name: /Cancelado$/ });
     expect(within(event).getByText("Trocar a impressora fiscal")).toHaveClass("line-through");
+  });
+
+  it("no mês, dia inteiro hachura a célula; parcial vira linha com motivo e horário", () => {
+    render(
+      <AgendaCalendar period={period()} todayKey={TODAY} blocks={[FERIADO, ALMOCO_ANA]} appointments={[]} />
+    );
+
+    const feriado = desktopMonth().getByRole("gridcell", { name: /^Segunda-feira, 12 de outubro/ });
+    expect(feriado).toHaveAttribute("data-block-coverage", "all-day");
+    expect(feriado.className).toContain("repeating-linear-gradient");
+    expect(feriado).toHaveAccessibleName("Segunda-feira, 12 de outubro, 0 agendamentos, bloqueios: Feriado · Dia inteiro");
+
+    const almoco = desktopMonth().getByRole("gridcell", { name: /^Sexta-feira, 09 de outubro/ });
+    expect(almoco).toHaveAttribute("data-block-coverage", "partial");
+    expect(almoco.className).not.toContain("repeating-linear-gradient");
+    expect(within(almoco).getByText("Ana Lima: Almoço")).toBeInTheDocument();
+    expect(within(almoco).getByText("12:00–13:00")).toBeInTheDocument();
+  });
+
+  it("na grade, o bloqueio é uma faixa de fundo que não rouba o clique", () => {
+    render(
+      <AgendaCalendar period={period({ view: "dia" })} todayKey={TODAY} blocks={[ALMOCO_ANA]} appointments={[]} />
+    );
+
+    const faixa = screen.getByRole("note", { name: "Bloqueio: Ana Lima: Almoço · 12:00–13:00" });
+    expect(faixa).toHaveClass("pointer-events-none");
+    // 12:00 na grade que começa às 07:00, a 1 px por minuto.
+    expect(faixa).toHaveStyle({ top: "300px", height: "60px" });
   });
 });
