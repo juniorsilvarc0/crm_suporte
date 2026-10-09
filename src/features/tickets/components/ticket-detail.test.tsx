@@ -155,6 +155,7 @@ function renderDetail({
       timeline={EMPTY_TIMELINE}
       catalog={catalog(catalogOverrides)}
       team={TEAM}
+      followups={[]}
       viewerId={VIEWER}
       fetchedAt={FETCHED_AT}
     />
@@ -730,6 +731,7 @@ describe("TicketDetailView — lateral", () => {
           ...TEAM,
           { id: "u-off", name: "Carlos Inativo", avatar_color: "gray", avatar_url: null, is_active: false },
         ]}
+        followups={[]}
         viewerId={VIEWER}
         fetchedAt={FETCHED_AT}
       />
@@ -806,6 +808,7 @@ describe("TicketDetailView — lateral", () => {
           timeline={EMPTY_TIMELINE}
           catalog={catalog()}
           team={TEAM}
+          followups={[]}
           viewerId={VIEWER}
           fetchedAt={FETCHED_AT}
         />

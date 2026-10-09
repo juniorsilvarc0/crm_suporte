@@ -347,6 +347,10 @@ Recuperada da clínica, reinterpretada para suporte (Fase 7). A **2a entrega a l
 - **Tipo e situação são enum fixo**, não tabela configurável (a clínica tinha `appointment_types`/`clinic_units`/`agenda_hours`; aqui não).
 - **Views de calendário (mês/grade/semana/dia) e follow-ups ficam para as fatias 2b/2c.** O vínculo a ticket/contato nasce do contexto quando o compromisso vem de um ticket (2c); o diálogo standalone liga só empresa + técnico.
 
+### §5.1.2 Retornos no ticket (`/app/tickets/[number]`)
+
+O detalhe do ticket ganhou (Fase 7, 2c-1) a seção **"Retornos"** na coluna direita (ao lado de Detalhes e Anexos): os follow-ups daquele ticket. Cada retorno é uma linha com **tipo** (selo, `followupKindColor`), **situação** (selo, `followupStatusColor`), **prazo** e observação; o **vencido** (pendente + prazo passado) fica destacado (borda/fundo `destructive` suave + ícone de alerta). "Novo retorno" abre um diálogo compact (tipo, prazo via `DateTimeFields`, observação) que nasce com o `ticket_id` do contexto — **não há seletor de ticket**. Concluir/cancelar/reabrir são PATCH diretos (sem diálogo); o `done_at` é carimbado pelo servidor conforme o status. Ticket encerrado (`is_terminal`) mostra os retornos só em leitura. O relógio do "vencido" é o `useNow(fetchedAt)` do próprio detalhe (igual ao selo de SLA) — seguro para hidratação. A fila cross-ticket `/app/follow-ups` vem depois (2c-2).
+
 ### §5.2 Funil (`/app/funil`)
 
 Kanban com `@dnd-kit`. Colunas vêm do banco (`board_columns`), com cor e `stage_type`. Um lead pode ter N cards (deals).
