@@ -213,6 +213,62 @@ async function apiCalls(supabase: Admin, since: string): Promise<IntegrationHeal
   return { state: "ok", total, clientErrors, serverErrors };
 }
 
+function baseWebhookCount(supabase: Admin) {
+  return supabase.from("event_outbox").select("id", { count: "exact", head: true }).eq("kind", "webhook");
+}
+
+/** Quantas entregas de webhook casam com o filtro, ou `null` se a contagem falhou. */
+async function countWebhookDeliveries(
+  supabase: Admin,
+  narrow: (query: ReturnType<typeof baseWebhookCount>) => ReturnType<typeof baseWebhookCount>
+): Promise<number | null> {
+  const { count, error, status } = await narrow(baseWebhookCount(supabase));
+  if (error || count === null) {
+    logDbFailure("contagem de webhooks", error, status);
+    return null;
+  }
+  return count;
+}
+
+/**
+ * Os webhooks de saída, lidos da própria fila (o servidor lê as colunas da
+ * entrega, nunca a lease). "Entregue" conta pela hora da entrega; "esgotada",
+ * pela hora em que morreu (o dead-letter grava `updated_at`).
+ */
+async function webhookHealth(supabase: Admin, since: string): Promise<IntegrationHealth["webhooks"]> {
+  const [destinations, sent, dead, retrying, last] = await Promise.all([
+    supabase.from("webhook_subscriptions").select("id", { count: "exact", head: true }).eq("is_active", true),
+    countWebhookDeliveries(supabase, (query) => query.eq("status", "sent").gte("delivered_at", since)),
+    countWebhookDeliveries(supabase, (query) => query.eq("status", "dead_letter").gte("updated_at", since)),
+    countWebhookDeliveries(supabase, (query) => query.eq("status", "retry")),
+    supabase
+      .from("event_outbox")
+      .select("delivered_at")
+      .eq("kind", "webhook")
+      .eq("status", "sent")
+      .gte("delivered_at", since)
+      .order("delivered_at", { ascending: false })
+      .limit(1),
+  ]);
+  if (destinations.error || destinations.count === null) {
+    logDbFailure("destinos de webhook", destinations.error, destinations.status);
+    return unavailable;
+  }
+  if (last.error) {
+    logDbFailure("última entrega de webhook", last.error, last.status);
+    return unavailable;
+  }
+  if (sent === null || dead === null || retrying === null) return unavailable;
+  return {
+    state: "ok",
+    activeDestinations: destinations.count,
+    sent,
+    dead,
+    retrying,
+    lastSentAt: last.data?.[0]?.delivered_at ?? null,
+  };
+}
+
 /**
  * Lê a saúde das integrações agora. Cada parte falha sozinha, e falha dizendo
  * que falhou: contagem que não foi lida não vira zero. Nunca rejeita.
@@ -238,12 +294,13 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
       connectionHistory: unavailable,
       relay: { config: "unreadable", reason: null, deliveries: unavailable },
       api: { calls: unavailable },
+      webhooks: unavailable,
     };
   }
 
   const admin = supabase;
   const since = new Date(now.getTime() - HEALTH_WINDOW_HOURS * 3_600_000).toISOString();
-  const [relay, whatsapp, lastInbound, deliveries, calls, connectionHistory] = await Promise.all([
+  const [relay, whatsapp, lastInbound, deliveries, calls, connectionHistory, webhooks] = await Promise.all([
     settle<Pick<IntegrationHealth["relay"], "config" | "reason">>(
       "agente",
       async () => {
@@ -268,6 +325,7 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
       },
       unavailable
     ),
+    settle<IntegrationHealth["webhooks"]>("webhooks", () => webhookHealth(admin, since), unavailable),
   ]);
 
   return {
@@ -278,6 +336,7 @@ export async function readIntegrationHealth(now: Date = new Date()): Promise<Int
     connectionHistory,
     relay: { ...relay, deliveries },
     api: { calls },
+    webhooks,
   };
 }
 
