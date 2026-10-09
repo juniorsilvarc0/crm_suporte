@@ -1482,7 +1482,8 @@ Para o gestor decidir, não para encher a tela. **Uma superfície com um número
 - **Gráfico "Abertos × resolvidos por dia"** (skill dataviz): duas linhas de 2 px, um eixo, grade horizontal de 1 px, legenda com o total de cada série, cruz + tooltip com as duas séries (valor em destaque, nome em segundo plano, chave de linha), marcador do dia em foco com anel na cor do card, e uma **tabela `sr-only`** com cada dia. Cores pelos tokens `--chart-opened` (ciano) e `--chart-resolved` (verde), **validados pelo script da skill** nos dois temas — os verdes da marca entre si não se separam para daltônicos. Período sem movimento: `EmptyState`, não duas linhas no zero.
 - **Amostra:** as contagens vêm do `count` (exatas); medianas, IA e gráfico, das linhas lidas (teto de 10.000). Passou do teto, uma linha avisa.
 - Falha de leitura: "Não foi possível carregar as métricas." + "Tentar de novo" (link para o mesmo período).
-- Recortes por fila, cliente e analista, e IA × humano em detalhe, vêm no PR seguinte.
+- **IA × analista** (Fase 9 PR 2), numa banda: **quem abriu** (IA · analista · integração), **1ª resposta da IA** (mediana, com a amostra — a do analista já está no resumo, sem repetir) e **resolvidos sem o analista** ("de N resolvidos, sem nenhuma resposta do analista").
+- **Recortes** (Fase 9 PR 2), em **tabelas** (muitas classes = tabela, não gráfico): **Por fila** (ordem: mais abertos), **Por analista** (pelo responsável ATUAL; a carga em aberto primeiro) e **Clientes que mais abriram** (até 10, sem "Sem empresa" no ranking; o subtítulo diz se mostra todos ou os primeiros de N). Colunas iguais nas três: Abertos · Resolvidos · Em aberto agora · 1ª resposta (mediana "· n" respondidos). "Sem fila"/"Sem responsável" ficam por último, em tom secundário. A tabela rola dentro do cartão no celular.
 
 ## §6. Estados de interface
 
