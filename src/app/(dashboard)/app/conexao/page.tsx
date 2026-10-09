@@ -21,8 +21,11 @@ import {
   getTranscriptionModelConfig,
 } from "@/features/settings/queries/get-environment-variables";
 import { getRelaySigning } from "@/features/settings/queries/get-relay-signing";
+import { WebhooksManager } from "@/features/webhooks/components/webhooks-manager";
+import { getWebhookSubscriptions } from "@/features/webhooks/queries/get-webhooks";
 import { requireAdminPage } from "@/lib/auth/require-dashboard-session";
 import { firstParam, type SearchParams } from "@/lib/http/search-params";
+import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +56,7 @@ export default async function ConexaoPage({
     botSignature,
     environmentVariables,
     transcriptionModel,
+    webhookSubscriptions,
   ] = await Promise.all([
     logFilters ? getIntegrationLogs(logFilters) : null,
     getApiTokens(),
@@ -61,13 +65,15 @@ export default async function ConexaoPage({
     getBotSignatureConfig(),
     getEnvironmentVariables(),
     getTranscriptionModelConfig(),
+    // null = a leitura falhou: a aba diz isso, em vez de "nenhum destino".
+    hasSupabaseAdminEnv() ? getWebhookSubscriptions(createSupabaseAdminClient()) : null,
   ]);
 
   return (
     <>
       <PageHeader
         title="Integrações"
-        description="WhatsApp, API do CRM, agente de IA, variáveis, registros e saúde das integrações"
+        description="WhatsApp, API do CRM, webhooks, agente de IA, variáveis, registros e saúde das integrações"
       />
       <main className="min-w-0 p-4 sm:p-6 lg:p-8">
         <UrlTabs
@@ -75,6 +81,7 @@ export default async function ConexaoPage({
           panels={{
             whatsapp: <ConnectionPanel />,
             api: <ApiTokensManager tokens={apiTokens} />,
+            webhooks: <WebhooksManager subscriptions={webhookSubscriptions} />,
             agente: (
               <section className="grid gap-5">
                 <div>

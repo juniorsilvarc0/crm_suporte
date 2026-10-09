@@ -27,6 +27,28 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 6c-3: aba Webhooks em Integrações
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** o administrador cadastra e cuida dos destinos de webhook pela tela, sem chamar as rotas na mão: segredo mostrado uma vez, teste de conexão, troca de segredo, pausa, exclusão, entregas recentes e reenvio.
+**Arquivos alterados:** `src/features/webhooks/components/` (`webhooks-manager.tsx`, `webhook-form.tsx`, `webhook-secret-view.tsx`, `webhook-deliveries.tsx`, com testes), `src/features/webhooks/lib/webhook-display.ts` (+teste), `src/features/connection/lib/connection-tabs.ts`, `src/app/(dashboard)/app/conexao/page.tsx` (+teste); docs: `UI.md` §5.19, `PRD.md`, `docs/CONTRATO-WEBHOOKS.md` §7, este PROGRESS.
+**O que foi feito:**
+- **Aba `?aba=webhooks`**, entre API do CRM e Agente de IA. A página lê os destinos no servidor (`getWebhookSubscriptions`); sem Supabase admin ou com a leitura falhando chega `null`, e a aba diz "Não foi possível carregar os destinos." (nunca "nenhum destino").
+- **Lista** com status em texto (Ativo/Pausado), URL, resumo dos eventos e o aviso "Sem segredo: nada sai". **Testar** à vista; o resto no menu "Mais ações".
+- **Cadastrar/editar** (`ModalShell` com react-hook-form e o schema da rota): eventos em checkboxes com Marcar todos/Limpar; a recusa da URL pelo servidor vai para o campo; editar manda só o que mudou.
+- **Segredo uma vez** (cadastro e troca) no mesmo `Dialog`, `dismissible={false}`, foco no copiar, `router.refresh()` só depois de Concluir. Troca sem resposta avisa que o segredo pode ter mudado.
+- **Confirmação** para trocar segredo, pausar e excluir; reativar não pede.
+- **Entregas recentes:** leitura ao abrir e no Atualizar, filtros de destino e status, Reenviar só na esgotada, resposta de filtro antigo descartada.
+**Decisões tomadas (revisar):**
+- **A aba não fica montada ao trocar** (sem `keepMounted`, ao contrário do Agente de IA): o segredo só aparece dentro de um diálogo modal, que impede trocar de aba enquanto está aberto, e as entregas se releem ao voltar.
+- **Os destinos são lidos em toda abertura de Integrações** (como os tokens), e não só com a aba aberta: é uma consulta pequena, e a aba abre sem esqueleto.
+- **Campo de URL é texto com `inputMode="url"`**, e não `type="url"`: o balão nativo do navegador barraria o envio com outra mensagem.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos são de `verify-webhook.test.ts`) · test ✓ (4863/4863) · build ✓. `bug-hunter`/`verification-before-completion` não estão instaladas: revisão manual (renderização única das ações por linha, nome acessível dos checkboxes, campo de URL, estados de falha).
+**Pendências / próximos passos:** 6c-4 (`ticket_notices` + `/api/v1` notices claim/finalize).
+**Armadilhas descobertas:**
+- **Checkbox do Base UI dentro de `<label>` com `aria-label` soma os dois no nome acessível** ("Ticket aberto (ticket.created) Ticket abertoticket.created"). O texto visível precisa de `aria-hidden`. O diálogo de edição de token (`api-token-edit-dialog.tsx`) tem o mesmo problema, e o teste dele contorna com regex; fica para uma task própria.
+- **Renderizar as mesmas ações duas vezes (uma `sm:hidden`, outra `hidden sm:block`) duplica os botões para o leitor de tela e para o Testing Library.** Uma renderização só, com tamanhos responsivos (`h-11 sm:h-8`).
+
 ## [2026-10-09] Fase 6c-2: webhooks de saída — o envio (servidor)
 
 **Agente/Modelo:** Claude Opus 5.5.

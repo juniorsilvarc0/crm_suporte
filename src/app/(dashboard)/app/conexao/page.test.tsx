@@ -30,6 +30,10 @@ const m = vi.hoisted(() => ({
   IntegrationLogsTable: vi.fn<(props: { page: unknown; filters: unknown; tokens: unknown }) => ReactNode>(
     () => <div data-testid="registros" />
   ),
+  webhooks: vi.fn(),
+  hasAdminEnv: vi.fn(),
+  adminClient: { marker: "admin-client" },
+  WebhooksManager: vi.fn<(props: { subscriptions: unknown }) => ReactNode>(() => <div data-testid="destinos" />),
 }));
 
 // Só o guard de admin: trocar por outro faz a página falhar aqui.
@@ -57,6 +61,12 @@ vi.mock("@/features/settings/components/bot-signature-settings", () => ({ BotSig
 vi.mock("@/features/settings/components/api-tokens-manager", () => ({ ApiTokensManager: m.ApiTokensManager }));
 vi.mock("@/features/settings/components/environment-variables-manager", () => ({
   EnvironmentVariablesManager: m.EnvironmentVariablesManager,
+}));
+vi.mock("@/features/webhooks/queries/get-webhooks", () => ({ getWebhookSubscriptions: m.webhooks }));
+vi.mock("@/features/webhooks/components/webhooks-manager", () => ({ WebhooksManager: m.WebhooksManager }));
+vi.mock("@/lib/supabase/admin", () => ({
+  hasSupabaseAdminEnv: m.hasAdminEnv,
+  createSupabaseAdminClient: () => m.adminClient,
 }));
 vi.mock("@/components/layout/page-header", () => ({ PageHeader: () => null }));
 vi.mock("@/features/integrations/queries/get-integration-logs", () => ({ getIntegrationLogs: m.logs }));
@@ -98,6 +108,7 @@ const SIGNING: RelaySigning = { state: "configured", updatedAt: "2026-10-01T12:0
 const BOT_SIGNATURE = { marker: "assinatura do bot" };
 const TOKENS = [{ id: "t1", name: "IA de triagem", token_prefix: "crmsuporte_ab", scopes: [] }];
 const LOGS_PAGE = { state: "ok", items: [], nextCursor: null };
+const SUBSCRIPTIONS = [{ id: "sub-1", name: "ERP" }];
 
 /** A página com a query string dada, como o Next a entrega. */
 const open = (query: Record<string, string | string[]> = {}) => ConexaoPage({ searchParams: Promise.resolve(query) });
@@ -113,13 +124,15 @@ beforeEach(() => {
   m.variables.mockResolvedValue(VARIABLES);
   m.model.mockResolvedValue(MODEL);
   m.logs.mockResolvedValue(LOGS_PAGE);
+  m.hasAdminEnv.mockReturnValue(true);
+  m.webhooks.mockResolvedValue(SUBSCRIPTIONS);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-const reads = [m.apiTokens, m.relayConfig, m.relaySigning, m.botSignature, m.variables, m.model];
+const reads = [m.apiTokens, m.relayConfig, m.relaySigning, m.botSignature, m.variables, m.model, m.webhooks];
 
 describe("Integrações (/app/conexao)", () => {
   it("sem admin confirmado no banco, o redirect do guard interrompe antes de qualquer leitura", async () => {
@@ -139,6 +152,8 @@ describe("Integrações (/app/conexao)", () => {
     expect(m.RelaySigningSettings.mock.calls[0]![0]).toEqual({ signing: SIGNING });
     expect(m.BotSignatureSettings.mock.calls[0]![0]).toEqual({ config: BOT_SIGNATURE });
     expect(m.ApiTokensManager.mock.calls[0]![0]).toEqual({ tokens: TOKENS });
+    expect(m.webhooks).toHaveBeenCalledWith(m.adminClient);
+    expect(m.WebhooksManager.mock.calls[0]![0]).toEqual({ subscriptions: SUBSCRIPTIONS });
     expect(m.EnvironmentVariablesManager.mock.calls[0]![0]).toEqual({
       variables: VARIABLES,
       transcriptionModel: MODEL,
@@ -168,12 +183,22 @@ describe("Integrações (/app/conexao)", () => {
     expect(m.signingMounts).toHaveBeenCalledTimes(1);
   });
 
-  it("as abas, na ordem: WhatsApp (a padrão), API do CRM, Agente de IA e Variáveis", async () => {
+  it("sem Supabase admin, os destinos chegam como null (a aba diz que não leu), sem consultar", async () => {
+    m.hasAdminEnv.mockReturnValue(false);
+
+    render(await open());
+
+    expect(m.webhooks).not.toHaveBeenCalled();
+    expect(m.WebhooksManager.mock.calls[0]![0]).toEqual({ subscriptions: null });
+  });
+
+  it("as abas, na ordem: WhatsApp (a padrão), API do CRM, Webhooks, Agente de IA e Variáveis", async () => {
     render(await open());
 
     expect(screen.getAllByTestId(/^aba-/).map((tab) => [tab.dataset.testid, tab.dataset.label])).toEqual([
       ["aba-whatsapp", "WhatsApp"],
       ["aba-api", "API do CRM"],
+      ["aba-webhooks", "Webhooks"],
       ["aba-agente", "Agente de IA"],
       ["aba-variaveis", "Variáveis"],
       ["aba-registros", "Registros"],
@@ -186,7 +211,7 @@ describe("Integrações (/app/conexao)", () => {
     render(await open());
 
     expect(screen.getByTestId("aba-agente")).toHaveAttribute("data-keep-mounted", "true");
-    for (const tab of ["aba-whatsapp", "aba-api", "aba-variaveis", "aba-registros", "aba-saude"]) {
+    for (const tab of ["aba-whatsapp", "aba-api", "aba-webhooks", "aba-variaveis", "aba-registros", "aba-saude"]) {
       expect(screen.getByTestId(tab)).toHaveAttribute("data-keep-mounted", "false");
     }
   });
@@ -216,6 +241,7 @@ describe("Integrações (/app/conexao)", () => {
 
     expect(within(screen.getByTestId("aba-variaveis")).getByTestId("cofre")).toBeInTheDocument();
     expect(within(screen.getByTestId("aba-api")).getByTestId("tokens")).toBeInTheDocument();
+    expect(within(screen.getByTestId("aba-webhooks")).getByTestId("destinos")).toBeInTheDocument();
     for (const tab of ["aba-whatsapp", "aba-variaveis", "aba-api"]) {
       expect(within(screen.getByTestId(tab)).queryByTestId("chave")).not.toBeInTheDocument();
       expect(within(screen.getByTestId(tab)).queryByTestId("webhook")).not.toBeInTheDocument();

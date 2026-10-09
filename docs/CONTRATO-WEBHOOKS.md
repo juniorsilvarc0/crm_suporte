@@ -96,7 +96,7 @@ Responda `2xx` a um ping com assinatura válida. O desfecho (HTTP e tempo de res
 
 ## 7. Configuração no CRM
 
-Só administrador. A aba **Webhooks** em Integrações entra na próxima etapa (6c-3); até lá, as rotas de admin estão em [`API.md`](API.md), seção 4.2.
+Só administrador, em **Integrações › Webhooks**: cadastrar, editar, testar, trocar o segredo, pausar, excluir, e ver as entregas recentes (com reenvio das esgotadas). As rotas por trás da tela estão em [`API.md`](API.md), seção 4.2.
 
 - **URL:** em produção, só `https`, e nunca um endereço de rede interna.
 - **Segredo:** o CRM gera (32 bytes aleatórios, 64 caracteres hexadecimais) e mostra **uma vez**, ao cadastrar e a cada troca. Depois disso ele só existe no cofre do banco e do seu lado.
