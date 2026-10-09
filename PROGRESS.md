@@ -27,6 +27,31 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 7 PR 2c-2: agendar a partir do ticket (laço do ticket, metade agenda)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** do ticket, agendar uma visita (ou treinamento, implantação, acesso remoto) já ligada a ele, e ver na ficha os compromissos do ticket. Com o 2c-1 (retornos), fecha o critério de aceite da Fase 7: "do ticket se agenda uma visita e um retorno".
+**Arquivos alterados:**
+- query: `src/features/appointments/queries/get-appointments.ts` (+`getTicketAppointments`, mesma seleção e leitura resiliente da lista);
+- UI: `features/appointments/components/appointment-dialog.tsx` (prop `context` + tipo `AppointmentTicketContext`), `ticket-appointments.tsx` (novo, painel da ficha) + `ticket-appointments.test.tsx` (5 casos), `appointments-table.tsx` (protocolo do ticket como link no Assunto);
+- integração: `features/tickets/components/ticket-detail.tsx` (prop `appointments` + `Section` "Agendamentos"), `app/(dashboard)/app/tickets/[number]/page.tsx` (busca no `Promise.all`), `ticket-detail.test.tsx` (3 renders com `appointments={[]}`); docs: `PRD.md` §6 (linha da Agenda, que faltava), `UI.md` §5.1.1 e §5.1.3 (nova), este PROGRESS.
+**O que foi feito:**
+- **`AppointmentDialog` ganhou `context`** (só na criação): `ticket_id` e `contact_id` vêm do ticket, sem seletor, e a empresa do ticket já vem escolhida (trocável). Uma linha só de leitura mostra `SUP-1024 · título`, também na edição de um compromisso que tem ticket. A edição **não reenvia** o vínculo (o `context` é zerado quando há `appointment`).
+- **Seção "Agendamentos"** na ficha do ticket, abaixo de "Retornos": tipo e situação (os selos da Agenda), data e hora, assunto, técnico · local; "Agendar" e editar por linha. Ticket encerrado = só leitura.
+- **Na Agenda**, o compromisso ligado a um ticket mostra o protocolo como link para o ticket.
+- **Sem back novo:** o POST de `/api/appointments` já aceitava `ticket_id`/`contact_id` desde o #62 (FK inválida → 422).
+**Decisões tomadas (revisar):**
+- **Excluir fica na Agenda.** Na ficha só se cria e edita (cancelar é pela situação). Evita exportar o diálogo de exclusão da tabela só para isto.
+- **Sem destaque de "atrasado"** no compromisso: a situação é a que a pessoa marcou. A tela não infere "não realizado" de um horário passado (UI.md §1.5).
+- **Empilhado sobre o #63** (base `main`): a ficha e a feature de follow-ups vêm de lá. Mergear o #63 antes.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 warnings pré-existentes, 0 novos) · test ✓ (4616/4616; 5 novos) · build ✓. bug-hunter/verification-before-completion: skills não instaladas; revisão do diff à mão.
+**Pendências / próximos passos:**
+- **2c-3:** fila `/app/follow-ups` (pendentes/vencidos cruzando tickets) + item no menu.
+- **2b:** views de calendário (mês/grade/semana/dia) + bloqueios (`agenda_blocks`).
+**Armadilhas descobertas:**
+- **`max-width` em `<td>` não segura truncagem** no layout automático de tabela (e o `TableCell` já é `whitespace-nowrap`). Para truncar um bloco dentro da célula, ponha o `max-w-*` no próprio elemento (`block max-w-56 truncate`).
+- **Substituição por texto em teste com recuos diferentes:** `followups={[]}` aparece com 6, 8 e 10 espaços no `ticket-detail.test.tsx`. Um replace sem âncora de linha casa duas vezes no mesmo render. Use regex com `^( *)` e `re.M`.
+
 ## [2026-10-08] Fase 7 PR 2c-1: Follow-ups ligados ao ticket (laço do ticket)
 
 **Agente/Modelo:** Claude Opus 4.8.
