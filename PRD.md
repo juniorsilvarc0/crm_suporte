@@ -69,6 +69,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Integrações | `/app/conexao` | **admin** | Abas com a aba na URL (`?aba=`): **WhatsApp** (QR e estado da instância uazapi), **API do CRM** (tokens), **Agente de IA** (webhook com teste de conexão, chave de assinatura gerada pelo CRM e assinatura do bot) e **Variáveis** (cofre, só as chaves que o CRM usa). **Registros** (registros da API e do repasse, com filtros) e **Saúde** (estado do WhatsApp, última mensagem recebida, repasses e chamadas da API das últimas 24 h) |
 | Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
 | Agenda | `/app/agendamentos` | member | Compromissos (visita técnica, treinamento, implantação, acesso remoto) em lista, com criar, editar e excluir. Do ticket se agenda já com o vínculo (ticket, contato e empresa), e a ficha do ticket mostra os agendamentos e os retornos dele (Fase 7) |
+| Retornos | `/app/follow-ups` | member | Os retornos (follow-ups) de todos os tickets: pendentes do prazo mais próximo, vencidos em destaque, filtro por situação e "Meus tickets"; concluir, cancelar e reabrir na linha (Fase 7) |
 | Atendimento | `/app/configuracoes/atendimento` | **admin** | Filas, categorias, SLA e status dos tickets. `/app/configuracoes` sozinho só redireciona para Integrações › Variáveis |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 

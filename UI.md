@@ -115,7 +115,9 @@ ponta**, com a logo branca. No celular, barra inferior na mesma faixa + gaveta.
   monta as entradas a partir da lista **já filtrada por papel** — grupo sem item
   não aparece, grupo de um item vira link, href não previsto entra como link no
   fim. **Todo item tem ícone, inclusive o menu** (`icon` na entrada `menu`:
-  Ajustes = engrenagem). Chip de ícone dentro dos menus é **ladrilho**
+  Ajustes = engrenagem; Agenda = calendário, com Agenda e Retornos dentro).
+  Módulo novo de operação entra num menu existente antes de virar mais um link
+  solto: no `lg` a barra já está no limite. Chip de ícone dentro dos menus é **ladrilho**
   (`rounded-lg bg-primary/10 text-primary`), eco do quadrado do símbolo.
 - ⚠️ **A busca só mostra rótulo a partir de `xl`, e o nome do produto
   ("SUPORTE") ao lado da logo só a partir de `2xl`.** Com Poppins, a faixa do
@@ -350,11 +352,21 @@ Recuperada da clínica, reinterpretada para suporte (Fase 7). A **2a entrega a l
 
 ### §5.1.2 Retornos no ticket (`/app/tickets/[number]`)
 
-O detalhe do ticket ganhou (Fase 7, 2c-1) a seção **"Retornos"** na coluna direita (ao lado de Detalhes e Anexos): os follow-ups daquele ticket. Cada retorno é uma linha com **tipo** (selo, `followupKindColor`), **situação** (selo, `followupStatusColor`), **prazo** e observação; o **vencido** (pendente + prazo passado) fica destacado (borda/fundo `destructive` suave + ícone de alerta). "Novo retorno" abre um diálogo compact (tipo, prazo via `DateTimeFields`, observação) que nasce com o `ticket_id` do contexto — **não há seletor de ticket**. Concluir/cancelar/reabrir são PATCH diretos (sem diálogo); o `done_at` é carimbado pelo servidor conforme o status. Ticket encerrado (`is_terminal`) mostra os retornos só em leitura. O relógio do "vencido" é o `useNow(fetchedAt)` do próprio detalhe (igual ao selo de SLA) — seguro para hidratação. A fila cross-ticket `/app/follow-ups` vem depois (2c-3).
+O detalhe do ticket ganhou (Fase 7, 2c-1) a seção **"Retornos"** na coluna direita (ao lado de Detalhes e Anexos): os follow-ups daquele ticket. Cada retorno é uma linha com **tipo** (selo, `followupKindColor`), **situação** (selo, `followupStatusColor`), **prazo** e observação; o **vencido** (pendente + prazo passado) fica destacado (borda/fundo `destructive` suave + ícone de alerta). "Novo retorno" abre um diálogo compact (tipo, prazo via `DateTimeFields`, observação) que nasce com o `ticket_id` do contexto — **não há seletor de ticket**. Concluir/cancelar/reabrir são PATCH diretos (sem diálogo); o `done_at` é carimbado pelo servidor conforme o status. Ticket encerrado (`is_terminal`) mostra os retornos só em leitura. O relógio do "vencido" é o `useNow(fetchedAt)` do próprio detalhe (igual ao selo de SLA) — seguro para hidratação. A fila que cruza os tickets é `/app/follow-ups` (§5.1.4).
 
 ### §5.1.3 Agendamentos no ticket (`/app/tickets/[number]`)
 
 Abaixo de "Retornos", a seção **"Agendamentos"** (Fase 7, 2c-2) lista os compromissos daquele ticket, do mais próximo ao mais distante: **tipo** e **situação** (os selos da Agenda, §5.1.1), data e hora, assunto e, numa linha discreta, técnico · local. **"Agendar"** abre o **mesmo diálogo da Agenda** (`AppointmentDialog`) com o `context` do ticket: o compromisso nasce com `ticket_id` e `contact_id` do ticket (sem seletor; uma linha só de leitura mostra `SUP-1024 · título`) e com a empresa do ticket já escolhida (trocável). Editar usa o mesmo diálogo e **não reenvia** o vínculo. Excluir fica na Agenda; cancelar é pela situação. Ticket encerrado mostra os compromissos só em leitura. Sem destaque de "atrasado": a situação é o que a pessoa marcou, e a tela não infere "não realizado" (§1.5).
+
+### §5.1.4 Retornos — a fila (`/app/follow-ups`)
+
+Tela de dados (§5.1) com os retornos de **todos** os tickets (Fase 7, 2c-3). No menu é **"Retornos"** (Operação); na faixa do desktop fica no menu **Agenda**, junto com a Agenda.
+
+- **Padrão = pendentes do prazo mais próximo** (o mais atrasado primeiro), de todos os tickets. Concluídos, cancelados e todos saem do mais recente.
+- **Filtros no painel, na URL:** Situação (`?situacao=` pendentes · vencidos · concluidos · cancelados · todos) e Tickets (`?responsavel=eu` = só os tickets atribuídos a quem vê). Sem busca livre nesta fatia: o filtro que importa é "o que vence" e "o que é meu".
+- **Linha:** prazo (o **vencido** em `text-destructive` com ícone de alerta e "· vencido"; no celular o cartão ganha borda `destructive`), tipo, **ticket** (protocolo como link + título; a observação numa 2ª linha truncada), empresa (desktop a partir do `lg`), situação e as ações **Concluir · Cancelar** ou **Reabrir**, PATCH direto como na ficha. Editar e excluir ficam na ficha do ticket.
+- **"Vencido"** é pendente com prazo antes do instante da leitura (`fetchedAt` da query), o mesmo que o filtro "Vencidos" usa no banco; o relógio avança com o `useNow`.
+- Vazio sem filtro: "Nenhum retorno pendente. Retornos nascem na ficha do ticket." Filtro sem resultado: "Nenhum retorno encontrado." + Limpar. Falha de leitura: "Não foi possível carregar os retornos." + Tentar de novo.
 
 ### §5.2 Funil (`/app/funil`)
 
