@@ -129,6 +129,32 @@ function apiLines(calls: IntegrationHealth["api"]["calls"], hours: number): Line
   ];
 }
 
+/** Os webhooks de saída: destinos ativos, entregas da janela e o que está em nova tentativa agora. */
+function webhooksLines(webhooks: IntegrationHealth["webhooks"], hours: number): Line[] {
+  if (webhooks.state === "unavailable") return [{ text: "Não foi possível ler os webhooks.", tone: "warn" }];
+  const { activeDestinations, sent, dead, retrying, lastSentAt } = webhooks;
+  if (activeDestinations === 0 && sent === 0 && dead === 0 && retrying === 0) {
+    return [{ text: "Nenhum destino ativo.", tone: "muted" }];
+  }
+  const lines: Line[] = [
+    {
+      text:
+        activeDestinations === 0
+          ? "Nenhum destino ativo."
+          : `${activeDestinations} ${activeDestinations === 1 ? "destino ativo" : "destinos ativos"}.`,
+      tone: "muted",
+    },
+    {
+      text: `${sent} ${sent === 1 ? "entregue" : "entregues"} e ${dead} ${dead === 1 ? "esgotada" : "esgotadas"} nas últimas ${hours} h.`,
+      tone: dead > 0 ? "bad" : sent > 0 ? "ok" : "muted",
+    },
+  ];
+  if (retrying > 0) lines.push({ text: `${retrying} em nova tentativa agora.`, tone: "warn" });
+  if (lastSentAt) lines.push({ text: `Última entregue: ${formatDateTime(lastSentAt)}.`, tone: "muted" });
+  if (dead > 0 || retrying > 0) lines.push({ text: "Detalhes e reenvio na aba Webhooks.", tone: "muted" });
+  return lines;
+}
+
 function Section({ title, lines }: { title: string; lines: Line[] }) {
   return (
     <div className="grid gap-1 py-4 first:pt-0 last:pb-0 sm:grid-cols-[12rem_minmax(0,1fr)] sm:gap-4">
@@ -239,6 +265,7 @@ export function IntegrationHealthPanel() {
             lines={deliveriesLines(load.health.relay.deliveries, load.health.windowHours)}
           />
           <Section title="API do CRM" lines={apiLines(load.health.api.calls, load.health.windowHours)} />
+          <Section title="Webhooks" lines={webhooksLines(load.health.webhooks, load.health.windowHours)} />
         </dl>
       )}
     </section>

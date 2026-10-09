@@ -23,6 +23,14 @@ const HEALTH: IntegrationHealth = {
     },
   },
   api: { calls: { state: "ok", total: 500, clientErrors: 12, serverErrors: 2 } },
+  webhooks: {
+    state: "ok",
+    activeDestinations: 2,
+    sent: 41,
+    dead: 0,
+    retrying: 0,
+    lastSentAt: "2026-10-02T17:01:00.000000+00:00",
+  },
 };
 
 const respond = (health: IntegrationHealth) => Response.json({ ok: true, health });
@@ -74,6 +82,34 @@ describe("IntegrationHealthPanel", () => {
     expect(
       screen.getByText("12 recusadas por erro de quem chamou (4xx) e 2 com erro do CRM (5xx).")
     ).toBeInTheDocument();
+    expect(screen.getByText("2 destinos ativos.")).toBeInTheDocument();
+    expect(screen.getByText("41 entregues e 0 esgotadas nas últimas 24 h.")).toHaveClass("text-emerald-600");
+    expect(screen.getByText("Última entregue: 02/10/2026 14:01.")).toBeInTheDocument();
+    // Sem falha, sem o convite para a aba.
+    expect(screen.queryByText("Detalhes e reenvio na aba Webhooks.")).not.toBeInTheDocument();
+  });
+
+  it("webhooks com falha: esgotadas em vermelho, nova tentativa em âmbar, e o caminho para a aba", async () => {
+    await renderLoaded({
+      ...HEALTH,
+      webhooks: { state: "ok", activeDestinations: 1, sent: 1, dead: 2, retrying: 3, lastSentAt: null },
+    });
+
+    expect(screen.getByText("1 destino ativo.")).toBeInTheDocument();
+    expect(screen.getByText("1 entregue e 2 esgotadas nas últimas 24 h.")).toHaveClass("text-rose-600");
+    expect(screen.getByText("3 em nova tentativa agora.")).toHaveClass("text-amber-600");
+    expect(screen.getByText("Detalhes e reenvio na aba Webhooks.")).toBeInTheDocument();
+    expect(screen.queryByText(/Última entregue/)).not.toBeInTheDocument();
+  });
+
+  it("webhooks sem destino e sem entrega: uma linha só", async () => {
+    await renderLoaded({
+      ...HEALTH,
+      webhooks: { state: "ok", activeDestinations: 0, sent: 0, dead: 0, retrying: 0, lastSentAt: null },
+    });
+
+    expect(screen.getByText("Nenhum destino ativo.")).toBeInTheDocument();
+    expect(screen.queryByText(/entregues e/)).not.toBeInTheDocument();
   });
 
   it("parte que não foi lida diz que não foi lida: nunca vira zero nem \"nenhuma\"", async () => {
@@ -84,6 +120,7 @@ describe("IntegrationHealthPanel", () => {
       connectionHistory: { state: "unavailable" },
       relay: { config: "unreadable", reason: null, deliveries: { state: "unavailable" } },
       api: { calls: { state: "unavailable" } },
+      webhooks: { state: "unavailable" },
     });
 
     expect(screen.getByText("Não foi possível ler a integração no CRM.")).toBeInTheDocument();
@@ -92,6 +129,7 @@ describe("IntegrationHealthPanel", () => {
     expect(screen.getByText("Não foi possível ler a configuração do agente.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler os repasses.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler as chamadas.")).toBeInTheDocument();
+    expect(screen.getByText("Não foi possível ler os webhooks.")).toBeInTheDocument();
     expect(screen.queryByText(/Nenhum/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Número:/)).not.toBeInTheDocument();
   });
