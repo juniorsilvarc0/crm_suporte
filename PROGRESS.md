@@ -27,6 +27,35 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Retenção da fila de entrega: expurgo das linhas encerradas após 30 dias
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** o `event_outbox` não tinha expurgo: cada mensagem recebida em conversa `bot` gravava o envelope (com o texto do cliente) para sempre, duplicando o chat. Decisão do dono (2026-10-09): apagar as linhas encerradas com mais de 30 dias.
+**Arquivos alterados:** `supabase/migrations/20261009170000_outbox_expurgo.sql`, `supabase/tests/event_outbox.sql` (+6 casos, 25), `src/lib/supabase/database.types.ts` (regenerado), `src/lib/jobs/worker.ts` (+teste); docs: `PRD.md` §8, `UI.md` §5.19, `docs/CONTRATO-WEBHOOKS.md` §7, este PROGRESS.
+**O que foi feito:**
+- **`outbox_purge(p_older_than interval default '30 days')`:** apaga só `sent`, `skipped` e `dead_letter` cuja última mudança (`updated_at`) passou da retenção. `pending`, `processing` e `retry` nunca saem, por mais velhos que sejam. Retenção abaixo de 30 dias é recusada (`22023`), no molde do `purge_integration_logs` (mínimo 90 dias, D9).
+- **Job de manutenção (a cada hora, uma réplica por vez pelo lease):** chama `outbox_purge()` junto das outras purgas; uma purga que falha não impede as outras.
+**Decisões tomadas (revisar):**
+- **Conta pela última mudança, não pela criação:** uma entrega que ficou dias em nova tentativa e depois foi entregue ainda fica 30 dias visível na lista.
+- **Webhook esgotado também sai depois de 30 dias:** dá para reenviá-lo enquanto estiver lá.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ · build ✓ · SQL `event_outbox` 25 ✓ e a suíte inteira (só `baseline.sql` e `segredo_integracao.sql` falham, e só no banco local).
+**Pendências / próximos passos:** produção hoje tem ~500 linhas com menos de 2 dias: o 1º expurgo de verdade acontece só daqui a 30 dias.
+**Armadilhas descobertas:** nenhuma nova.
+
+## [2026-10-09] Produção: a API v1 deixou de ir para o log do nginx do host
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** aplicar em produção a regra D8 (docs/PLANO-FASE-5.md) que já estava no repositório: `?phone=` e `?cnpj=` da API v1 são dado pessoal, e o `access.log` e o `error.log` do host são compartilhados com as outras stacks. Autorizado pelo dono em 2026-10-09.
+**Arquivos alterados:** nenhum no repositório (a config já estava em `deploy/nginx-host.conf` e `deploy/app-gateway.conf`).
+**O que foi feito (produção, 2026-10-09 17:42 UTC):**
+- **appgw:** já estava certo. Cada rodízio do deploy regrava a config dele a partir do código novo (`aplicar_appgw`), então o `location /api/v1/` sem error log estava no ar desde os deploys anteriores.
+- **vhost do host (`ticbox.spincode.com.br`, o nosso):** backup em `/etc/nginx/sites-available/ticbox.spincode.com.br.bak-20261009-174244`, arquivo novo gerado por `crmsup.sh nginx https`, `nginx -t` ✓, `systemctl reload nginx`. Entraram dois blocos: `/api/v1/` na porta 80 (308 para https, sem log) e `/api/v1/` no 443 (sem access nem error log). O limite de corpo (64 MB) é do `server`, então o anexo de 50 MB segue valendo.
+- **Retratos antes/depois** (`docker ps` e `nginx -T`) em `/opt/crm-suporte/ops/20261009-174244-vhost-api-v1/`: nenhum container mudou; no `nginx -T`, só os dois blocos novos.
+**Verificação:** `/api/v1/health` 200 por https e 308 por http (o método se mantém); claim sem token 401; uma marca única na URL da API v1 **não** aparece no `access.log` nem no `error.log`, e a marca de controle em `/app` aparece; WhatsApp recebendo durante e depois do reload; réplicas saudáveis.
+**Como reverter:** `cp -p /etc/nginx/sites-available/ticbox.spincode.com.br.bak-20261009-174244 /etc/nginx/sites-available/ticbox.spincode.com.br && nginx -t && systemctl reload nginx`.
+**Armadilhas descobertas:**
+- **O appgw não precisa de passo manual:** o `aplicar_appgw` de cada rodízio já regrava a config. Só o vhost do host fica de fora do `publicar.sh` (README §Atualizar o vhost).
+
 ## [2026-10-09] Fase 6c-4: aviso ao cliente sem duplicar (claim/finalize) — fecha a Fase 6c
 
 **Agente/Modelo:** Claude Opus 5.5.
