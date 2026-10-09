@@ -27,6 +27,27 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 6c-1: webhooks de saída — o banco
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** a decisão 6 do plano ("mudou o ticket → o CRM emite um evento assinado"), lado do banco: destinos com segredo no Vault e os eventos de ticket enfileirados na mesma transação da mudança. O envio (HMAC, tentativas) é da 6c-2; a tela, da 6c-3; os avisos ao cliente (`ticket_notices`), da 6c-4.
+**Arquivos alterados:** `supabase/migrations/20261009130000_webhooks_saida.sql`, `supabase/tests/webhooks_saida.sql` (32 casos), `src/lib/supabase/database.types.ts` (regenerado); docs: `PRD.md` §8, este PROGRESS.
+**O que foi feito:**
+- **`webhook_subscriptions`:** nome, URL (http/https), eventos (formato do catálogo, 1 a 50) e o **id** do segredo no Vault. RLS sem policy; `service_role` com SELECT/INSERT/DELETE e UPDATE **por coluna** (`secret_id` só muda pela RPC). Apagar o destino apaga o segredo do Vault (gatilho). `set_webhook_subscription_secret` (mínimo 32 caracteres) e `get_webhook_subscription_secret`, no molde do segredo da integração do chat.
+- **`webhook_emit(evento, id, quando, dados)`:** para cada destino **ativo** que assinou, `outbox_enqueue('webhook', '<id>:<destino>', …)`: o mesmo evento nunca entra duas vezes para o mesmo destino. Usa o índice GIN parcial (`events @>`; conferido no EXPLAIN).
+- **Gatilhos (mesma transação):** `ticket_events` (criado, alterado, atribuído; prioridade alterada também como `ticket.priority_changed`), `ticket_status_history` (cada transição; de resolvido para atendimento também `ticket.reopened`), `ticket_comments` (**sem o texto**), `ticket_attachments` e `tickets` (carimbos do `sla_sweep` → `ticket.sla_breached`, um por prazo).
+- **`outbox_requeue(id)`:** reenvio manual — só `webhook` em `dead_letter`, volta com tentativas zeradas.
+**Decisões tomadas (revisar):**
+- **A linha da abertura (nada → novo) não sai como `ticket.status_changed`:** a abertura é `ticket.created`; sem isso, quem assina status receberia o mesmo fato duas vezes (pego no teste).
+- **Sem tabela `webhook_deliveries`:** o `event_outbox` já guarda status, tentativas, último HTTP e erro por entrega; a tela da 6c-3 lê de lá.
+- **O corpo leva só ids e o que mudou** (a descrição como `{"changed":true}`, o comentário sem texto); o despachante acrescenta o ticket atual ao enviar.
+- **Sem destino ativo, nada é enfileirado** (custo de um SELECT por mudança). Produção hoje não tem destino: a migration não muda nenhum comportamento até alguém cadastrar um.
+**Verificação:** testes de SQL ✓ (32 novos; os de tickets 164, outbox 17, SLA 4 e os demais seguem verdes — `baseline.sql` e `segredo_integracao.sql` falham só no banco LOCAL, pelo resto de uma integração de testes antigos); migration reaplicada sem efeito; `assert_security_baseline()` com 39 tabelas e 86 funções; typecheck ✓ · lint ✓ (0 erros) · test ✓ (4781/4781) · build ✓.
+**Pendências / próximos passos:** 6c-2 (despachante no worker: claim `webhook`, HMAC `X-CRM-Signature: v1=…` com timestamp, backoff até 8 tentativas, `webhook.ping`, rotas admin de destinos e de reenvio).
+**Armadilhas descobertas:**
+- **`create_ticket` grava no histórico de status a linha da abertura (`from_status` nulo).** Gatilho em `ticket_status_history` que quer só transições precisa pular essa linha.
+- **`= any(coluna_array)` não usa índice GIN;** `coluna @> array[valor]` usa.
+
 ## [2026-10-09] Monitor de conexão do WhatsApp (e o incidente que o motivou)
 
 **Agente/Modelo:** Claude Opus 5.5.
