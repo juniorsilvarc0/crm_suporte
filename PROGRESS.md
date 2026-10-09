@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 9 PR 1: métricas de suporte (`/app/metricas`) — e a Fase 8 sai do plano
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** dar ao gestor a tela que decide a fila: quanto está em aberto agora (e com SLA estourado) e como o atendimento andou nos últimos 7/30/90 dias.
+**Decisão do dono (2026-10-09): a Fase 8 (financeiro interno) não será feita.** O plano é anterior à integração com a TCBX; hoje a TCBX é o ERP da Ticbox (contratos e títulos em aberto), e mensalidades no CRM seriam uma cobrança paralela. Registrado no `PRD.md` §4 e no `docs/PLANO-IMPLANTACAO.md` (linha da Fase 8).
+**Arquivos alterados:**
+- feature nova `src/features/metrics/`: `lib/period.ts` (janela no fuso do app, `?periodo=`), `lib/summarize.ts` (agregação pura: medianas, série diária, lastro, `formatMetricDuration`) + `summarize.test.ts` (10), `types.ts`, `queries/get-support-metrics.ts` (5 leituras em paralelo) + `.test.ts` (4), `components/metrics-period-switch.tsx`, `metrics-summary.tsx`, `opened-resolved-chart.tsx` + `metrics-components.test.tsx` (8);
+- página: `app/(dashboard)/app/metricas/{page,loading}.tsx` (`requireAdminPage`);
+- menu/guard: `src/config/navigation.ts` (item "Métricas", grupo Análise, só admin; link na faixa antes de Ajustes) + `navigation.test.ts`; `src/lib/auth/route-guard.ts` (`/app/metricas` em `ADMIN_PAGE_PREFIXES`);
+- tema: `src/app/globals.css` (tokens `--chart-opened`/`--chart-resolved` nos dois temas + `@theme`); docs: `UI.md` §5.25 (nova), `PRD.md` §4 e §6, `docs/PLANO-IMPLANTACAO.md`, este PROGRESS.
+**O que foi feito:**
+- **Definições (cada número diz a sua janela):** em aberto agora = `ticket_queue` não encerrado e ≠ resolvido; estourado = o `sla_breached` da view (o mesmo selo da lista); abertos = `created_at` na janela; resolvidos = `resolved_at` na janela; 1ª resposta = abertura → `first_responded_at` (analista; resposta antes da abertura conta zero), mediana com a amostra; resolução = abertura → `resolved_at`, tempo corrido, mediana; reaberturas = `ticket_status_history` saindo de "resolvido" para algo que não seja fechado/cancelado; abertos pela IA = `source = 'ai'`.
+- **Contagens exatas pelo `count`**; medianas, IA e gráfico pelas linhas lidas (teto de 10.000) — passou, a tela avisa "amostra".
+- **Desenho:** uma superfície com o protagonista "Em aberto agora" e seis números da janela (UI.md §5.4/§9: não N cartões iguais); gráfico de linhas pela skill dataviz.
+- **Cor do gráfico calculada, não escolhida no olho:** o validador da skill (`validate_palette.js`) reprovou os pares só de verdes da marca (no escuro saem da faixa de luminosidade ou perdem contraste contra o card `#042D29`) e aprovou ciano `#0891b2` (abertos) + verde `#0a7e4d` no claro / `#16a34a` no escuro (resolvidos): daltonismo ΔE 14,3 e 16,1, contraste ≥ 3:1.
+**Decisões tomadas (revisar):**
+- **Métricas só para admin** (o gestor é admin hoje). Recorte por analista é desempenho de pessoa; abrir para member é trocar o `allowedRoles` e o guard.
+- **Janela de 7/30/90 dias, padrão 30, sem "tudo".**
+- **Resolução em tempo corrido**, não pelo relógio do SLA (que pausa): é o que o cliente sente. O SLA continua no selo.
+- **"Métricas" é um link solto na faixa do admin** (a do membro não muda). A faixa do admin passa a ter 8 entradas; se apertar no `lg`, a saída é agrupar.
+**Verificação:** typecheck ✓ (0) · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4743/4743; 22 da feature + guard/menu) · build ✓. As cinco leituras rodaram no **PostgREST local** (200; 3 em aberto e 2 estourados na base de teste). Sem teste de browser (AGENTS §3.12): revisão visual não feita.
+**Pendências / próximos passos:** Fase 9 PR 2: recortes por fila, cliente e analista; IA × humano (1ª resposta da IA vs do analista, tickets resolvidos sem humano).
+**Armadilhas descobertas:**
+- **`content` do `Tooltip` do recharts 3 espera `TooltipContentProps` com os genéricos padrão.** `TooltipContentProps<number, string>` passa no Vitest e no editor, mas o `tsc` do build recusa. Leia a contagem de erros do `typecheck` antes de seguir: ela já mostrava "1".
+- **Os tokens `--chart-1..5` são todos verdes da marca.** Para duas séries que precisam se distinguir, crie um token próprio e passe no validador da skill dataviz nos dois temas.
+
 ## [2026-10-09] Fase 7 PR 2b-3: aviso de conflito entre compromissos do mesmo técnico
 
 **Agente/Modelo:** Claude Opus 5.5.
