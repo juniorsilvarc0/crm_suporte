@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2Icon, PencilIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
@@ -27,6 +28,7 @@ import {
 import type { AppointmentListItem } from "@/features/appointments/types";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import { getColorStyle } from "@/features/tags/schemas/colors";
+import { formatProtocol } from "@/features/tickets/lib/protocol";
 import { formatDateTime } from "@/lib/formatters/date";
 
 export function AppointmentsTable({ appointments }: { appointments: AppointmentListItem[] }) {
@@ -80,8 +82,18 @@ export function AppointmentsTable({ appointments }: { appointments: AppointmentL
                         {appointmentKindLabel[appointment.kind]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-56 truncate">
-                      {appointment.title?.trim() || <span className="text-muted-foreground">—</span>}
+                    <TableCell className="max-w-56">
+                      <span className="block max-w-56 truncate">
+                        {appointment.title?.trim() || <span className="text-muted-foreground">—</span>}
+                      </span>
+                      {appointment.ticket ? (
+                        <Link
+                          href={`/app/tickets/${appointment.ticket.number}`}
+                          className="rounded-sm text-xs font-medium tabular-nums text-primary outline-none underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          {formatProtocol(appointment.ticket.number)}
+                        </Link>
+                      ) : null}
                     </TableCell>
                     <TableCell className="max-w-48 truncate">
                       {empresa || <span className="text-muted-foreground">—</span>}

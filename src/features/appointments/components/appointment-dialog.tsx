@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2Icon, Loader2Icon, PlusIcon, XIcon } from "lucide-react";
+import { Building2Icon, Loader2Icon, PlusIcon, TicketIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { FormSelect } from "@/components/forms/form-select";
@@ -19,6 +19,7 @@ import type { AppointmentListItem } from "@/features/appointments/types";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerSummary } from "@/features/customers/types";
+import { formatProtocol } from "@/features/tickets/lib/protocol";
 import {
   defaultDateTimeLocalForDateKey,
   formatDateTimeLocalInput,
@@ -44,9 +45,21 @@ type MutationResponse = {
   appointment?: { id?: string };
 };
 
+/**
+ * Quem agenda a partir de um ticket: o compromisso novo nasce ligado ao ticket
+ * e ao contato dele, com a empresa do ticket já escolhida (trocável).
+ */
+export type AppointmentTicketContext = {
+  ticket: { id: string; number: number; title: string };
+  customer: { id: string; name: string } | null;
+  contactId: string;
+};
+
 type AppointmentDialogProps = {
   /** Presente = edição. Ausente = novo agendamento. */
   appointment?: AppointmentListItem | null;
+  /** Só na criação: o vínculo vem do ticket, não de um seletor. */
+  context?: AppointmentTicketContext | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
@@ -57,10 +70,15 @@ type AppointmentDialogProps = {
  * não entram no register do react-hook-form), e o schema da rota (zod) é o
  * validador final: erro de campo volta no `errors` e é pintado aqui.
  *
- * O vínculo com ticket/contato não está aqui (2a): nasce do contexto quando o
+ * O vínculo com ticket/contato não tem seletor: nasce do `context` quando o
  * compromisso é criado a partir de um ticket. Aqui liga-se à EMPRESA e ao TÉCNICO.
  */
-export function AppointmentDialog({ appointment = null, open: openProp, onOpenChange }: AppointmentDialogProps) {
+export function AppointmentDialog({
+  appointment = null,
+  context = null,
+  open: openProp,
+  onOpenChange,
+}: AppointmentDialogProps) {
   const [openState, setOpenState] = useState(false);
   const controlled = openProp !== undefined;
   const open = controlled ? openProp : openState;
@@ -89,6 +107,7 @@ export function AppointmentDialog({ appointment = null, open: openProp, onOpenCh
       <AppointmentForm
         key={`${appointment?.id ?? "new"}:${session}`}
         appointment={appointment}
+        context={appointment ? null : context}
         open={open}
         onOpenChange={setOpen}
       />
@@ -98,10 +117,12 @@ export function AppointmentDialog({ appointment = null, open: openProp, onOpenCh
 
 function AppointmentForm({
   appointment,
+  context,
   open,
   onOpenChange,
 }: {
   appointment: AppointmentListItem | null;
+  context: AppointmentTicketContext | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -124,8 +145,10 @@ function AppointmentForm({
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(
     appointment?.customer
       ? { id: appointment.customer.id, name: customerDisplayName(appointment.customer) }
-      : null
+      : (context?.customer ?? null)
   );
+  // Só leitura: o ticket não se troca aqui (a edição não manda ticket_id).
+  const linkedTicket = appointment?.ticket ?? context?.ticket ?? null;
   const [pickingCustomer, setPickingCustomer] = useState(false);
 
   const [team, setTeam] = useState<TeamMember[]>([]);
@@ -175,6 +198,8 @@ function AppointmentForm({
       notes: notes.trim() || null,
       customer_id: customer?.id ?? undefined,
       assignee_id: assigneeId || undefined,
+      ticket_id: context?.ticket.id,
+      contact_id: context?.contactId,
     };
 
     submitting.current = true;
@@ -242,6 +267,14 @@ function AppointmentForm({
         }
       >
         <FieldGroup aria-busy={pending}>
+          {linkedTicket ? (
+            <p className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <TicketIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="shrink-0 font-medium tabular-nums">{formatProtocol(linkedTicket.number)}</span>
+              <span className="truncate text-muted-foreground">{linkedTicket.title}</span>
+            </p>
+          ) : null}
+
           <Field>
             <FieldLabel htmlFor={id("kind")}>
               <span>
