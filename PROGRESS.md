@@ -27,6 +27,23 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Política de privacidade: texto definitivo para revisão jurídica (Fase 10)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** trocar o aviso provisório pela política definitiva do CRM de suporte, pronta para a revisão jurídica antes de publicar (pedido do dono em 2026-10-09).
+**Arquivos alterados:** `src/features/legal/privacy-policy.ts` (novo, + teste), `src/app/politica-de-privacidade/page.tsx` (+ teste), `docs/PROXIMOS-PASSOS.md`, este PROGRESS.
+**O que foi feito:**
+- **O texto vira dado** (`PRIVACY_POLICY`: seções com parágrafos e listas), e a página só desenha, com índice de âncoras. Onze seções: quem somos (controlador e operador), dados tratados, finalidades e bases legais, compartilhamento, retenção, segurança, direitos (art. 18), atendimento automatizado (art. 20), cookies, menores e alterações.
+- **Cada afirmação sobre o sistema foi conferida no código:** uazapi (conexão do WhatsApp); OpenAI só quando o atendente pede a transcrição (transferência internacional); o agente de IA e os webhooks quando configurados; do sistema de gestão, o cadastro e os contratos (cópia: número, modalidade, status, vigência, dia de vencimento) e o resumo dos títulos em aberto, consultado e **não gravado**; foto do perfil do WhatsApp; registros de integração por 90 dias; fila por 30 dias (#78); backups 30/7 dias; sessão de 7 dias; só o cookie de sessão e duas preferências no navegador (tema, aviso do app); nenhum rastreador de terceiros (as fontes são servidas pelo próprio app).
+- **O que é do controlador ou do jurídico fica entre `[[ ]]`:** razão social, CNPJ e endereço do controlador; o operador; o encarregado e o e-mail dele (hoje o da página provisória); o nome do sistema de gestão; o provedor e o país da hospedagem; o prazo de guarda das conversas; a confirmação das bases legais, da garantia da transferência internacional e do compromisso de atendimento humano; a data da publicação.
+- **Rascunho que se declara:** enquanto houver um `[[ ]]`, a página mostra "Rascunho em revisão jurídica", destaca cada trecho (`<mark>`) e não é indexada (`robots: noindex`). Preenchido o último, o aviso some sozinho, e a página é indexada.
+**Decisões tomadas (revisar):**
+- **A PR é aberta como rascunho no GitHub:** não dá para mergear antes da revisão. Mesmo mergeada por engano, a página se declara rascunho.
+- **Não promete o que o sistema não faz:** a anonimização tem só a coluna (`contacts.anonymized_at`, sem fluxo), então a eliminação a pedido é feita pelo canal do encarregado, e o texto diz que o sistema não apaga as conversas sozinho.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ · build ✓.
+**Pendências / próximos passos:** revisão jurídica e preenchimento dos `[[ ]]`; depois, marcar a PR como pronta e mergear.
+**Armadilhas descobertas:** nenhuma nova.
+
 ## [2026-10-09] Fase 6c-4: aviso ao cliente sem duplicar (claim/finalize) — fecha a Fase 6c
 
 **Agente/Modelo:** Claude Opus 5.5.
