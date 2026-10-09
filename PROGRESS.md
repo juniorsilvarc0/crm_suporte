@@ -27,6 +27,31 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 7 PR 2b-3: aviso de conflito entre compromissos do mesmo técnico
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** avisar, ao agendar, que o técnico escolhido já tem outro compromisso no mesmo horário, a pendência que a 2b-2 deixou.
+**Arquivos alterados:** `features/appointments/lib/appointment-conflicts.ts` (+`.test.ts`, 9 casos), recuperada da clínica e adaptada; `app/api/appointments/route.ts` (+`GET ?from=&to=`); `components/appointment-dialog.tsx` (aviso) + `appointment-dialog.test.tsx` (+4 casos); docs: `UI.md` §5.1.1, `PRD.md` §6, este PROGRESS.
+**O que foi feito:**
+- **Regra pura** (`findAppointmentConflicts`): só compromissos do MESMO técnico (lá era um médico só; aqui o compromisso do técnico A não ocupa a agenda do B); sem técnico, nada a apontar; `cancelado` libera o horário; a edição não conflita consigo mesma; fim exclusivo; duração ausente = 1 hora (como a grade).
+- **`GET /api/appointments?from=&to=`** (sessão, `requireDashboardUser`): os compromissos do período com só o que o aviso usa (horário, duração, situação, técnico, tipo, assunto). Leitura resiliente: erro vira lista vazia + log, porque o aviso é melhor esforço.
+- **Aviso no diálogo** (também na ficha do ticket), na mesma mecânica do aviso de bloqueio: busca os compromissos do dia escolhido, guardados com o dia. Texto: "Ana Lima já tem Trocar a impressora (09:00–10:00). Dá para agendar mesmo assim." **Avisa, não impede.**
+**Decisões tomadas (revisar):**
+- **Sem técnico, sem aviso.** Conferir contra todos os compromissos da casa avisaria em toda visita de horário cheio, e o aviso viraria ruído.
+- **A rota nova não distingue "sem compromissos" de "leitura falhou"** (usa `getAppointments`, que devolve `[]` e loga). Para um aviso de melhor esforço, preferi não duplicar a consulta.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4720/4720; 13 novos; `api-guards` cobre o GET novo) · build ✓. O teste "editar não conflita consigo mesmo" tem controle positivo (o OUTRO compromisso da mesma técnica aparece; o próprio, não) para não passar à toa antes de a busca voltar.
+**Pendências / próximos passos:** Fase 8 (Financeiro), pelo plano.
+**Armadilhas descobertas:**
+- **Teste de "não aparece" em aviso que depende de fetch passa à toa** se roda antes de a busca voltar. Ponha no mesmo teste um caso que TEM que aparecer e espere por ele (`findByRole`), e só então afirme a ausência do outro.
+
+## [2026-10-09] Deploy: Fase 7 completa no ar (#63–#67)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** subir a Fase 7 (retornos no ticket, agendar a partir do ticket, fila de retornos, Agenda em calendário e bloqueios) em produção.
+**O que foi feito (produção, autorizado por "tudo mergeado"):** `deploy/publicar.sh` (com `CRMSUP_HOST` apontando a VPS) a partir de `origin/main` @ `1457913df185`, ~04:06–04:11 UTC. Sem migration (livro-razão segue 19). Rodízio limpo (`web2` e depois `web`, drenando pelo appgw), apoio intocado.
+**Verificação:** as duas réplicas em `1457913df185` healthy; `verificar` ✓ (anon 0/0, `authenticated` só nas tabelas do chat, `assert_security_baseline()` com 37 tabelas e 75 funções, sem porta pública, sharp ✓); páginas `/app`, `/app/agendamentos` e `/app/follow-ups` respondem 307 sem sessão, e `/api/agenda-blocks` responde 401; **WhatsApp intacto** (uazapi ativa, 361 conversas e 15059 mensagens, iguais à foto de antes; madrugada sem mensagem nova na janela); logs das réplicas sem erro e o worker reiniciado nas duas.
+**Como reverter:** `prd-rollback` = `6468de22a151` (#62), e `app.anterior` = #62 (deploy/README.md §Rollback).
+
 ## [2026-10-09] Fase 7 PR 2b-2: bloqueios da Agenda
 
 **Agente/Modelo:** Claude Opus 5.5.
