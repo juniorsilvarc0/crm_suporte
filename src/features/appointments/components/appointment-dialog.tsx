@@ -2,7 +2,15 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2Icon, CalendarOffIcon, Loader2Icon, PlusIcon, TicketIcon, XIcon } from "lucide-react";
+import {
+  Building2Icon,
+  CalendarClockIcon,
+  CalendarOffIcon,
+  Loader2Icon,
+  PlusIcon,
+  TicketIcon,
+  XIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { FormSelect } from "@/components/forms/form-select";
@@ -21,7 +29,9 @@ import {
   relevantBlocks,
   type AgendaBlock,
 } from "@/features/appointments/lib/agenda-blocks";
-import { appointmentKindOptions } from "@/features/appointments/lib/appointment-kind";
+import { appointmentTimeRange } from "@/features/appointments/lib/agenda-view";
+import { findAppointmentConflicts, type ConflictCandidate } from "@/features/appointments/lib/appointment-conflicts";
+import { appointmentKindLabel, appointmentKindOptions, type AppointmentKind } from "@/features/appointments/lib/appointment-kind";
 import { appointmentStatusOptions } from "@/features/appointments/lib/appointment-status";
 import type { AppointmentListItem } from "@/features/appointments/types";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
@@ -51,6 +61,9 @@ const DURATION_OPTIONS = [
 ];
 
 type TeamMember = { id: string; name: string };
+
+/** O que `GET /api/appointments` devolve para o aviso de conflito. */
+type DayAppointment = ConflictCandidate & { kind: AppointmentKind; title: string | null };
 
 type MutationResponse = {
   ok?: boolean;
@@ -196,6 +209,27 @@ function AppointmentForm({
     };
   }, [open, dayKey]);
 
+  // Os compromissos do dia, para o aviso de conflito do mesmo técnico (avisa,
+  // não impede). Mesma mecânica dos bloqueios: guardados com o dia.
+  const [dayAppointments, setDayAppointments] = useState<{ day: string; items: DayAppointment[] } | null>(null);
+  useEffect(() => {
+    if (!open || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return;
+    let active = true;
+    const from = localToIso(dayKey, "00:00");
+    const to = localToIso(addDaysToAppDateKey(dayKey, 1), "00:00");
+    void fetch(`/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { appointments?: unknown } | null) => {
+        if (active && Array.isArray(data?.appointments)) {
+          setDayAppointments({ day: dayKey, items: data.appointments as DayAppointment[] });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [open, dayKey]);
+
   const startIso = localDateTimeToIso(when);
   // Sem duração, conta 1 hora — o mesmo que a grade da Agenda desenha.
   const blockedBy =
@@ -204,6 +238,16 @@ function AppointmentForm({
           blocks: relevantBlocks(dayBlocks.blocks, assigneeId || null),
           startIso,
           durationMin: Number(duration) || 60,
+        })
+      : [];
+  const conflicts =
+    dayAppointments && dayAppointments.day === dayKey && startIso
+      ? findAppointmentConflicts({
+          candidates: dayAppointments.items,
+          assigneeId: assigneeId || null,
+          startIso,
+          durationMin: Number(duration) || 60,
+          ignoreId: appointment?.id ?? null,
         })
       : [];
 
@@ -410,6 +454,20 @@ function AppointmentForm({
               <AlertDescription>
                 {blockedBy.map((block) => describeAgendaBlockForDate(block, dayKey)?.label).filter(Boolean).join("; ")}.
                 Dá para agendar mesmo assim.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {conflicts.length > 0 ? (
+            <Alert className={WARN.panel}>
+              <CalendarClockIcon aria-hidden className={WARN.text} />
+              <AlertTitle>Conflito de horário</AlertTitle>
+              <AlertDescription>
+                {team.find((member) => member.id === assigneeId)?.name ?? "O técnico"} já tem{" "}
+                {conflicts
+                  .map((item) => `${item.title?.trim() || appointmentKindLabel[item.kind]} (${appointmentTimeRange(item)})`)
+                  .join("; ")}
+                . Dá para agendar mesmo assim.
               </AlertDescription>
             </Alert>
           ) : null}

@@ -124,3 +124,99 @@ describe("AppointmentDialog — bloqueios", () => {
     await waitFor(() => expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument());
   });
 });
+
+/** Equipe, bloqueios (nenhum) e os compromissos do dia. */
+function stubDay(appointments: Array<Record<string, unknown>>) {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (String(url) === "/api/app-users") return new Response(JSON.stringify({ users: [ANA, BRUNO] }));
+    if (String(url).startsWith("/api/agenda-blocks?")) return new Response(JSON.stringify({ ok: true, blocks: [] }));
+    if (String(url).startsWith("/api/appointments?")) return new Response(JSON.stringify({ ok: true, appointments }));
+    throw new Error(`fetch inesperado: ${String(url)}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+// 12:00 UTC = 09:00 em São Paulo, o horário padrão do diálogo.
+const VISITA_ANA = {
+  id: "a1",
+  scheduled_at: "2026-10-12T12:00:00.000Z",
+  duration_min: 60,
+  status: "agendado",
+  assignee_id: ANA.id,
+  kind: "visita_tecnica",
+  title: "Trocar a impressora",
+};
+
+async function chooseTechnician(dialog: HTMLElement, name: string) {
+  const user = userEvent.setup();
+  await user.click(within(dialog).getByRole("combobox", { name: "Técnico" }));
+  await user.click(await screen.findByRole("option", { name }));
+}
+
+describe("AppointmentDialog — conflito de horário", () => {
+  it("busca os compromissos do dia escolhido", async () => {
+    const fetchMock = stubDay([]);
+    await renderDialog();
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/appointments?from=${encodeURIComponent("2026-10-12T03:00:00.000Z")}&to=${encodeURIComponent("2026-10-13T03:00:00.000Z")}`
+      )
+    );
+  });
+
+  it("avisa quando o técnico escolhido já tem compromisso no horário, sem impedir", async () => {
+    stubDay([VISITA_ANA]);
+    const dialog = await renderDialog();
+
+    await chooseTechnician(dialog, "Ana Lima");
+
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Conflito de horário");
+    expect(alert).toHaveTextContent("Ana Lima já tem Trocar a impressora (09:00–10:00). Dá para agendar mesmo assim.");
+    expect(within(dialog).getByRole("button", { name: "Criar agendamento" })).toBeEnabled();
+  });
+
+  it("compromisso de outro técnico ou cancelado não é conflito", async () => {
+    stubDay([VISITA_ANA, { ...VISITA_ANA, id: "a2", assignee_id: BRUNO.id, status: "cancelado" }]);
+    const dialog = await renderDialog();
+
+    await chooseTechnician(dialog, "Bruno Costa");
+
+    await waitFor(() => expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument());
+  });
+
+  it("editar não conflita consigo mesmo (o outro compromisso da Ana, sim)", async () => {
+    stubDay([VISITA_ANA, { ...VISITA_ANA, id: "a3", title: "Treinar a equipe" }]);
+    render(
+      <AppointmentDialog
+        appointment={{
+          ...VISITA_ANA,
+          kind: "visita_tecnica",
+          status: "agendado",
+          location: null,
+          notes: null,
+          ticket_id: null,
+          customer_id: null,
+          contact_id: null,
+          created_by_user_id: null,
+          created_at: "2026-10-01T12:00:00.000Z",
+          updated_at: "2026-10-01T12:00:00.000Z",
+          customer: null,
+          contact: null,
+          ticket: null,
+          assignee: ANA,
+        }}
+        open
+        onOpenChange={vi.fn()}
+      />
+    );
+    const dialog = await screen.findByRole("dialog");
+
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Ana Lima já tem Treinar a equipe (09:00–10:00).");
+    expect(alert).not.toHaveTextContent("Trocar a impressora");
+  });
+});
+
