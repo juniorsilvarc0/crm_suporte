@@ -7,6 +7,7 @@ import { AgendaTimeGrid } from "@/features/appointments/components/agenda-time-g
 import { AgendaToolbar } from "@/features/appointments/components/agenda-toolbar";
 import { AppointmentDialog } from "@/features/appointments/components/appointment-dialog";
 import { AppointmentsTable } from "@/features/appointments/components/appointments-table";
+import type { AgendaBlock } from "@/features/appointments/lib/agenda-blocks";
 import { groupAppointmentsByDay, type AgendaPeriod } from "@/features/appointments/lib/agenda-view";
 import type { AppointmentListItem } from "@/features/appointments/types";
 import { getMonthDateKeys, toAppDateKey } from "@/lib/formatters/date";
@@ -20,10 +21,13 @@ export function AgendaCalendar({
   period,
   todayKey,
   appointments,
+  blocks,
 }: {
   period: AgendaPeriod;
   todayKey: string;
   appointments: AppointmentListItem[];
+  /** Os bloqueios que tocam o período (UI.md §5.17); a Lista não os desenha. */
+  blocks: AgendaBlock[];
 }) {
   // O dia da criação; `null` = diálogo fechado.
   const [creatingOn, setCreatingOn] = useState<string | null>(null);
@@ -58,6 +62,7 @@ export function AgendaCalendar({
         {period.view === "mes" ? (
           <AgendaMonthView
             days={monthDays(period.monthKey, appointments)}
+            blocks={blocks}
             monthKey={period.monthKey}
             todayKey={todayKey}
             onOpen={setEditing}
@@ -72,6 +77,7 @@ export function AgendaCalendar({
             mode={period.view === "semana" ? "week" : "day"}
             dateKey={period.dateKey}
             appointments={appointments}
+            blocks={blocks}
             todayKey={todayKey}
             onOpen={setEditing}
             onCreate={setCreatingOn}

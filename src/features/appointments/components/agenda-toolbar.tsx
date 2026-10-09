@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
+import { AgendaBlocksDialog } from "@/features/appointments/components/agenda-blocks-dialog";
 import { AgendaLinkProgress } from "@/features/appointments/components/agenda-nav-progress";
 import { AgendaViewTabs } from "@/features/appointments/components/agenda-view-tabs";
 import { agendaStepHrefs, agendaTitle, type AgendaPeriod } from "@/features/appointments/lib/agenda-view";
@@ -66,6 +67,7 @@ export function AgendaToolbar({
         <h2 className="min-w-0 flex-1 truncate px-0.5 font-heading text-base font-medium sm:text-xl">
           {agendaTitle(period)}
         </h2>
+        <AgendaBlocksDialog />
       </div>
 
       <div className="flex min-w-0 items-center gap-2">

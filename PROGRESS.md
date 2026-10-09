@@ -27,6 +27,33 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 7 PR 2b-2: bloqueios da Agenda
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** cadastrar períodos sem atendimento (férias de um técnico, feriado de todos), vê-los no calendário e ser avisado ao agendar em cima deles. Fecha a Fase 7.
+**Arquivos alterados:**
+- lib: `features/appointments/lib/agenda-blocks.ts` (+`.test.ts`, 12 casos), recuperada da clínica e adaptada: entrou o técnico (`assignee`, `relevantBlocks`, `blockLabel` com o nome, `describeAgendaBlockPeriod` para a lista); saíram os horários rápidos e a compatibilidade com dados antigos de lá;
+- schema: `schemas/agenda-block.ts` (+`.test.ts`, 6 casos): dia inteiro (`start_date`/`end_date` inclusive → 00:00 do 1º até 00:00 do dia seguinte ao último) ou intervalo (`starts_at`/`ends_at` locais), tudo em ISO para a rota;
+- back: `queries/get-agenda-blocks.ts` (`getAgendaBlocks(range)`, `null` = falhou), `app/api/agenda-blocks/route.ts` (GET `?from=&to=`, POST) e `[id]/route.ts` (DELETE), todas com `requireDashboardUser` na 1ª linha;
+- UI: `components/agenda-blocks-dialog.tsx` (+`.test.tsx`, 5 casos), `agenda-month-view.tsx` e `agenda-time-grid.tsx` (desenho), `agenda-calendar.tsx` e `agenda-toolbar.tsx` (prop `blocks`, botão "Bloqueios"), `appointment-dialog.tsx` (aviso, +`appointment-dialog.test.tsx`, 4 casos), `agenda-calendar.test.tsx` (+2 casos); página: `agendamentos/page.tsx` (bloqueios no `Promise.all`); docs: `UI.md` §5.1.1 e nota no §5.17, `PRD.md` §6, este PROGRESS.
+**O que foi feito:**
+- **Cadastro** no diálogo "Bloqueios" da faixa: dia inteiro ou horário de um dia, motivo, técnico (vazio = todos); lista dos próximos com excluir. Sem edição (nada aponta para um bloqueio).
+- **Calendário** (UI.md §5.17): hachura no dia inteiro, linha `motivo · horário` no parcial, minicalendário com número riscado/relógio, faixa de fundo na grade que não rouba clique.
+- **Aviso no diálogo de agendamento** (também na ficha do ticket): busca os bloqueios do dia escolhido e avisa quando o horário cruza um bloqueio de todos ou do técnico escolhido. Fim exclusivo: o almoço até 13:00 não atrapalha a visita das 13:00. **Avisa, não impede.**
+**Decisões tomadas (revisar):**
+- **Member cadastra e exclui bloqueio**, como faz com compromisso (molde a, sob sessão). Se for coisa de admin, troca-se o guard das duas rotas de escrita.
+- **Horário parcial é de um dia só** no formulário (Dia · Das · Até). O schema aceita intervalo que atravessa dias; a tela não oferece, porque ausência de vários dias é "dia inteiro".
+- **Excluir bloqueio sem confirmação**: é reversível (cadastra-se de novo) e o toast confirma.
+- **Conflito entre compromissos** (dois na mesma hora para o mesmo técnico) **não entrou**: pede uma leitura de compromissos por dia que a tela ainda não tem. Fica como pendência.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4707/4707; 31 novos; `api-guards` cobre as 2 rotas novas) · build ✓. As consultas de bloqueios (com o técnico embutido pela FK) e a da agenda por período rodaram contra o **PostgREST local** (banco/rest/storage/gateway ligados só para isso e desligados depois): 200 nas três; base local sem dados. Sem conferência visual em browser (AGENTS §3.12).
+**Pendências / próximos passos:**
+- Aviso de **conflito entre compromissos** do mesmo técnico (rota de leitura por dia + aviso no diálogo, no molde do aviso de bloqueio).
+- Fase 8 (Financeiro) pelo plano.
+**Armadilhas descobertas:**
+- **`z.discriminatedUnion` não aceita membro com `.transform()`** (vira `ZodPipe`). Refine em cada objeto pode (no zod 4 continua `ZodObject`), e o transform vai depois da união.
+- **`agenda_blocks` tem duas FKs para `app_users`** (técnico e quem cadastrou): o embed precisa do hint `app_users!agenda_blocks_assignee_id_fkey`.
+- **O `Alert` tem `role="alert"`**: em teste, `findByRole("alert")` acha o aviso do diálogo.
+
 ## [2026-10-09] Fase 7 PR 2b-1: Agenda em Mês, Semana, Dia e Lista
 
 **Agente/Modelo:** Claude Opus 5.5.
