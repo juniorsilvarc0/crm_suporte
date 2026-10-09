@@ -1147,6 +1147,9 @@ isOneToOne: false
 "outbox_enqueue":
 { Args: { "p_event_key": string,"p_kind": string,"p_payload": Json }; Returns: string
                            },
+"outbox_purge":
+{ Args: { "p_older_than"?: string }; Returns: number
+                           },
 "outbox_requeue":
 { Args: { "p_id": string }; Returns: boolean
                            },

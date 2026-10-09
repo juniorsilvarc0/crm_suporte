@@ -155,6 +155,37 @@ end
 $$;
 reset role;
 
+-- 7. Expurgo (20261009170000): só as ENCERRADAS sem mudança há mais de 30 dias.
+--    O que ainda vai sair nunca é apagado, por mais velho que seja.
+insert into public.event_outbox (kind, event_key, status, updated_at) values
+  ('relay',   'purge-sent-velha',     'sent',        pg_catalog.now() - interval '31 days'),
+  ('relay',   'purge-skipped-velha',  'skipped',     pg_catalog.now() - interval '31 days'),
+  ('webhook', 'purge-dead-velha',     'dead_letter', pg_catalog.now() - interval '31 days'),
+  ('relay',   'purge-sent-recente',   'sent',        pg_catalog.now() - interval '29 days'),
+  ('webhook', 'purge-pending-velha',  'pending',     pg_catalog.now() - interval '60 days'),
+  ('webhook', 'purge-retry-velha',    'retry',       pg_catalog.now() - interval '60 days');
+set role service_role;
+do $$
+declare v_n integer;
+begin
+  v_n := public.outbox_purge();
+  insert into r values (v_n >= 3, 'o expurgo apaga as encerradas com mais de 30 dias', v_n::text);
+  begin
+    perform public.outbox_purge(interval '7 days');
+    insert into r values (false, 'retenção abaixo de 30 dias é recusada (22023)', 'aceitou');
+  exception when sqlstate '22023' then insert into r values (true, 'retenção abaixo de 30 dias é recusada (22023)', null); end;
+end
+$$;
+reset role;
+insert into r values (
+  not exists (select 1 from public.event_outbox where event_key in ('purge-sent-velha', 'purge-skipped-velha', 'purge-dead-velha')),
+  'sent, skipped e dead_letter velhas saíram', null);
+insert into r values (
+  (select pg_catalog.count(*) from public.event_outbox where event_key in ('purge-sent-recente', 'purge-pending-velha', 'purge-retry-velha')) = 3,
+  'a recente e as que ainda vão sair (pending, retry) ficam', null);
+insert into r values (not pg_catalog.has_function_privilege('anon', 'public.outbox_purge(interval)', 'execute'), 'anon não expurga', null);
+insert into r values (not pg_catalog.has_function_privilege('authenticated', 'public.outbox_purge(interval)', 'execute'), 'authenticated não expurga', null);
+
 select case when ok then 'ok  ' else 'FALHA' end as resultado, teste, detalhe from r order by teste;
 
 do $$
