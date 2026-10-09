@@ -919,6 +919,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"webhook_subscriptions": {
+                  Row: {
+                    "created_at": string,"created_by_user_id": string | null,"events": (string)[],"id": string,"is_active": boolean,"name": string,"secret_id": string | null,"updated_at": string,"url": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"created_by_user_id"?: string | null,"events": (string)[],"id"?: string,"is_active"?: boolean,"name": string,"secret_id"?: string | null,"updated_at"?: string,"url": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by_user_id"?: string | null,"events"?: (string)[],"id"?: string,"is_active"?: boolean,"name"?: string,"secret_id"?: string | null,"updated_at"?: string,"url"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "webhook_subscriptions_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -1055,6 +1074,9 @@ isOneToOne: false
               "contract_id": string,"monthly_amount": number
             }[]
                            },
+"get_webhook_subscription_secret":
+{ Args: { "p_subscription_id": string }; Returns: string
+                           },
 "job_claim":
 { Args: { "p_name": string,"p_seconds": number }; Returns: Json
                            },
@@ -1094,6 +1116,9 @@ isOneToOne: false
 "outbox_enqueue":
 { Args: { "p_event_key": string,"p_kind": string,"p_payload": Json }; Returns: string
                            },
+"outbox_requeue":
+{ Args: { "p_id": string }; Returns: boolean
+                           },
 "outbox_settle":
 { Args: { "p_error": string,"p_http_status": number,"p_id": string,"p_lease_token": string,"p_next_attempt_at": string,"p_status": string }; Returns: boolean
                            },
@@ -1123,6 +1148,9 @@ isOneToOne: false
                            },
 "set_support_contract_status":
 { Args: { "p_actor_id": string,"p_contract_id": string,"p_ends_on"?: string,"p_status": string }; Returns: Json
+                           },
+"set_webhook_subscription_secret":
+{ Args: { "p_subscription_id": string,"p_value": string }; Returns: boolean
                            },
 "sla_sweep":
 { Args: Record<PropertyKey, never>; Returns: Json
@@ -1212,6 +1240,12 @@ isOneToOne: false
 { Args: { "p_email": string,"p_password": string }; Returns: {
               "avatar_color": string,"avatar_url": string,"email": string,"id": string,"name": string,"role": string
             }[]
+                           },
+"webhook_emit":
+{ Args: { "p_data": Json,"p_event": string,"p_event_id": string,"p_occurred_at": string }; Returns: number
+                           },
+"webhook_events_valid":
+{ Args: { "p_events": (string)[] }; Returns: boolean
                            }
           }
           Enums: {
