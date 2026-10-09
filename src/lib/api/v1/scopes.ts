@@ -26,7 +26,8 @@ export type ApiScope = (typeof API_SCOPES)[number];
 /**
  * Preset "IA de triagem" (D4): o que o agente precisa para triar, abrir e
  * conduzir o ticket e responder. Fora dele: `customers:write` (cadastro de
- * empresa é do analista), `notices:claim` (Fase 6) e `comments:read`: a IA
+ * empresa é do analista), `notices:claim` (só para o token de quem avisa o
+ * cliente na troca de status, dado à parte) e `comments:read`: a IA
  * escreve comentário interno, mas não lê comentário nem nota interna do time,
  * para não ter como repeti-los ao cliente (a mesma regra do /context).
  */

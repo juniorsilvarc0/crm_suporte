@@ -47,6 +47,12 @@ import {
   ticketTransitionBodySchema,
   ticketTransitionResultSchema,
 } from "@/lib/api/v1/tickets";
+import {
+  noticeClaimBodySchema,
+  noticeClaimResultSchema,
+  noticeFinalizeBodySchema,
+  noticeFinalizeResultSchema,
+} from "@/lib/api/v1/notices";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
 // Contrato público da API v1, servido em GET /api/v1/openapi.json (D14). Os
@@ -180,6 +186,17 @@ const ticketRefParam = {
   schema: { type: "string" },
 };
 
+const noticeStepParam = {
+  name: "step",
+  in: "path",
+  required: true,
+  description:
+    "O passo do aviso, escolhido por quem avisa: o `id` do evento (um aviso por evento) ou um nome fixo, como " +
+    "`resolvido` (um aviso por ticket). Até 128 caracteres entre letras, números, `_`, `.`, `:` e `-`, começando por " +
+    "letra ou número.",
+  schema: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$" },
+};
+
 const ticketNotFoundError = errorResponse(
   "Não existe, ou o `ref` não é um uuid nem um protocolo numérico (`not_found`)."
 );
@@ -295,6 +312,10 @@ export function buildOpenApiDocument() {
         HandoffResult: z.toJSONSchema(itemOf(handoffResultSchema)),
         ActiveTicket: z.toJSONSchema(activeTicketBodySchema, { io: "input" }),
         ActiveTicketResult: z.toJSONSchema(itemOf(activeTicketResultSchema)),
+        NoticeClaim: z.toJSONSchema(noticeClaimBodySchema, { io: "input" }),
+        NoticeClaimResult: z.toJSONSchema(itemOf(noticeClaimResultSchema)),
+        NoticeFinalize: z.toJSONSchema(noticeFinalizeBodySchema, { io: "input" }),
+        NoticeFinalizeResult: z.toJSONSchema(itemOf(noticeFinalizeResultSchema)),
       },
     },
     paths: {
@@ -594,6 +615,48 @@ export function buildOpenApiDocument() {
             "200": withEtag("O ticket com o responsável novo.", "TicketChange"),
             "409": errorResponse("Ticket encerrado não muda (`ticket_terminal`)."),
             ...ticketWriteErrors,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/notices/{step}/claim": {
+        post: {
+          summary:
+            "Reivindica o aviso ao cliente ANTES de mandar a mensagem: só `claimed: true` (com o `claim_token`) " +
+            "autoriza o envio. `claimed: false` diz por quê: `already_sent` (já saiu) ou `in_progress` (outra " +
+            "reivindicação valendo até `lease_expires_at`). Depois de uma falha (`finalize` com `failed`) ou de uma " +
+            "lease vencida sem finalize, o passo volta a ser reivindicável. Corpo opcional. Sem Idempotency-Key: " +
+            "repetir a resposta daria `claimed: true` a duas entregas do mesmo evento. Escopo: `notices:claim`.",
+          parameters: [ticketRefParam, noticeStepParam],
+          requestBody: { required: false, content: json("NoticeClaim") },
+          responses: {
+            "200": { description: "A reivindicação, ou a recusa com o motivo.", content: json("NoticeClaimResult") },
+            "400": errorResponse("Passo ou corpo inválido (`validation_error`) ou JSON inválido (`invalid_json`)."),
+            "404": ticketNotFoundError,
+            "503": errorResponse(
+              "Sem resposta do banco (`unavailable`). Se a reivindicação valeu, a lease a segura até vencer; tente de novo."
+            ),
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/notices/{step}/finalize": {
+        post: {
+          summary:
+            "Fecha a reivindicação com o desfecho: `sent` (o aviso saiu; o passo não se reivindica mais) ou `failed` " +
+            "(não saiu; volta a ser reivindicável na hora). Exige o `claim_token` da reivindicação atual. Repetir o " +
+            "mesmo desfecho é seguro. Escopo: `notices:claim`.",
+          parameters: [ticketRefParam, noticeStepParam],
+          requestBody: { required: true, content: json("NoticeFinalize") },
+          responses: {
+            "200": { description: "Fechado.", content: json("NoticeFinalizeResult") },
+            "400": errorResponse("Passo ou corpo inválido (`validation_error`) ou JSON inválido (`invalid_json`)."),
+            "404": errorResponse("O ticket não existe, ou o aviso nunca foi reivindicado (`not_found`)."),
+            "409": errorResponse(
+              "Outra reivindicação assumiu (`notice_claim_lost`: não reenvie) ou o aviso já foi fechado com outro " +
+                "desfecho (`notice_already_finalized`). `current` traz o estado do aviso."
+            ),
+            "503": errorResponse("Sem resposta do banco (`unavailable`). Repetir é seguro."),
             ...authErrors,
           },
         },
