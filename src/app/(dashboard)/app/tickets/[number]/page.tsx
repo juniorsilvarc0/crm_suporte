@@ -11,6 +11,7 @@ import { getTicketCatalog } from "@/features/tickets/queries/get-ticket-catalog"
 import { getTicketDetail } from "@/features/tickets/queries/get-ticket-detail";
 import { getTicketTimeline } from "@/features/tickets/queries/get-ticket-timeline";
 import type { TicketTimelinePage } from "@/features/tickets/types";
+import { getTicketFollowups } from "@/features/followups/queries/get-followups";
 import { getDashboardViewer } from "@/lib/auth/require-dashboard-session";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
   if (detail.status === "error") return <DetailUnavailable />;
 
   const { ticket, attachments, fetchedAt } = detail;
-  const [timeline, catalog, team] = await Promise.all([
+  const [timeline, catalog, team, followups] = await Promise.all([
     // A timeline LANÇA em erro (a rota responde 500): aqui vira a seção com
     // "Tentar de novo", e o resto do detalhe abre.
     getTicketTimeline(ticket.id).catch((error: unknown): TicketTimelinePage | null => {
@@ -61,6 +62,8 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
     }),
     getTicketCatalog(),
     getAssignableUsers(),
+    // Resiliente: erro vira [] (a seção "Retornos" fica vazia, o resto abre).
+    getTicketFollowups(ticket.id),
   ]);
 
   return (
@@ -71,6 +74,7 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
         timeline={timeline}
         catalog={catalog}
         team={team}
+        followups={followups}
         viewerId={viewer.id}
         fetchedAt={fetchedAt}
       />

@@ -23,6 +23,8 @@ import type {
   TicketTeamMember,
   TicketTimelinePage,
 } from "@/features/tickets/types";
+import { TicketFollowups } from "@/features/followups/components/ticket-followups";
+import type { FollowupListItem } from "@/features/followups/types";
 
 // Aviso não tem token semântico: a paleta de domínio, como o tom `warn` do
 // selo de SLA.
@@ -37,6 +39,8 @@ export type TicketDetailViewProps = {
   catalog: TicketCatalog;
   /** A equipe (ativos e inativos); `null` = a leitura falhou. */
   team: TicketTeamMember[] | null;
+  /** Os retornos (follow-ups) deste ticket; `[]` se não houver ou se falhou. */
+  followups: FollowupListItem[];
   viewerId: string;
   /** O instante da leitura (ISO): começa o relógio do selo de SLA. */
   fetchedAt: string;
@@ -57,6 +61,7 @@ export function TicketDetailView({
   timeline,
   catalog,
   team,
+  followups,
   viewerId,
   fetchedAt,
 }: TicketDetailViewProps) {
@@ -146,6 +151,14 @@ export function TicketDetailView({
               catalog={catalog}
               mutation={mutation}
               onAssign={() => setAssignOpen(true)}
+            />
+          </Section>
+          <Section title="Retornos">
+            <TicketFollowups
+              ticketId={ticket.id}
+              followups={followups}
+              editable={!ticket.is_terminal}
+              now={now}
             />
           </Section>
           <Section title="Anexos">
