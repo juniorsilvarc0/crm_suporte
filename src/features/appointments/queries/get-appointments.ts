@@ -38,3 +38,24 @@ export async function getAppointments(): Promise<AppointmentListItem[]> {
     return [];
   }
 }
+
+/** Os compromissos de um ticket, do mais próximo ao mais distante. */
+export async function getTicketAppointments(ticketId: string): Promise<AppointmentListItem[]> {
+  if (!hasSupabaseAdminEnv()) return [];
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from("appointments")
+      .select(APPOINTMENT_SELECT)
+      .eq("ticket_id", ticketId)
+      .order("scheduled_at", { ascending: true });
+    if (error) {
+      console.error("[appointments] getTicketAppointments", error.code, error.message);
+      return [];
+    }
+    return (data ?? []) as unknown as AppointmentListItem[];
+  } catch (error) {
+    console.error("[appointments] getTicketAppointments lançou", error);
+    return [];
+  }
+}
