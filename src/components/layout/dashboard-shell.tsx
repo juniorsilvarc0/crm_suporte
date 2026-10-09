@@ -11,6 +11,7 @@ import { InstallPwaBanner } from "@/components/pwa/install-pwa-banner";
 import { getActiveNavHref } from "@/config/nav-active";
 import { getDashboardNavigation, getMobileTabs, type NavItem } from "@/config/navigation";
 import { siteConfig } from "@/config/site";
+import { WhatsappConnectionBanner } from "@/features/connection/components/whatsapp-connection-banner";
 import { cn } from "@/lib/utils";
 
 /**
@@ -59,6 +60,8 @@ export function DashboardShell({ children, viewer }: { children: React.ReactNode
         isActive={isActive}
         onOpenMenu={showMobileNavigation ? () => setMenuOpen(true) : undefined}
       />
+
+      <WhatsappConnectionBanner isAdmin={viewer.role === "admin"} />
 
       <div
         data-shell-content

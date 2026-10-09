@@ -10,6 +10,7 @@ const HEALTH: IntegrationHealth = {
   windowHours: 24,
   whatsapp: { state: "open", instance: "5527999990000" },
   lastInbound: { state: "ok", at: "2026-10-02T16:58:00.000000+00:00", exact: true },
+  connectionHistory: { state: "ok", events: [] },
   relay: {
     config: "active",
     reason: null,
@@ -80,12 +81,14 @@ describe("IntegrationHealthPanel", () => {
       ...HEALTH,
       whatsapp: { state: "unavailable", cause: "crm", instance: null },
       lastInbound: { state: "unavailable" },
+      connectionHistory: { state: "unavailable" },
       relay: { config: "unreadable", reason: null, deliveries: { state: "unavailable" } },
       api: { calls: { state: "unavailable" } },
     });
 
     expect(screen.getByText("Não foi possível ler a integração no CRM.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler as mensagens.")).toBeInTheDocument();
+    expect(screen.getByText("Não foi possível ler o histórico.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler a configuração do agente.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler os repasses.")).toBeInTheDocument();
     expect(screen.getByText("Não foi possível ler as chamadas.")).toBeInTheDocument();
@@ -109,6 +112,29 @@ describe("IntegrationHealthPanel", () => {
     await renderLoaded({ ...HEALTH, whatsapp });
 
     expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it("histórico da conexão: cada mudança com hora, estado em palavras e o motivo da uazapi", async () => {
+    await renderLoaded({
+      ...HEALTH,
+      connectionHistory: {
+        state: "ok",
+        events: [
+          { state: "open", reason: null, occurredAt: "2026-10-09T10:54:00.000Z" },
+          { state: "close", reason: "logged out", occurredAt: "2026-10-08T19:07:00.000Z" },
+        ],
+      },
+    });
+
+    expect(screen.getByText("09/10/2026 07:54 · Conectado.")).toBeInTheDocument();
+    expect(screen.getByText("08/10/2026 16:07 · Desconectado (logged out).")).toHaveClass("text-rose-600");
+  });
+
+  it("histórico vazio explica que o monitor grava na mudança", async () => {
+    await renderLoaded();
+    expect(
+      screen.getByText("Nenhuma mudança registrada ainda: o monitor grava quando o estado muda.")
+    ).toBeInTheDocument();
   });
 
   it("última mensagem que é piso diz que pode haver uma mais recente", async () => {

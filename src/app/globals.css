@@ -83,7 +83,10 @@
      Telas de altura cheia descontam `--app-chrome-top`; nunca escreva a altura
      à mão. */
   --app-bar-height: 3.5rem;
-  --app-chrome-top: var(--app-bar-height);
+  /* Aviso do topo (WhatsApp desconectado): 0 até ele aparecer; o próprio aviso
+     publica a altura dele aqui, e as telas de altura cheia continuam cabendo. */
+  --app-alert-height: 0px;
+  --app-chrome-top: calc(var(--app-bar-height) + var(--app-alert-height));
   /* Identidade da Ticbox, medida no CSS do site do cliente (style.css,
      --cor-01..04 e --sidebar) e no Bootstrap 5.2 que ele usa:
      #042D29 verde-petróleo · #0A7E4D verde · #AFEB2B lima · #EEF7E2 verde-claro

@@ -27,6 +27,42 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Monitor de conexão do WhatsApp (e o incidente que o motivou)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** saber em minutos — e não 15 horas depois — que o WhatsApp caiu, guardar o motivo quando a uazapi informar, e avisar todo mundo na tela. Pedido do dono: "faça… sem derrubar o WhatsApp".
+**O incidente (2026-10-08, diagnóstico só de leitura em 2026-10-09):**
+- A última mensagem antes da queda é de **16:06:51 (Brasília)**, no meio de uma conversa movimentada (o atendente respondia pelo celular segundos antes). No dia anterior, o mesmo horário teve 108–203 mensagens por hora.
+- **Não foi o CRM:** o log do nginx do host não tem nenhuma chamada às rotas de conexão no dia 08/10; nenhuma ação em produção nesse horário; `chat_integrations` sem alteração desde 29/09.
+- **Foi logout de verdade** (não queda de rede): o dono precisou de QR novo em 09/10 às 07:53; as mensagens voltaram em seguida.
+- **O motivo não ficou registrado:** o webhook só assina `messages`/`messages_update`, e evento não reconhecido só vira log, perdido ao recriar as réplicas. Causas possíveis: aparelho removido em "Aparelhos conectados" no celular, o próprio WhatsApp encerrando a sessão (comum em API não oficial) ou logout pelo painel/API da uazapi.
+**Arquivos alterados:**
+- banco: `supabase/migrations/20261009120000_chat_connection_events.sql` (tabela só de inserção: estado, motivo, origem, hora; RLS sem policy; `service_role` com SELECT/INSERT apenas), `supabase/tests/chat_connection_events.sql` (10 casos), `src/lib/supabase/database.types.ts` (regenerado);
+- back: `src/features/chat/lib/connection/uazapi.ts` (`getUazapiStatus` devolve `reason` quando o provedor informa — aditivo), `src/features/connection/server/connection-monitor.ts` (+ teste, 9), `src/features/connection/queries/get-connection-events.ts`, `src/features/connection/types.ts`, `src/lib/jobs/worker.ts` (5º job, 2 min, lease `whatsapp_monitor`) + `worker.test.ts`, `src/app/api/connection/status/route.ts` (sessão; só banco), `src/features/integrations/{types.ts,queries/get-integration-health.ts}` (+ teste);
+- front: `src/features/connection/components/whatsapp-connection-banner.tsx` (+ teste, 8), `src/components/layout/dashboard-shell.tsx`, `src/app/globals.css` (`--app-alert-height` no `--app-chrome-top`), `src/features/integrations/components/integration-health-panel.tsx` (+ teste); docs: `UI.md` §5.19 e §5.19.2 (nova), `PRD.md` §14, este PROGRESS.
+**Garantias de "sem derrubar o WhatsApp":**
+- O monitor **só lê** o provedor (`GET /instance/status`, a mesma consulta do painel de Conexão e da Saúde). Não pede QR, não reconecta, **não reregistra webhook** e **não escreve em `chat_integrations`** (nem o telefone do dono). Teste dedicado confere que a única tabela tocada é `chat_connection_events`.
+- Erro do provedor vira `unknown` com motivo fixo ("o provedor não respondeu"): o corpo da resposta, que pode trazer o token, nunca vai para banco nem log.
+- A rota do webhook não foi tocada.
+**Decisões tomadas (revisar):**
+- **Monitor por consulta, não por evento:** assinar o evento `connection` da uazapi exigiria reregistrar o webhook da instância de produção e mexer na rota mais quente. Fica como próximo passo opcional (só vale na próxima reconexão por QR).
+- **Grava só a mudança**, não cada consulta: o histórico fica curto e legível.
+- **"Sem resposta da uazapi" não acende o aviso** (não dá para afirmar a queda), mas entra no histórico.
+- **Aviso para todos** (analista também): é quem percebe primeiro que os clientes não estão chegando. Só o admin ganha o link, porque a tela de Integrações é de admin.
+**Verificação:** typecheck ✓ (0) · lint ✓ (0 erros; os 9 warnings pré-existentes) · test ✓ (4779/4779) · build ✓ · testes de SQL ✓ (10; `baseline.sql` e `segredo_integracao.sql` falham só no banco LOCAL por uma integração uazapi de testes antigos — o CI parte de banco vazio). Migration reaplicada sem efeito; `assert_security_baseline()` com 38 tabelas. PostgREST local: grava (201), lê (200) e recusa apagar (403). Sem teste de browser.
+**Pendências / próximos passos:**
+- Depois do deploy: conferir nos logs `[whatsapp-monitor] — → open` (o ponto de partida) e a linha em `chat_connection_events`.
+- ⚠️ **Os nomes do campo de motivo na resposta da uazapi são palpite** (`instance.lastDisconnectReason` e variantes). Na próxima queda, conferir se o histórico trouxe o motivo; se vier vazio, ajustar `getUazapiStatus`.
+- Opcional: assinar o evento `connection` (tempo real) na próxima reconexão.
+**Armadilhas descobertas:**
+- **Teste de SQL que cria `chat_integrations` com provedor `uazapi` esbarra na chave única** num banco local que já tem a integração. Reaproveite a existente quando houver (tudo volta no ROLLBACK).
+- **Aviso que entra no fluxo acima do conteúdo empurra as telas de altura cheia:** elas descontam `--app-chrome-top`. Publique a altura numa variável que entra nesse cálculo.
+
+## [2026-10-09] Deploy: recortes das métricas no ar (#70)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "mergeado.. siga com o recomendado"):** `deploy/publicar.sh` a partir de `origin/main` @ `c20926b3289e`, ~10:37–10:43 UTC. Sem migration. Rodízio limpo; `verificar` ✓; `/app/metricas` 307 sem sessão; logs sem erro. Rollback: `prd-rollback` = `1667770c12e7` (#69).
+
 ## [2026-10-09] Correção: o seletor de empresa vazava do modal (Contatos e Agenda)
 
 **Agente/Modelo:** Claude Opus 5.5.
@@ -37,6 +73,7 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 **Verificação:** typecheck ✓ · lint ✓ (0 erros) · test ✓ (4757/4757) · build ✓. jsdom não calcula layout: o teste novo trava as duas classes que impedem o vazamento. Sem conferência em browser (AGENTS §3.12) — conferir no celular e no desktop depois de subir.
 **Armadilhas descobertas:**
 - **Componente reutilizável que tem texto `truncate` precisa de `min-w-0` na própria raiz.** Senão cada chamador que o põe num grid ou num item flex herda o vazamento, e o defeito aparece num lugar e não no outro.
+
 
 ## [2026-10-09] Fase 9 PR 2: recortes (fila, analista, clientes) e IA × analista
 

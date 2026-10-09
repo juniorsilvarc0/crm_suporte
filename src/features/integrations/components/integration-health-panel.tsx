@@ -5,6 +5,7 @@ import { Loader2Icon, RotateCwIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { ConnectionEvent } from "@/features/connection/types";
 import type { IntegrationHealth } from "@/features/integrations/types";
 import { formatDateTime, formatTime } from "@/lib/formatters/date";
 import { formatPhone } from "@/lib/formatters/phone";
@@ -49,6 +50,31 @@ function whatsappLines(whatsapp: IntegrationHealth["whatsapp"]): Line[] {
     lines.push({ text: `Número: ${formatPhone(whatsapp.instance)}.`, tone: "muted" });
   }
   return lines;
+}
+
+const CONNECTION_STATE: Record<ConnectionEvent["state"], { text: string; tone: Tone }> = {
+  open: { text: "Conectado", tone: "ok" },
+  connecting: { text: "Esperando o QR", tone: "warn" },
+  close: { text: "Desconectado", tone: "bad" },
+  unknown: { text: "Sem resposta da uazapi", tone: "warn" },
+};
+
+/**
+ * As mudanças de estado gravadas pelo monitor (a cada 2 minutos), da mais nova
+ * para a mais antiga, com o motivo quando a uazapi o informa.
+ */
+function connectionHistoryLines(history: IntegrationHealth["connectionHistory"]): Line[] {
+  if (history.state === "unavailable") return [{ text: "Não foi possível ler o histórico.", tone: "warn" }];
+  if (history.events.length === 0) {
+    return [{ text: "Nenhuma mudança registrada ainda: o monitor grava quando o estado muda.", tone: "muted" }];
+  }
+  return history.events.map((event) => {
+    const state = CONNECTION_STATE[event.state];
+    return {
+      text: `${formatDateTime(event.occurredAt)} · ${state.text}${event.reason ? ` (${event.reason})` : ""}.`,
+      tone: state.tone,
+    };
+  });
 }
 
 function lastInboundLine(lastInbound: IntegrationHealth["lastInbound"]): Line {
@@ -206,6 +232,7 @@ export function IntegrationHealthPanel() {
         <dl className="divide-y divide-border/70 rounded-xl border border-border/60 bg-card p-4 shadow-soft">
           <Section title="WhatsApp" lines={whatsappLines(load.health.whatsapp)} />
           <Section title="Última mensagem recebida" lines={[lastInboundLine(load.health.lastInbound)]} />
+          <Section title="Histórico da conexão" lines={connectionHistoryLines(load.health.connectionHistory)} />
           <Section title="Agente de IA" lines={[relayConfigLine(load.health.relay)]} />
           <Section
             title="Repasse ao agente"

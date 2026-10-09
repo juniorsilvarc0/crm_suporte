@@ -1291,6 +1291,7 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - **Partes:**
     - **WhatsApp:** o estado e o número da instância;
     - **última mensagem recebida;**
+    - **histórico da conexão** (monitor, 2026-10-09): as últimas 10 mudanças de estado gravadas pelo worker, da mais nova para a mais antiga — "08/10/2026 16:07 · Desconectado (motivo)." —, no tom do estado (verde conectado, vermelho desconectado, âmbar esperando o QR ou sem resposta da uazapi). Vazio: "Nenhuma mudança registrada ainda: o monitor grava quando o estado muda.";
     - **Agente de IA:** a configuração, com o motivo da recusa;
     - **repasse ao agente:** "3 de 40 com erro nas últimas 24 h", o último entregue e o último com erro;
     - **API do CRM:** o total e os erros, com o 4xx (de quem chamou) separado do 5xx (do CRM).
@@ -1356,6 +1357,15 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
     - **Sem chave faltando**, o botão fica desabilitado e a tela diz por quê ("Todas as chaves do catálogo já têm valor.").
     - **A coluna Origem e os rótulos "Servidor" e "Sobrescrever" saíram.** O CRM só lê do cofre, e o selo do modelo de transcrição diz "Cofre" ou "Padrão".
     - **Variável antiga, fora do catálogo,** diz "Fora do catálogo: o CRM não lê esta chave." e só oferece **Remover**. Substituir só levava a uma recusa do servidor.
+
+### §5.19.2 Aviso de WhatsApp desconectado (todas as telas, 2026-10-09)
+
+Em 2026-10-08 a sessão caiu às 16:06 e ninguém viu por 15 horas. Agora, enquanto o monitor (worker, a cada 2 min) disser que está **desconectado** ou **esperando o QR**, uma faixa vermelha suave aparece logo abaixo da faixa do topo, em **todas as telas e para todos**: "**WhatsApp desconectado desde DD/MM/AAAA HH:MM.** As mensagens dos clientes não estão chegando ao CRM." + o motivo, quando a uazapi informa. O admin ganha **"Reconectar em Integrações"**; o analista, "Avise um administrador."
+
+- **Busca o estado sozinha** (`GET /api/connection/status`, só banco, de sessão): ao montar, a cada minuto e ao voltar para a aba — o layout não roda de novo na navegação pelo cliente, e o aviso precisa sumir assim que reconectar.
+- **"Sem resposta da uazapi" não acende o aviso**: não dá para afirmar que a sessão caiu (fica no histórico da Saúde).
+- ⚠️ **A faixa publica a própria altura em `--app-alert-height`** (ResizeObserver), que entra no `--app-chrome-top`: as telas de altura cheia (chat, agenda) continuam cabendo, sem rolagem de página. Some = a variável volta a 0.
+- `role="alert"`: o texto não muda entre uma consulta e outra, então o leitor de tela não repete o anúncio.
 
 ### §5.19.1 Atendimento (`/app/configuracoes/atendimento`, admin, Fase 4)
 
