@@ -36,20 +36,12 @@ export function AppointmentsTable({ appointments }: { appointments: AppointmentL
   const [deleting, setDeleting] = useState<AppointmentListItem | null>(null);
 
   return (
+    // A contagem e o "Novo agendamento" moram na faixa da Agenda (AgendaToolbar).
     <div className="grid gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          {appointments.length === 0
-            ? "Nenhum agendamento."
-            : `${appointments.length} agendamento${appointments.length === 1 ? "" : "s"}`}
-        </p>
-        <AppointmentDialog />
-      </div>
-
       {appointments.length === 0 ? (
         <EmptyState>
           <div className="space-y-1">
-            <p className="font-medium text-foreground">Nenhum agendamento ainda</p>
+            <p className="font-medium text-foreground">Nenhum agendamento neste mês</p>
             <p>Agende uma visita técnica, treinamento, implantação ou acesso remoto.</p>
           </div>
         </EmptyState>
