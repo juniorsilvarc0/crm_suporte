@@ -485,7 +485,7 @@ function AppointmentForm({
                 </Button>
               </div>
             ) : (
-              <div className="grid gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
                 <CustomerPicker
                   appearance="app"
                   currentCustomerId={customer?.id ?? null}

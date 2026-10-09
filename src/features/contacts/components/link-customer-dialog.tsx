@@ -90,7 +90,9 @@ export function LinkCustomerDialog({
           }
           description="Só empresas ativas aparecem na busca."
         >
-          <div className="grid gap-3">
+          {/* Coluna declarada: sem ela a trilha vira max-content e o nome
+              longo de uma empresa vaza do modal (UI.md §9). */}
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
             {error ? (
               <Alert variant="destructive" className="text-left">
                 <TriangleAlertIcon />

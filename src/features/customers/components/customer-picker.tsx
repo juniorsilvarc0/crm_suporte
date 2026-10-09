@@ -27,12 +27,17 @@ type Appearance = "chat" | "app";
 // O painel do chat tem superfície própria (`--wa-info-*`, UI.md §5.7.12); fora
 // dele, os tokens semânticos do app. Os alvos ficam em 48px nos dois: aqui não
 // se reduz a densidade em `sm`.
+// ⚠️ `min-w-0` na raiz: dentro de um grid sem coluna declarada (ou de um item
+// flex), a largura mínima automática seria a da linha mais longa da lista
+// ("razão social · CNPJ" com `truncate` = nowrap), e o seletor empurrava o campo
+// e a lista para fora do modal em vez de truncar (UI.md §9). Com ele, o seletor
+// ocupa a largura que o pai dá, e o `truncate` das linhas funciona.
 const STYLES: Record<
   Appearance,
   { root: string; field: string; card: string; row: string; muted: string; action: string; skeleton: string }
 > = {
   chat: {
-    root: "flex flex-col gap-3 px-4 py-4",
+    root: "flex min-w-0 flex-col gap-3 px-4 py-4",
     field:
       "h-11 rounded-xl border-transparent bg-[var(--wa-info-card)] pl-9 md:text-[15px] dark:bg-[var(--wa-info-card)]",
     card: "divide-y divide-[var(--wa-info-divider)] overflow-hidden rounded-xl bg-[var(--wa-info-card)]",
@@ -42,7 +47,7 @@ const STYLES: Record<
     skeleton: "bg-[var(--wa-info-active)]",
   },
   app: {
-    root: "flex flex-col gap-3",
+    root: "flex min-w-0 flex-col gap-3",
     field: "h-11 rounded-full pl-9 md:text-[15px]",
     card: "divide-y divide-border overflow-hidden rounded-xl border border-border bg-card",
     row: "hover:bg-muted",
