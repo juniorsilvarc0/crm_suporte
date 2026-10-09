@@ -27,6 +27,17 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Correção: o seletor de empresa vazava do modal (Contatos e Agenda)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** o modal "Vincular … a uma empresa" (`/app/contatos`) mostrava o campo de busca e a lista cortados na borda direita, com rolagem horizontal; o dono mandou o print.
+**Arquivos alterados:** `src/features/customers/components/customer-picker.tsx` (`min-w-0` na raiz, nas duas aparências) + `customer-picker.test.tsx` (+2), `src/features/contacts/components/link-customer-dialog.tsx` e `src/features/appointments/components/appointment-dialog.tsx` (`grid-cols-[minmax(0,1fr)]` no envelope); este PROGRESS.
+**Causa:** o anti-padrão do UI.md §9. O `CustomerPicker` morava num `<div className="grid gap-3">` sem coluna declarada: a trilha `auto` cresce até a linha mais longa da lista ("razão social · CNPJ" com `truncate` = nowrap — no print, uma razão social de empresa individual, que leva o nome completo do titular), e o seletor inteiro passava da largura do modal. O `truncate` nunca chegava a agir. O diálogo da Agenda tinha o mesmo envelope (`grid gap-2`); o do ticket e o painel do chat não (bloco/`max-w-xl`).
+**O que foi feito:** proteção nas duas pontas — a raiz do seletor não força mais a largura do pai (`min-w-0`), e os dois envelopes em grid declaram a coluna (`grid-cols-[minmax(0,1fr)]`).
+**Verificação:** typecheck ✓ · lint ✓ (0 erros) · test ✓ (4757/4757) · build ✓. jsdom não calcula layout: o teste novo trava as duas classes que impedem o vazamento. Sem conferência em browser (AGENTS §3.12) — conferir no celular e no desktop depois de subir.
+**Armadilhas descobertas:**
+- **Componente reutilizável que tem texto `truncate` precisa de `min-w-0` na própria raiz.** Senão cada chamador que o põe num grid ou num item flex herda o vazamento, e o defeito aparece num lugar e não no outro.
+
 ## [2026-10-09] Fase 9 PR 2: recortes (fila, analista, clientes) e IA × analista
 
 **Agente/Modelo:** Claude Opus 5.5.

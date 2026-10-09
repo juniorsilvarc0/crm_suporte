@@ -66,6 +66,29 @@ afterEach(() => {
 });
 
 describe("CustomerPicker", () => {
+  // jsdom não calcula layout: o teste trava as duas proteções que impedem o
+  // nome longo de vazar do modal (o seletor estourava a largura em Contatos).
+  it.each(["app", "chat"] as const)(
+    "(%s) não força a largura do pai, e a razão social · CNPJ longa trunca",
+    async (appearance) => {
+      const longo: CustomerSummary = {
+        ...PADARIA,
+        id: "c3",
+        trade_name: "LANCHONETE EXEMPLO",
+        legal_name: "12.345.678 FULANA DE TAL SOBRENOME MUITO COMPRIDO COMERCIO DE ALIMENTOS",
+      };
+      stubFetch(() => jsonResponse({ ok: true, items: [longo] }));
+      const { container } = render(
+        <CustomerPicker appearance={appearance} currentCustomerId={null} busyId={null} onPick={vi.fn()} />
+      );
+
+      expect(container.firstElementChild).toHaveClass("min-w-0");
+      const secondary = await screen.findByText(/FULANA DE TAL SOBRENOME/);
+      expect(secondary).toHaveClass("truncate");
+      expect(secondary.parentElement).toHaveClass("min-w-0");
+    }
+  );
+
   it("busca ao abrir e mostra nome, razão social · CNPJ e o selo com texto", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, items: [PADARIA, MERCADO] }));
     setup();
