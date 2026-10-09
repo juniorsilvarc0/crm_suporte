@@ -34,6 +34,7 @@ describe("getDashboardNavigation", () => {
       "/app/contatos",
       "/app/agendamentos",
       "/app/follow-ups",
+      "/app/metricas",
       "/app/conexao",
       "/app/equipe",
       "/app/configuracoes/atendimento",
@@ -91,9 +92,9 @@ describe("buildTopNavigation", () => {
 
     expect(
       entries.map((entry) => (entry.kind === "link" ? entry.item.title : entry.title))
-    ).toEqual(["Início", "Tickets", "WhatsApp", "Clientes", "Contatos", "Agenda", "Ajustes"]);
+    ).toEqual(["Início", "Tickets", "WhatsApp", "Clientes", "Contatos", "Agenda", "Métricas", "Ajustes"]);
 
-    const ajustes = entries[6];
+    const ajustes = entries[7];
     expect(ajustes.kind).toBe("menu");
     if (ajustes.kind === "menu") {
       expect(ajustes.items.map((item) => item.href)).toEqual([
