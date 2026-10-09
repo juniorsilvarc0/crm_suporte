@@ -5,6 +5,7 @@ import {
   CalendarDaysIcon,
   HeadsetIcon,
   HouseIcon,
+  ListChecksIcon,
   MessageCircleIcon,
   PlugZapIcon,
   SettingsIcon,
@@ -58,6 +59,7 @@ export const dashboardNavigation: NavItem[] = [
   { title: "Clientes", href: "/app/clientes", icon: Building2Icon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Contatos", href: "/app/contatos", icon: BookUserIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Agenda", href: "/app/agendamentos", icon: CalendarDaysIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
+  { title: "Retornos", href: "/app/follow-ups", icon: ListChecksIcon, group: "Operação", allowedRoles: OPERATION_ROLES },
   { title: "Integrações", href: "/app/conexao", icon: PlugZapIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Equipe", href: "/app/equipe", icon: UsersRoundIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
   { title: "Atendimento", href: "/app/configuracoes/atendimento", icon: HeadsetIcon, group: "Administração", allowedRoles: ADMIN_ROLES },
@@ -119,7 +121,8 @@ const TOP_NAV_SPEC: ReadonlyArray<
   { kind: "link", href: "/app/chat" },
   { kind: "link", href: "/app/clientes" },
   { kind: "link", href: "/app/contatos" },
-  { kind: "link", href: "/app/agendamentos" },
+  // Agenda e Retornos num menu: a barra já está no limite de largura no lg.
+  { kind: "menu", title: "Agenda", icon: CalendarDaysIcon, hrefs: ["/app/agendamentos", "/app/follow-ups"] },
   { kind: "menu", title: "Ajustes", icon: SettingsIcon, hrefs: ["/app/conexao", "/app/equipe", "/app/configuracoes/atendimento"] },
 ];
 

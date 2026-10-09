@@ -1,4 +1,4 @@
-import { MessageCircleIcon, SettingsIcon } from "lucide-react";
+import { CalendarDaysIcon, MessageCircleIcon, SettingsIcon } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import { getActiveNavHref } from "@/config/nav-active";
@@ -21,6 +21,7 @@ describe("getDashboardNavigation", () => {
       "/app/clientes",
       "/app/contatos",
       "/app/agendamentos",
+      "/app/follow-ups",
     ]);
   });
 
@@ -32,6 +33,7 @@ describe("getDashboardNavigation", () => {
       "/app/clientes",
       "/app/contatos",
       "/app/agendamentos",
+      "/app/follow-ups",
       "/app/conexao",
       "/app/equipe",
       "/app/configuracoes/atendimento",
@@ -102,8 +104,23 @@ describe("buildTopNavigation", () => {
     }
   });
 
+  it("agrupa Agenda e Retornos num menu, para a barra não crescer a cada módulo", () => {
+    for (const role of ["admin", "member"] as const) {
+      const agenda = buildTopNavigation(getDashboardNavigation(role))[5];
+
+      expect(agenda.kind).toBe("menu");
+      if (agenda.kind === "menu") {
+        expect(agenda.title).toBe("Agenda");
+        expect(agenda.icon).toBe(CalendarDaysIcon);
+        expect(agenda.items.map((item) => item.href)).toEqual(["/app/agendamentos", "/app/follow-ups"]);
+      }
+    }
+  });
+
   it("dá ao menu Ajustes o ícone de engrenagem, como os links soltos têm o deles", () => {
-    const ajustes = buildTopNavigation(getDashboardNavigation("admin")).find((entry) => entry.kind === "menu");
+    const ajustes = buildTopNavigation(getDashboardNavigation("admin")).find(
+      (entry) => entry.kind === "menu" && entry.title === "Ajustes"
+    );
 
     expect(ajustes?.kind === "menu" ? ajustes.icon : undefined).toBe(SettingsIcon);
   });
