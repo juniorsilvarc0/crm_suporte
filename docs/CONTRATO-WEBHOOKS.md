@@ -82,6 +82,8 @@ Código pronto, em Node.js e em Python: [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md)
 - **Destino pausado ou excluído** no meio do caminho: as entregas que estavam na fila não saem.
 - **Segredo trocado:** vale a partir do envio seguinte. Até o destino conhecer o segredo novo, ele recusa a assinatura, e as entregas entram em nova tentativa: atualize o segredo do seu lado logo depois de trocá-lo no CRM.
 
+**Avisar o cliente sem duplicar.** Quem manda mensagem ao cliente a partir de um evento (ex.: "seu chamado foi resolvido") reivindica o aviso antes, na API v1 (`POST /api/v1/tickets/{ref}/notices/{step}/claim`), e o fecha depois (`/finalize`). Assim, uma entrega repetida não vira mensagem repetida. Passo a passo: [`GUIA-AGENTE-IA.md`](GUIA-AGENTE-IA.md), seção 2.9.
+
 Responda rápido (bem antes dos 10 s) e processe depois: o CRM entrega poucos eventos por vez, e um destino lento atrasa a fila inteira.
 
 ## 6. Teste de conexão (`webhook.ping`)

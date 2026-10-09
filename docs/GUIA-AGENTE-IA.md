@@ -233,6 +233,20 @@ curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/handoff" \
 
 **Despeça-se do cliente antes do handoff.** Depois dele a conversa é `human`, e todo envio da IA responde `409 conversation_not_owned_by_ai`. A ordem certa é: enviar a mensagem de despedida ("vou transferir você para um analista"), conferir o `201`, e só então chamar o handoff.
 
+### 2.9 Avisar o cliente quando o status muda (claim/finalize)
+
+Se o agente avisa o cliente quando um ticket muda de status ("seu chamado foi resolvido"), ele recebe o evento por um destino de webhook ([`CONTRATO-WEBHOOKS.md`](CONTRATO-WEBHOOKS.md), evento `ticket.status_changed`). Os webhooks chegam **pelo menos uma vez**: o mesmo evento pode chegar duas vezes, ou a duas instâncias do agente. Para o cliente não receber o mesmo aviso duas vezes, reivindique o aviso antes de mandar:
+
+1. **Escolha o passo.** Com o `id` do evento como passo, sai um aviso por evento. Com um nome fixo, como `resolvido`, sai um aviso por ticket, mesmo que ele volte a esse status depois.
+2. **Reivindique:** `POST /api/v1/tickets/{ref}/notices/{step}/claim` (escopo `notices:claim`; corpo opcional, `{ "lease_seconds": 30 a 900 }`, padrão 120).
+   - `claimed: true` traz o `claim_token`: **só essa resposta autoriza o envio**;
+   - `claimed: false` com `already_sent`: o aviso já saiu, não mande;
+   - `claimed: false` com `in_progress`: outra reivindicação vale até `lease_expires_at`, não mande.
+3. **Mande a mensagem** pela conversa do ticket (`POST /api/v1/conversations/{id}/messages`, seção 2.7), dentro da lease.
+4. **Feche:** `POST /api/v1/tickets/{ref}/notices/{step}/finalize` com `{ "claim_token", "outcome": "sent" }`. Se a mensagem não saiu, mande `"outcome": "failed"` (e, se quiser, `"error"`): o passo volta a ser reivindicável na hora. Repetir o mesmo finalize é seguro.
+
+`409 notice_claim_lost` no finalize quer dizer que a sua lease venceu e outra reivindicação assumiu: não reenvie. Se o agente cair entre mandar a mensagem e fechar, a lease vence e o aviso pode sair de novo; feche logo depois de mandar. **Quem avisa usa um token do tipo integração (`api`), com `notices:claim` e `messages:send`.** Um token `ai` só envia com a conversa em `bot`, e a troca de status quase sempre acontece com a conversa `human` (um analista atendendo) ou `resolved`: o envio voltaria `409 conversation_not_owned_by_ai`. O preset "IA de triagem" não traz `notices:claim`; o escopo se dá na tela, ao token de quem avisa.
+
 ## 3. Regras que pegam quem começa
 
 - **`changed: false` no handoff não traz o ticket.** Se a conversa já estava com um humano, o handoff responde `200` com `changed: false`, não grava nada, e `ticket_id` e `note_id` vêm `null`. Não leia o ticket de lá: use o `ticket_id` que você enviou, ou `GET /conversations/{id}` para ver o foco.

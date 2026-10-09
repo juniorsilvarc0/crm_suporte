@@ -164,6 +164,7 @@ Quando um ticket muda, o CRM avisa os sistemas de fora que pediram. Contrato par
 3. **Enviar:** o worker drena a fila a cada 20 s, até 5 por vez. O corpo leva o fato e o ticket **atual** no formato da API v1, assinado com `X-CRM-Signature: v1=HMAC-SHA256(segredo, "<timestamp>.<corpo>")`. Prazo de 10 s, sem seguir redirecionamento.
 4. **Garantia:** pelo menos uma vez. Depois de uma falha, nova tentativa em 30 s, 2 min, 8 min… até 24 h. Depois de 8 tentativas ou de 3 dias, `dead_letter`, e o administrador reenvia. Destino pausado ou excluído não recebe o que estava na fila.
 5. **Trilha:** cadastro, alteração (só os nomes dos campos), exclusão, troca de segredo, teste (`webhook.ping`) e reenvio vão para `integration_logs` (integração `webhooks`), com quem fez. As entregas em si ficam na própria fila.
+6. **Aviso ao cliente sem duplicar (6c-4):** o CRM não manda o aviso de troca de status sozinho. Quem avisa (o agente) recebe o `ticket.status_changed` e, antes de mandar a mensagem, reivindica o passo na API v1 (`/tickets/{ref}/notices/{step}/claim`, escopo `notices:claim`). Só `claimed: true` autoriza o envio; depois, `/finalize` com `sent` (não sai de novo) ou `failed` (volta a ser reivindicável). A trava é no banco (`ticket_notices`, só por RPC), com lease curta e fencing pelo `claim_token`. Quem avisa usa token do tipo integração (`api`): o do tipo `ai` só envia em conversa `bot`.
 
 ## 8. Banco de dados
 
