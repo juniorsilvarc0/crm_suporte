@@ -176,6 +176,10 @@ insert into r values (not pg_catalog.has_table_privilege('authenticated', 'publi
 insert into r values (not pg_catalog.has_function_privilege('anon', 'public.webhook_emit(text, text, timestamptz, jsonb)', 'execute'), 'anon não executa o fan-out', null);
 insert into r values (not pg_catalog.has_function_privilege('authenticated', 'public.get_webhook_subscription_secret(uuid)', 'execute'), 'authenticated não lê segredo', null);
 insert into r values (not pg_catalog.has_function_privilege('authenticated', 'public.outbox_requeue(uuid)', 'execute'), 'authenticated não reenvia', null);
+-- 20261009140000: o servidor lê as entregas, mas não a lease (não finaliza a alheia).
+insert into r values (pg_catalog.has_column_privilege('service_role', 'public.event_outbox', 'last_error', 'select'), 'service_role lê o erro da entrega', null);
+insert into r values (not pg_catalog.has_column_privilege('service_role', 'public.event_outbox', 'lease_token', 'select'), 'service_role NÃO lê a lease', null);
+insert into r values (not pg_catalog.has_table_privilege('service_role', 'public.event_outbox', 'update'), 'service_role NÃO altera a fila direto', null);
 
 select case when ok then 'ok  ' else 'FALHA' end as resultado, teste, detalhe from r order by teste;
 
