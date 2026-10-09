@@ -45,7 +45,8 @@ Responder rápido, para analista e gestor:
   - Ações sensíveis (usuários e senhas, emissão de tokens, conexão do WhatsApp, contrato com valor, exclusões) só no perfil de administrador. Um token nunca emite outro com mais poder que ele mesmo.
   - Recurso novo já nasce com a rota v1. A cobertura do que já existe vem depois do núcleo da Fase 5, começando por empresas (`customers:write`).
 - **Menu Conexão:** reúne todas as credenciais e integrações.
-- **Agenda** (visita técnica, treinamento, implantação, acesso remoto), **follow-ups** ligados a ticket e **financeiro** de contratos, mensalidades e despesas.
+- **Agenda** (visita técnica, treinamento, implantação, acesso remoto) e **follow-ups** ligados a ticket.
+- **Financeiro: fica na TCBX** (decisão do dono, 2026-10-09). A TCBX é o ERP da Ticbox: fonte dos contratos (espelhados em `external_contracts`) e dos títulos em aberto (mostrados ao vivo no chat). O CRM não gera mensalidade nem lança despesa; a Fase 8 do plano não será feita.
 - **Métricas de suporte.**
 
 ## 5. Fora de escopo
@@ -70,6 +71,7 @@ Telas em `src/app/(dashboard)/app/`, menu em `src/config/navigation.ts`. Os mód
 | Equipe | `/app/equipe` | **admin** | Usuários, papéis (`admin`/`member`), avatar, reset de senha |
 | Agenda | `/app/agendamentos` | member | Compromissos (visita técnica, treinamento, implantação, acesso remoto) em **Mês, Semana, Dia e Lista**, com o período na URL; criar (pelo `+` de um dia ou pela faixa), editar e excluir. **Bloqueios** de um técnico ou de todos (férias, feriado) aparecem no calendário e avisam ao agendar, sem impedir; o diálogo também avisa quando o técnico já tem outro compromisso no horário. Do ticket se agenda já com o vínculo (ticket, contato e empresa), e a ficha do ticket mostra os agendamentos e os retornos dele (Fase 7) |
 | Retornos | `/app/follow-ups` | member | Os retornos (follow-ups) de todos os tickets: pendentes do prazo mais próximo, vencidos em destaque, filtro por situação e "Meus tickets"; concluir, cancelar e reabrir na linha (Fase 7) |
+| Métricas | `/app/metricas` | **admin** | Em aberto agora (e com SLA estourado) e, nos últimos 7/30/90 dias, abertos, resolvidos, medianas de 1ª resposta e de resolução, reaberturas, abertos pela IA e o gráfico abertos × resolvidos por dia (Fase 9) |
 | Atendimento | `/app/configuracoes/atendimento` | **admin** | Filas, categorias, SLA e status dos tickets. `/app/configuracoes` sozinho só redireciona para Integrações › Variáveis |
 | Perfil | `/app/perfil` | member | Dados e senha do próprio usuário |
 

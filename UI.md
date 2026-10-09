@@ -1472,6 +1472,18 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
   - ⚠️ não há miniatura: a foto é decodificada inteira, com altura limitada (`max-h-48`). A variante `thumb` na rota é backlog.
 - ⚠️ **404 com `loading.tsx`:** a resposta já saiu em streaming (200), e o `notFound()` vira a tela de 404 no corpo, com `noindex`. É o mesmo da ficha de Clientes. Teste pelo corpo, não pelo status.
 
+### §5.25 Métricas (`/app/metricas`, admin, Fase 9)
+
+Para o gestor decidir, não para encher a tela. **Uma superfície com um número protagonista** (§5.4, §9), depois o gráfico.
+
+- **Período na URL**, numa linha acima de tudo: `7 dias · 30 dias · 90 dias` (`?periodo=`; padrão 30, sem parâmetro). "Últimos N dias" = de 00:00 de (hoje − N + 1) até 00:00 de amanhã, no fuso do app. Sem "todo o período" (a consulta cresceria para sempre). Mesmo desenho do "Lista | Quadro" dos tickets.
+- **Protagonista: "Em aberto agora"** (`text-5xl`, algarismos proporcionais), com a linha do SLA estourado (vermelho + ícone de alerta quando há; ✓ e cinza quando não há). Diz que **não segue o período** (§5.8): em aberto = nem encerrado nem resolvido; estourado = o `sla_breached` da `ticket_queue`, o mesmo selo da lista.
+- **"Nos últimos N dias"**: Abertos · Resolvidos (pela data da resolução) · 1ª resposta (mediana, abertura → 1ª resposta do analista, com quantos foram respondidos) · Resolução (mediana, tempo corrido, com quantos resolvidos) · Reaberturas (saídas de "resolvido" para atendimento, pelo histórico de status) · Abertos pela IA (% com "n de N"). Sem amostra: "—" com o motivo, nunca zero inventado. Durações em `formatMetricDuration` ("2 h 15 min", "3 d 4 h"), não no `formatDuration` do SLA, que arredonda para baixo na unidade inteira.
+- **Gráfico "Abertos × resolvidos por dia"** (skill dataviz): duas linhas de 2 px, um eixo, grade horizontal de 1 px, legenda com o total de cada série, cruz + tooltip com as duas séries (valor em destaque, nome em segundo plano, chave de linha), marcador do dia em foco com anel na cor do card, e uma **tabela `sr-only`** com cada dia. Cores pelos tokens `--chart-opened` (ciano) e `--chart-resolved` (verde), **validados pelo script da skill** nos dois temas — os verdes da marca entre si não se separam para daltônicos. Período sem movimento: `EmptyState`, não duas linhas no zero.
+- **Amostra:** as contagens vêm do `count` (exatas); medianas, IA e gráfico, das linhas lidas (teto de 10.000). Passou do teto, uma linha avisa.
+- Falha de leitura: "Não foi possível carregar as métricas." + "Tentar de novo" (link para o mesmo período).
+- Recortes por fila, cliente e analista, e IA × humano em detalhe, vêm no PR seguinte.
+
 ## §6. Estados de interface
 
 | Estado | Padrão |

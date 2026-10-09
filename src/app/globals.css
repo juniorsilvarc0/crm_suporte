@@ -44,6 +44,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-chart-opened: var(--chart-opened);
+  --color-chart-resolved: var(--chart-resolved);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -123,6 +125,11 @@
   --chart-3: #64c888;
   --chart-4: #afeb2b;
   --chart-5: #a7e8a3;
+  /* Métricas (abertos × resolvidos): os verdes da marca não se separam entre
+     si para daltônicos, então "abertos" é ciano. Par conferido pelo validador
+     da skill dataviz contra o card branco (ΔE daltonismo 14,3; contraste ≥ 3:1). */
+  --chart-opened: #0891b2;
+  --chart-resolved: #0a7e4d;
   /* Cantos médios, como os cards do painel da Ticbox (8px); a escala
      --radius-sm..4xl deriva daqui. */
   --radius: 0.5rem;
@@ -173,6 +180,10 @@
   --chart-3: #0a7e4d;
   --chart-4: #a7e8a3;
   --chart-5: #eef7e2;
+  /* Mesmo par no escuro, com o verde num passo que cabe na faixa de
+     luminosidade e contrasta com o card #042D29 (ΔE daltonismo 16,1). */
+  --chart-opened: #0891b2;
+  --chart-resolved: #16a34a;
   --sidebar: #15312d;
   --sidebar-foreground: #eef7e2;
   --sidebar-primary: #afeb2b;

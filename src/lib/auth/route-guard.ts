@@ -21,6 +21,7 @@ const ADMIN_PAGE_PREFIXES = [
   "/app/conexao",
   "/app/equipe",
   "/app/configuracoes",
+  "/app/metricas",
 ];
 
 // Rotas de /api com autenticação PRÓPRIA — não passam pelo guard de sessão do
