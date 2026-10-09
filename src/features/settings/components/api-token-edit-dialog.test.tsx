@@ -86,6 +86,14 @@ describe("ApiTokenEditDialog", () => {
     expect(screen.getByText("2 escopos marcados.")).toBeInTheDocument();
   });
 
+  it("o leitor de tela ouve cada escopo uma vez: o nome acessível é só o aria-label", () => {
+    open();
+
+    // Sem o aria-hidden no texto visível, o nome saía duplicado
+    // ("Tickets: Ler (tickets:read) Lertickets:read").
+    expect(screen.getByRole("checkbox", { name: "Tickets: Ler (tickets:read)" })).toBeChecked();
+  });
+
   it("um `recurso:*` do token continua na lista, marcado, e não some ao salvar", async () => {
     const user = open();
 

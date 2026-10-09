@@ -134,4 +134,16 @@ export type IntegrationHealth = {
      */
     calls: HealthPart<{ total: number; clientErrors: number; serverErrors: number }>;
   };
+  /**
+   * Os webhooks de saída (Fase 6c): os destinos ativos agora; as entregas que
+   * saíram e as que esgotaram na janela; as que estão em nova tentativa agora
+   * (sem janela: é o que ainda vai sair); e a última entregue na janela.
+   */
+  webhooks: HealthPart<{
+    activeDestinations: number;
+    sent: number;
+    dead: number;
+    retrying: number;
+    lastSentAt: string | null;
+  }>;
 };

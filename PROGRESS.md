@@ -27,6 +27,23 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Webhooks: reenvio que recomeça o prazo, Saúde dos webhooks e acessibilidade do diálogo de token
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** depois da Fase 6c no ar, fechar três pontas: um bug no reenvio manual (6c-1), a Saúde que não mostrava os webhooks (o PRD promete) e o nome acessível duplicado no diálogo de edição de token (achado na 6c-3).
+**Arquivos alterados:** `supabase/migrations/20261009160000_webhook_reenvio_prazo.sql`, `supabase/tests/webhooks_saida.sql` (+3 casos, 38); `src/features/integrations/` (`types.ts`, `queries/get-integration-health.ts` + teste, `components/integration-health-panel.tsx` + teste); `src/features/settings/components/api-token-edit-dialog.tsx` (+teste); docs: `UI.md` §5.19, `PRD.md`, `docs/CONTRATO-WEBHOOKS.md`, este PROGRESS.
+**O que foi feito:**
+- **Bug do reenvio (6c-1, em produção desde o deploy 25):** o `outbox_requeue` zerava as tentativas, mas não o `created_at`, e o claim mata a entrega criada há mais de 3 dias. Uma entrega que esgotou pelo prazo (destino fora do ar por mais de 3 dias), ou reenviada depois do 3º dia, voltava à fila e morria de novo, sem sair, enquanto a tela dizia "sai no próximo ciclo". Agora o reenvio recomeça o prazo (`created_at = now()`); a hora do fato continua no `occurred_at` do corpo. O teste novo reproduziu o bug antes da migration (a entrega voltou para `dead_letter`) e passa depois. Nenhuma entrega real foi afetada: produção não tem destino cadastrado.
+- **Saúde → Webhooks:** destinos ativos; entregues (pela hora da entrega) e esgotadas (pela hora em que morreram, `updated_at`) nas últimas 24 h; em nova tentativa agora (sem janela); a última entregue. Leitura que falha deixa a parte "não lida", nunca zero. Lê só colunas que o `service_role` tem (nunca a lease).
+- **Acessibilidade:** no diálogo de edição de token, o texto visível de cada escopo leva `aria-hidden`; o nome acessível é só o `aria-label` ("Tickets: Ler (tickets:read)").
+**Decisões tomadas (revisar):**
+- **O reenvio troca o `created_at`** (em vez de uma coluna nova e de mexer no `outbox_claim`, que também serve ao relay): menor mudança, e a lista de entregas passa a mostrar a entrega reenviada no topo, que é o que acabou de acontecer.
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ · build ✓ · SQL `webhooks_saida` 38 ✓ e a suíte inteira (só `baseline.sql` e `segredo_integracao.sql` falham, e só no banco local) · smoke da Saúde contra o PostgREST local (grants por coluna, sem erro) ✓.
+**Pendências / próximos passos:**
+- **Retenção da fila (decisão do dono):** o `event_outbox` não tem expurgo. Cada mensagem recebida em conversa `bot` grava uma linha `relay` com o envelope da mensagem (o texto do cliente), e ela fica lá para sempre, duplicando o chat. Em produção: 492 linhas, 1,6 MB, em ~1 dia. Proposta: expurgar no job de manutenção as linhas terminais (`sent`, `skipped`, `dead_letter`) com mais de 30 dias, como já se faz com `integration_logs` (90 dias).
+**Armadilhas descobertas:**
+- **`outbox_claim` mata por idade (`created_at` + `max_age`), e não só por tentativas.** Quem devolve uma entrega à fila precisa renovar o `created_at`, senão ela morre no claim seguinte.
+
 ## [2026-10-09] Fase 6c-4: aviso ao cliente sem duplicar (claim/finalize) — fecha a Fase 6c
 
 **Agente/Modelo:** Claude Opus 5.5.

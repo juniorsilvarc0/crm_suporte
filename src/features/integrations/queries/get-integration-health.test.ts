@@ -68,6 +68,18 @@ function logs(counts: Counts = COUNTS, last: { ok: string | null; error: string 
   };
 }
 
+type WebhookCounts = { sent: number; dead: number; retrying: number };
+
+/** Responde às leituras de webhook do `event_outbox` (três contagens e a última entregue). */
+function webhookOutbox(counts: WebhookCounts = { sent: 41, dead: 1, retrying: 2 }, lastSentAt: string | null = at("11:57")) {
+  return (calls: Call[]): Result => {
+    if (!isCount(calls)) return { data: lastSentAt ? [{ delivered_at: lastSentAt }] : [], error: null };
+    const status = eqValue(calls, "status");
+    const count = status === "sent" ? counts.sent : status === "dead_letter" ? counts.dead : counts.retrying;
+    return { data: null, error: null, count } as Result;
+  };
+}
+
 /** `n` conversas, da mais recente para a mais antiga: a 1ª às 11:00, uma por minuto para trás. */
 function conversations(n: number) {
   return Array.from({ length: n }, (_, index) => ({
@@ -97,6 +109,8 @@ beforeEach(() => {
   h.tables.integration_logs = logs();
   h.tables.chat_conversations = () => ({ data: conversations(2), error: null });
   h.tables.chat_messages = () => ({ data: [{ created_at: at("10:59") }], error: null });
+  h.tables.webhook_subscriptions = () => ({ data: null, error: null, count: 2 }) as Result;
+  h.tables.event_outbox = webhookOutbox();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -118,8 +132,56 @@ describe("readIntegrationHealth", () => {
         deliveries: { state: "ok", total: 40, errors: 3, lastOkAt: at("11:58"), lastErrorAt: at("09:10") },
       },
       api: { calls: { state: "ok", total: 500, clientErrors: 12, serverErrors: 2 } },
+      webhooks: { state: "ok", activeDestinations: 2, sent: 41, dead: 1, retrying: 2, lastSentAt: at("11:57") },
     });
     expect(HEALTH_WINDOW_HOURS).toBe(24);
+  });
+
+  describe("webhooks de saída", () => {
+    it("lê só a fila de webhooks: entregues pela hora da entrega, esgotadas pela hora em que morreram, nova tentativa sem janela", async () => {
+      await readIntegrationHealth(NOW);
+
+      const chains = h.chains.event_outbox ?? [];
+      for (const calls of chains) expect(where(calls, "kind", "webhook")).toBe(true);
+      const byStatus = (status: string) => chains.filter((calls) => isCount(calls) && eqValue(calls, "status") === status);
+      expect(has(byStatus("sent")[0], "gte", "delivered_at", SINCE)).toBe(true);
+      expect(has(byStatus("dead_letter")[0], "gte", "updated_at", SINCE)).toBe(true);
+      expect(byStatus("retry")[0].some(([method]) => method === "gte")).toBe(false);
+      const last = chains.find((calls) => !isCount(calls)) ?? [];
+      expect(has(last, "gte", "delivered_at", SINCE)).toBe(true);
+      expect(has(last, "limit", 1)).toBe(true);
+      // A lease nunca é lida (o grant nem a concede).
+      expect(JSON.stringify(chains)).not.toContain("lease");
+      expect(where(h.lastChain("webhook_subscriptions"), "is_active", true)).toBe(true);
+    });
+
+    it("sem entrega na janela: zeros e nenhuma última entregue", async () => {
+      h.tables.event_outbox = webhookOutbox({ sent: 0, dead: 0, retrying: 0 }, null);
+      expect((await readIntegrationHealth(NOW)).webhooks).toEqual({
+        state: "ok",
+        activeDestinations: 2,
+        sent: 0,
+        dead: 0,
+        retrying: 0,
+        lastSentAt: null,
+      });
+    });
+
+    it("qualquer leitura que falha deixa a parte como não lida (nunca zero), e só ela", async () => {
+      h.tables.event_outbox = (calls) =>
+        isCount(calls) && eqValue(calls, "status") === "retry"
+          ? ({ data: null, error: { code: "57014", message: "timeout" }, count: null } as Result)
+          : webhookOutbox()(calls);
+      let health = await readIntegrationHealth(NOW);
+      expect(health.webhooks).toEqual({ state: "unavailable" });
+      expect(health.api.calls.state).toBe("ok");
+      expect(logged("contagem de webhooks")).toHaveLength(1);
+
+      h.tables.event_outbox = webhookOutbox();
+      h.tables.webhook_subscriptions = () => ({ data: null, error: { code: "42501", message: "negado" }, count: null }) as Result;
+      health = await readIntegrationHealth(NOW);
+      expect(health.webhooks).toEqual({ state: "unavailable" });
+    });
   });
 
   describe("repasse ao agente", () => {
@@ -469,6 +531,7 @@ describe("readIntegrationHealth", () => {
       connectionHistory: { state: "unavailable" },
       relay: { config: "unreadable", reason: null, deliveries: { state: "unavailable" } },
       api: { calls: { state: "unavailable" } },
+      webhooks: { state: "unavailable" },
     });
     expect(clientMock).not.toHaveBeenCalled();
     expect(statusMock).not.toHaveBeenCalled();
