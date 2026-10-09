@@ -27,6 +27,32 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 7 PR 2c-3: a fila de retornos (`/app/follow-ups`)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** uma tela com os retornos de todos os tickets, para o analista ver o que vence e o que já venceu sem abrir ticket por ticket, e concluir dali.
+**Arquivos alterados:**
+- query: `src/features/followups/queries/get-followups-page.ts` (`parseFollowupQueueParams` + `getFollowupsQueuePage`) + `.test.ts` (11 casos); `src/features/followups/types.ts` (tipos da fila);
+- UI: `features/followups/components/followups-queue.tsx` + `.test.tsx` (10 casos), `app/(dashboard)/app/follow-ups/{page,loading}.tsx`;
+- menu: `src/config/navigation.ts` (item "Retornos" em Operação; na faixa do desktop, menu "Agenda" com Agenda e Retornos) + `navigation.test.ts`; docs: `PRD.md` §6, `UI.md` §5.1.2, §5.1.4 (nova) e a nota da faixa em §3.3, este PROGRESS.
+**O que foi feito:**
+- **Query paginada no servidor** no molde de `getContactsPage` (`count` + `range`, página além do fim abre a última, `failed` marcado). O ticket entra por `tickets!followups_ticket_id_fkey!inner(...)`, com a empresa dele, para o filtro "Meus tickets" (`ticket.assigned_to_user_id = viewer`). A linha é mapeada campo a campo: o responsável só serve ao filtro e não vai à tela. Linha com `kind`/`status` fora do enum derruba a página para o estado de falha (como `toTicketListItems`).
+- **"Vencido" com um instante só:** a query gera o `fetchedAt`, filtra "Vencidos" com `due_at < fetchedAt` e o devolve; a tela destaca o vencido pelo `useNow(fetchedAt)`. Servidor e tela usam o mesmo corte.
+- **Tela de dados (§5.1):** contagem por recorte ("3 retornos pendentes"), filtros no painel e na URL (`?situacao=`, `?responsavel=eu`), tabela em cartões no desktop e pilha no celular, Concluir/Cancelar/Reabrir por PATCH na linha, `ListPagination`.
+**Decisões tomadas (revisar):**
+- **Menu "Agenda" na faixa do desktop**, em vez de mais um link solto: com Retornos seriam 7 links + Ajustes, e a faixa já está no limite no `lg` (o próprio `navigation.ts` avisa para não virar "régua de texto"). Na gaveta do celular e na busca, "Retornos" aparece como item próprio. O preço: a Agenda passa a estar a 2 cliques no desktop.
+- **Rótulo "Retornos", rota `/app/follow-ups`:** o rótulo é o que a ficha do ticket já usa (2c-1); a rota é a do plano.
+- **Sem busca livre** nesta fatia. Os filtros que importam são situação e "Meus tickets"; buscar por ticket pede `ilike` no embed e fica para quando fizer falta.
+- **O PATCH de situação foi duplicado** da ficha do ticket (2º uso; AGENTS §0.2.2). No 3º, extrair.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 warnings pré-existentes, 0 novos) · test ✓ (4639/4639; 23 novos, contando o `pages-guard` da página nova) · build ✓ (`/app/follow-ups` registrada). A query foi conferida **contra o PostgREST local** (banco + rest + gateway ligados só para isso e desligados depois): pendentes, vencidos e "Meus tickets" respondem 200, e um controle com coluna inexistente no alias (`ticket.nao_existe`) responde 400 citando `tickets_1`, o que prova que o filtro `ticket.` cai no ticket embutido. A base local não tem retornos: isso confere sintaxe e alvo do filtro, não o recorte com dados. bug-hunter/verification-before-completion: skills não instaladas; revisão do diff à mão.
+**Pendências / próximos passos:**
+- **2b:** views de calendário (mês/grade/semana/dia) + bloqueios (`agenda_blocks`).
+- Retornos vencidos no Início (fila do analista), se o dono quiser.
+**Armadilhas descobertas:**
+- **Teste que acha "o menu" por `find(kind === "menu")` quebra quando nasce o 2º menu.** O teste do ícone de Ajustes passou a procurar pelo título.
+- **Filtro em embed com alias:** o PostgREST aceita o alias (`ticket.assigned_to_user_id`) e também o nome da tabela (`tickets.`); um prefixo que não casa com nenhum embed responde 400 `PGRST108` ("Verify that 'x' is included in the 'select'"). Medido no PostgREST local. Base vazia não prova filtro: para conferir o alvo, filtre uma coluna inexistente pelo mesmo prefixo e veja o 400 citar a tabela embutida (`tickets_1`).
+- **Stack local para conferir query:** `docker start crm-suporte-db crm-suporte-rest crm-suporte-storage crm-suporte-gateway` (o gateway cai sem `realtime` e `storage` resolvendo; o realtime só sobe com o banco no ar). A chave de serviço está no `.env.local` do checkout principal.
+
 ## [2026-10-09] Fase 7 PR 2c-2: agendar a partir do ticket (laço do ticket, metade agenda)
 
 **Agente/Modelo:** Claude Opus 5.5.
