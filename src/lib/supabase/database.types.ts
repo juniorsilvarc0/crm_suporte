@@ -156,6 +156,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"chat_connection_events": {
+                  Row: {
+                    "id": string,"integration_id": string,"occurred_at": string,"reason": string | null,"source": string,"state": string
+                  }
+                  Insert: {
+                    "id"?: string,"integration_id": string,"occurred_at"?: string,"reason"?: string | null,"source": string,"state": string
+                  }
+                  Update: {
+                    "id"?: string,"integration_id"?: string,"occurred_at"?: string,"reason"?: string | null,"source"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "chat_connection_events_integration_id_fkey"
+      columns: ["integration_id"]
+isOneToOne: false
+      referencedRelation: "chat_integrations"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"chat_conversations": {
                   Row: {
                     "active_ticket_id": string | null,"archived_at": string | null,"contact_avatar_url": string | null,"contact_id": string,"contact_name": string | null,"contact_phone": string | null,"created_at": string,"external_id": string,"id": string,"integration_id": string | null,"last_message_at": string | null,"last_message_preview": string | null,"metadata": NonNullable<Json>,"pinned_at": string | null,"removed_at": string | null,"status": string,"unread_count": number,"updated_at": string
