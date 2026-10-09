@@ -27,6 +27,29 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-09] Fase 6c-2: webhooks de saída — o envio (servidor)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** os eventos que a 6c-1 enfileira saem de fato: assinados, com nova tentativa e reenvio manual, e administráveis por rotas de admin. A tela é a 6c-3; os avisos ao cliente, a 6c-4.
+**Arquivos alterados:** `supabase/migrations/20261009140000_webhook_entregas_leitura.sql`, `supabase/tests/webhooks_saida.sql` (+3 casos, 35 no total); `src/features/webhooks/` (`catalog.ts`, `types.ts`, `schemas/webhook.ts`, `queries/get-webhooks.ts`, `server/send.ts`, `server/dispatch.ts`, `server/audit.ts`, com testes); `src/app/api/webhooks/**` (6 rotas, com testes); `src/lib/jobs/worker.ts` (+teste); `src/features/integrations/` (`types.ts`, `lib/log-labels.ts`, `components/integration-logs-table.tsx`, testes de rótulos e filtros); docs: `docs/CONTRATO-WEBHOOKS.md` (novo), `docs/API.md`, `PRD.md` §7.4, `UI.md` (filtros da aba Registros), este PROGRESS.
+**O que foi feito:**
+- **Despachante (`dispatch.ts`):** a cada 20 s (e no boot), reivindica até 5 entregas `webhook` do outbox. Para cada uma, lê o destino (pausado ou excluído → `skipped`), confere a URL na guarda de SSRF (recusada → `dead_letter`), lê o segredo pelo RPC (sem segredo → `dead_letter`; nada sai sem assinatura), monta o corpo `{id, event, occurred_at, data, ticket}` com o ticket **atual** no formato da API v1 e envia. Falha → `retry` com backoff 30 s ×4 até 24 h; 8 tentativas ou 3 dias → `dead_letter` (no próprio claim). Erro de leitura → `retry`, nunca corpo pela metade.
+- **Envio (`send.ts`):** cabeçalhos `X-CRM-Event`, `X-CRM-Event-Id`, `X-CRM-Timestamp` e `X-CRM-Signature: v1=HMAC-SHA256(segredo, "<ts>.<corpo>")` (o `signEvent` do relay), 10 s de prazo, sem seguir redirecionamento, nunca rejeita.
+- **Worker:** `runWebhookDispatch` sem lease de job (o claim serializa por evento, como o relay), com trava por processo: uma leva lenta (até 5 × 10 s) não empilha com a seguinte.
+- **Rotas (admin, `requireDashboardAdmin` na 1ª linha):** `GET/POST /api/webhooks` (cadastrar gera o segredo, grava no Vault e o devolve uma vez, com `no-store`; se o Vault falha, desfaz o cadastro); `PATCH/DELETE /api/webhooks/[id]` (URL nova passa pela guarda de novo); `POST …/[id]/secret` (troca, com releitura que confirma o que ficou guardado: 409 se outra troca venceu); `POST …/[id]/ping` (`webhook.ping` assinado na hora, 10 por minuto por admin); `GET /api/webhooks/deliveries` (por destino e status); `POST …/deliveries/[id]/requeue` (só `dead_letter`; outra situação → 409).
+- **Leitura das entregas:** a migration dá ao `service_role` SELECT **por coluna** no `event_outbox`, sem as colunas da lease. A escrita continua só pelos RPCs.
+- **Trilha:** integração nova `webhooks` em `integration_logs`, com cadastro, alteração (**os nomes dos campos, nunca a URL**, que pode carregar token), exclusão, troca de segredo, teste e reenvio, e quem fez. A aba Registros já filtra por ela (rótulo "Webhooks"; sem filtro de token, como o repasse). A lista de ações vem do catálogo (`WEBHOOK_AUDIT_ACTIONS`), e um teste confere que cada uma é gravada por alguma rota.
+**Decisões tomadas (revisar):**
+- **A trilha entrou nesta PR**, e não na da tela: quem troca um segredo ou aponta a URL para outro lugar precisa ficar registrado desde a primeira rota. Custou 3 arquivos de `integrations/`.
+- **Dedupe pelo `id` do corpo, não pelo `X-CRM-Event-Id`:** a assinatura não cobre cabeçalhos (mesma regra do relay).
+- **Teste de conexão funciona com o destino pausado:** serve justamente para conferir antes de religar.
+- **Smoke de ponta a ponta fora do repo** (rotas e despachante reais contra o banco local, entregando num servidor HTTP local que confere a assinatura): gatilho real → fila → entrega `sent` com o ticket atual; HTTP 500 → `retry` em ~30 s; ping; troca de segredo valendo no ping seguinte; pausa sem enfileirar; trilha completa; exclusão limpa o Vault.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos são de `verify-webhook.test.ts`, que já existia) · test ✓ (4841/4841) · build ✓ · SQL `webhooks_saida.sql` ✓ (35) · `assert_security_baseline()` ✓ · smoke local 5/5. As skills `bug-hunter` e `verification-before-completion` não estão instaladas nesta sessão: a caça e a verificação foram manuais (guard do prefixo `/api/webhooks`, gatilho de `updated_at`, semântica das 8 tentativas, autor na aba Registros).
+**Pendências / próximos passos:** 6c-3 (aba Webhooks em Integrações: destinos, segredo mostrado uma vez, teste, entregas e reenvio); 6c-4 (`ticket_notices` + `/api/v1` notices claim/finalize).
+**Armadilhas descobertas:**
+- **`hasSupabaseAdminEnv()` lê `SUPABASE_URL`, não `NEXT_PUBLIC_SUPABASE_URL`.** Para rodar rota real fora do container (smoke), passe `SUPABASE_URL` apontando para o gateway local (`localhost:54321`).
+- **`ticket_events` é só de inserção (`TICKET_LOG_APPEND_ONLY`):** evento sintético inserido num smoke local não se apaga, nem como `postgres`. Use um ticket de teste.
+
 ## [2026-10-09] Fase 6c-1: webhooks de saída — o banco
 
 **Agente/Modelo:** Claude Opus 5.5.
