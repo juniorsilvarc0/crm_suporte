@@ -7,6 +7,7 @@ import {
   extractUazapiMedia,
   getUazapiMessage,
   uazapiEventType,
+  extractUazapiConnection,
 } from "./uazapi";
 
 describe("normalizeUazapiWebhook", () => {
@@ -316,5 +317,29 @@ describe("helpers", () => {
     expect(getUazapiMessage({ message: { id: "a" } })?.id).toBe("a");
     expect(getUazapiMessage({ data: { id: "b" } })?.id).toBe("b");
     expect(getUazapiMessage({})).toBeNull();
+  });
+});
+
+describe("extractUazapiConnection (evento connection, doc oficial)", () => {
+  it("disconnected → close, com o motivo; 'unknown' vira sem motivo", () => {
+    expect(
+      extractUazapiConnection({ EventType: "connection", type: "Disconnected", instance: { status: "disconnected", lastDisconnectReason: "Network error" } })
+    ).toEqual({ state: "close", reason: "Network error" });
+    expect(
+      extractUazapiConnection({ EventType: "connection", instance: { status: "disconnected", lastDisconnectReason: "unknown" } })
+    ).toEqual({ state: "close", reason: null });
+  });
+
+  it("connected → open, sem motivo", () => {
+    expect(extractUazapiConnection({ EventType: "connection", instance: { status: "connected", lastDisconnectReason: "x" } })).toEqual({
+      state: "open",
+      reason: null,
+    });
+  });
+
+  it("outro evento, sem instance ou status desconhecido → null", () => {
+    expect(extractUazapiConnection({ EventType: "messages", instance: { status: "connected" } })).toBeNull();
+    expect(extractUazapiConnection({ EventType: "connection" })).toBeNull();
+    expect(extractUazapiConnection({ EventType: "connection", instance: { status: "algo-novo" } })).toBeNull();
   });
 });

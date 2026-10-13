@@ -325,6 +325,7 @@ Estas rotas existem para o app. Não são contrato de integração: o formato mu
 | POST | `/api/connection/qr` | pede o QR code de conexão |
 | GET | `/api/connection/state` | estado da conexão, sem pedir QR |
 | POST | `/api/connection/disconnect` | desconecta; opcionalmente apaga o histórico ou a instância |
+| POST | `/api/connection/webhook` | recadastra o webhook na uazapi (mesmo endereço e segredo, lista de eventos atual), sem tocar na conexão |
 | GET | `/api/connection/logs` | registros de integração (API v1, repasse e a trilha dos webhooks), com filtros na URL e cursor |
 | GET | `/api/connection/health` | saúde das integrações: WhatsApp, última mensagem recebida e contagens das últimas 24 h |
 | POST | `/api/connection/agent/test` | envia um `webhook.ping` ao endereço salvo do agente |
@@ -418,7 +419,7 @@ Estas rotas existem para o app. Não são contrato de integração: o formato mu
 
 `POST /api/chat/webhook/uazapi?s=<segredo>`
 
-- **Quem chama:** o provedor de WhatsApp (uazapi). O endereço é registrado pelo CRM quando um administrador conecta a instância em **Integrações › WhatsApp**, com os eventos `messages` e `messages_update`.
+- **Quem chama:** o provedor de WhatsApp (uazapi). O endereço é registrado pelo CRM quando um administrador conecta a instância em **Integrações › WhatsApp**, com os eventos `messages`, `messages_update` e `connection`. O botão **Atualizar cadastro do webhook** (mesma tela) recadastra o mesmo endereço e segredo com a lista atual, sem tocar na conexão: o "Reconectar" só pede o QR e não recadastra.
 - **Autenticação:** o segredo vai na query (`?s=`), porque o provedor não envia cabeçalho próprio. Ele é gerado na conexão, guardado no cofre do banco e comparado em tempo constante antes de ler o corpo. Sem integração, sem segredo ou com segredo errado, a resposta é sempre a mesma: `401`.
 - **Fora da sessão e da trava de origem:** a rota não lê o cookie.
 
@@ -431,6 +432,7 @@ O que a rota faz com cada evento:
 | `messages_update` com status | atualiza entregue e lido, sem nunca regredir |
 | `messages` que é eco de mensagem enviada pelo CRM | concilia com a mensagem já gravada, sem duplicar |
 | `messages` nova (do cliente ou do celular da empresa) | acha ou cria o contato pelo telefone, grava a mensagem na conversa e guarda a mídia |
+| `connection` (a sessão caiu ou voltou) | grava a queda (`close`) ou a volta (`open`) no histórico da conexão (`chat_connection_events`, origem `webhook`) só quando o estado muda, com o motivo informado (`unknown` não é motivo). "Conectando" e status desconhecido são ignorados (o "conectando" fica com o monitor, que filtra a religada curta do socket). Nada do envelope (que traz o token da instância) vai para log |
 | grupo, ou evento que não reconhece | ignora e responde `200` |
 
 **O que repassa ao agente:** só mensagem **nova**, **do cliente** (`inbound`), com a conversa em `bot`. O repasse sai depois da resposta ao provedor, uma vez por mensagem, sem nova tentativa. O formato, a assinatura e as regras estão em [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md).

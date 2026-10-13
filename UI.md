@@ -1301,6 +1301,7 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
   - **A última mensagem com `exact: false` é um piso** e diz "ou mais recente (só as 50 conversas mais recentes foram olhadas)".
   - **Falha da rota inteira:** o motivo em âmbar, e o Atualizar continua disponível.
 - **Abas na URL são o padrão das telas de ajustes.** Integrações e Atendimento usam o mesmo `UrlTabs`: mesma pílula, mesmo trilho e mesma troca otimista. Tela nova com abas usa ele, e não um `Tabs` com `defaultValue`.
+- **WhatsApp conectado → "Atualizar cadastro do webhook" (2026-10-13):** botão discreto (ghost, 44 px no celular) abaixo do Desconectar, com a linha "Reaplica na uazapi os eventos que o CRM recebe, sem mexer na conexão.". Recadastra o mesmo endereço e segredo com a lista de eventos atual; o desfecho vem num toast. Existe porque o "Reconectar" só pede o QR e não recadastra.
 - Só a aba aberta fica montada, salvo a marcada com `keepMounted` na lista de abas (`src/features/connection/lib/connection-tabs.ts`). Hoje só a do Agente de IA. Ao sair da aba WhatsApp, o painel desmonta e para de consultar o estado.
 - Variáveis são uma lista operacional única, não um card por chave. Desktop usa tabela; mobile usa linhas empilhadas. A página nunca mostra o valor já salvo.
 - A origem de toda variável é o **Cofre**: desde a Fase 2 o app não lê variável de integração do ambiente do servidor, e remover uma chave não "restaura" nada.

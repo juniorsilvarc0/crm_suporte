@@ -49,7 +49,7 @@ OUTBOUND (nós → WhatsApp)
 | Contato | `features/contacts/queries/resolve-contact-identity.ts` + `lib/formatters/clean-name.ts` | contato no inbound (RPC com lock por telefone); `cleanContactName` tira emoji/`~` |
 | Status | `delivery-status.ts` | `overridableFrom` — ticks monótonos (nunca regridem) |
 | Mídia | `media/persist-inbound.ts` · `media/stored-media.ts` · `lib/storage/{put-media,chat-media}.ts` · `media/compress-video.ts` | baixa (SSRF) e re-hospeda no bucket privado · colunas/metadata da mídia · URL assinada · comprime vídeo (ffmpeg) |
-| Rotas conexão | `api/connection/{persist,qr,state,disconnect}/route.ts` | onboarding / status / logout+wipe+excluir instância. `qr` é **POST**, porque pedir o QR chama `/instance/connect` no provedor |
+| Rotas conexão | `api/connection/{persist,qr,state,disconnect,webhook}/route.ts` | onboarding / status / logout+wipe+excluir instância / recadastrar o webhook. `qr` e `webhook` são **POST**, porque agem no provedor |
 | Registros e Saúde | `api/connection/{logs,health}/route.ts` | `GET`, só admin, só leitura. `logs`: `integration_logs` com filtros e cursor (`getIntegrationLogs`). `health`: estado da instância por `getUazapiStatus` (sem gravar o dono, sem QR), última mensagem recebida e contagens de 24 h (`getIntegrationHealth`, guardada 10 s por processo) |
 | Rota webhook | `api/chat/webhook/uazapi/route.ts` | recebe eventos (secret do Vault, status, mídia, **apagada**, echo, inbound, contato, relay) |
 | Rotas de mídia | `api/chat/media/[id]` · `api/contacts/[id]/avatar` | sessão + 302 para URL assinada de 10 min |
@@ -81,7 +81,7 @@ Auth: **header `token: <token>`** (NÃO Bearer). Base URL por-integração em `c
 | POST | `/message/download` | `{id}` | `{fileURL, mimetype}` |
 | POST | `/message/delete` | `{id}` | apaga **para todos** |
 | POST | `/message/edit` | `{id, text}` | `{id, messageid, content, ...}` |
-| POST | `/webhook` | `{enabled, url, events:["messages","messages_update"]}` | ok |
+| POST | `/webhook` | `{enabled, url, events: UAZAPI_WEBHOOK_EVENTS}` = `["messages","messages_update","connection"]` | ok |
 
 - **`number`**: DDI+dígitos sem `+`. Use `toUazapiNumber()`.
 - **`type` (mídia)**: `image,video,document,audio,myaudio,ptt,ptv,sticker`. **Voz = `ptt`**. `file` = URL pública **ou** base64. Áudio de saída vai como **base64**; anexos (send-file) e encaminhamentos vão como **URL assinada de 10 min** do bucket privado (a uazapi baixa; `signStorageObject` reescreve para a origem pública).
@@ -123,6 +123,14 @@ Envelope: `{ EventType, message?, event?, chat?, owner, instanceName, token }`.
   - **Status** (`extractUazapiStatuses`): `event.Type` → delivery_status, casando por `event.MessageIDs` (= `external_id` da nossa mensagem). Mapa: `Delivered→delivered`, `Read`/`Played→read`, `Sent`/`ServerAck→sent`, `Error→failed`. **`FileDownloaded` NÃO é status.**
   - **Mídia** (`extractUazapiMedia`): quando `Type==="FileDownloaded"`, o `event.FileURL` (+`MimeType`) é a mídia baixada — re-hospeda no `chat-media` e faz UPDATE na(s) mensagem(ns) (`MessageIDs`). **É assim que áudio/imagem ganham `media_url`.**
 - **Ticks são MONÓTONOS** (`overridableFrom`): só avançam (`pending<sent<delivered<read`). Webhook fora de ordem não regride.
+- **`EventType: "connection"`** (doc oficial, `webhooks > connection`; assinado desde 2026-10-13) → dados na RAIZ do envelope, não em `message`/`event`:
+  ```
+  { event_id, type?:"Disconnected",
+    instance: { name, status:"connected"|"disconnected"|..., lastDisconnectReason?, lastDisconnect? } }
+  ```
+  - `extractUazapiConnection` → `{state, reason}` pela mesma tabela de status do monitor (`connectionStateFromStatus`); `lastDisconnectReason: "unknown"` vira `null`; status desconhecido → `null` (não grava).
+  - Grava pelo `recordConnectionState` (o mesmo do monitor do worker), com `source: "webhook"`, só quando o estado muda. **Só `close` e `open`:** o `connecting` chega a cada religada curta do socket e faria o aviso global piscar; esse estado fica com o monitor (2 min).
+  - **O cadastro do webhook só roda no `persist`** (salvar credenciais) **e no botão "Atualizar cadastro do webhook"** (`POST /api/connection/webhook`: mesmo endereço e segredo, lista atual). O "Reconectar" do painel só pede o QR e NÃO recadastra: mudou a lista de eventos, alguém precisa clicar no botão.
 
 ## 3. Modelo de dados (Supabase)
 
@@ -204,7 +212,7 @@ A UI mostra "🎤 Áudio · carregando…" enquanto `media_url` não chega (evit
 
 ## 8. Playbook de depuração
 
-**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[webhook/uazapi] não reconhecido: {eventType, messageType}` (nunca o envelope: ele traz o `token` e o texto). 401 = segredo: a integração existe, tem token **e** segredo no Vault, e o `?s=` registrado na uazapi é o de agora? Reconectar por Integrações → WhatsApp re-registra. Confira também: integração ativa? webhook registrado (`GET {base}/webhook`)? O `message.chatid`/`messageType` batem com o normalizer?
+**"Não recebe / payload não reconhecido"** → `docker logs` do container; o webhook loga `[webhook/uazapi] não reconhecido: {eventType, messageType}` (nunca o envelope: ele traz o `token` e o texto). 401 = segredo: a integração existe, tem token **e** segredo no Vault, e o `?s=` registrado na uazapi é o de agora? Salvar as credenciais (persist) ou o botão **Atualizar cadastro do webhook** (Integrações → WhatsApp) re-registra; o **Reconectar** só pede o QR e NÃO re-registra. Confira também: integração ativa? webhook registrado (`GET {base}/webhook`)? O `message.chatid`/`messageType` batem com o normalizer?
 
 **"Áudio/imagem não aparece"** → a mídia vem no `messages_update` **FileDownloaded** (separado da msg). Cheque: (a) o FileDownloaded chegou? (b) `extractUazapiMedia` casou por `MessageIDs`? (c) a UI assina **UPDATE** em chat_messages? (d) num reload aparece? (se sim, é realtime UPDATE).
 

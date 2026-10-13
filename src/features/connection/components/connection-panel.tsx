@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/kibo-ui/spinner";
 import { cn } from "@/lib/utils";
+import { WebhookRefreshButton } from "@/features/connection/components/webhook-refresh-button";
 
 type ConnectionState = "open" | "connecting" | "close" | "unknown";
 
@@ -716,6 +717,7 @@ function ConnectedBlock({
         <LogOutIcon data-icon="inline-start" />
         Desconectar
       </Button>
+      <WebhookRefreshButton />
     </div>
   );
 }

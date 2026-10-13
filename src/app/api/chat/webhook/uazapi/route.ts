@@ -6,6 +6,7 @@ import {
   extractUazapiDeletion,
   extractUazapiStatuses,
   extractUazapiMedia,
+  extractUazapiConnection,
   getUazapiMessage,
   uazapiEventType,
   type UazapiEnvelope,
@@ -18,6 +19,7 @@ import {
   getUazapiIntegration,
 } from "@/features/chat/lib/connection/integration";
 import { downloadUazapiMedia } from "@/features/chat/lib/connection/uazapi";
+import { recordConnectionState } from "@/features/connection/server/connection-monitor";
 import { persistInboundMedia } from "@/features/chat/lib/media/persist-inbound";
 import {
   storedMediaColumns,
@@ -55,6 +57,28 @@ export async function POST(request: Request) {
 
     const event = uazapiEventType(payload);
     const message = getUazapiMessage(payload);
+
+    // Conexão → a sessão do WhatsApp caiu ou voltou. Vai para o histórico da
+    // conexão (só quando o estado muda, como o monitor do worker), com o motivo
+    // que a uazapi informa. O envelope traz o token da instância: nada dele vai
+    // para log nem para o banco além do estado e do motivo.
+    if (event === "connection") {
+      const change = extractUazapiConnection(payload);
+      if (!change) return NextResponse.json({ ok: true, reason: "connection_unknown" });
+      // "Conectando" chega a cada religada curta do socket: gravado daqui, faria
+      // o aviso global ("esperando o QR") piscar sem ninguém precisar escanear.
+      // Esse estado fica com o monitor (2 min), que filtra a oscilação.
+      if (change.state === "connecting") {
+        return NextResponse.json({ ok: true, reason: "connection_connecting" });
+      }
+      const recorded = await recordConnectionState(supabase, {
+        integrationId: integration.id,
+        state: change.state,
+        reason: change.reason,
+        source: "webhook",
+      });
+      return NextResponse.json({ ok: true, connection: recorded.status });
+    }
 
     // 2) messages_update → apagada, mídia baixada (FileDownloaded) OU status.
     if (event === "messages_update") {
