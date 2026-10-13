@@ -263,8 +263,11 @@ function TokenEditForm({
                       onCheckedChange={(checked) => toggleScope(scope, checked === true)}
                       aria-label={`${group.label}: ${scopeActionLabel(scope)} (${scope})`}
                     />
-                    <span>{scopeActionLabel(scope)}</span>
-                    <code className="font-mono text-xs text-muted-foreground">{scope}</code>
+                    {/* O nome acessível é o aria-label: o texto visível não se repete no leitor de tela. */}
+                    <span aria-hidden>{scopeActionLabel(scope)}</span>
+                    <code className="font-mono text-xs text-muted-foreground" aria-hidden>
+                      {scope}
+                    </code>
                   </label>
                 ))}
               </fieldset>
