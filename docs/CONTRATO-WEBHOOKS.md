@@ -78,7 +78,7 @@ Código pronto, em Node.js e em Python: [`CONTRATO-RELAY.md`](CONTRATO-RELAY.md)
 
 - **Pode chegar repetido.** Uma resposta perdida no caminho faz o CRM tentar de novo. Descarte pelo `id` do corpo, que a assinatura cobre (o cabeçalho `X-CRM-Event-Id` não é coberto).
 - **Pode chegar fora de ordem.** Cada evento é entregue por si. Ordene por `ticket.version` ou por `occurred_at`.
-- **Novas tentativas:** depois de uma falha (não `2xx`, prazo estourado ou erro de rede), o CRM tenta de novo em 30 s, 2 min, 8 min, 32 min, ~2 h, ~8,5 h e 24 h. Depois de **8 tentativas**, ou de **3 dias** desde o fato, a entrega para (`dead_letter`). Um administrador pode reenviá-la, e ela volta com as tentativas zeradas.
+- **Novas tentativas:** depois de uma falha (não `2xx`, prazo estourado ou erro de rede), o CRM tenta de novo em 30 s, 2 min, 8 min, 32 min, ~2 h, ~8,5 h e 24 h. Depois de **8 tentativas**, ou de **3 dias** desde o fato, a entrega para (`dead_letter`). Um administrador pode reenviá-la: ela volta com as tentativas zeradas e o prazo de 3 dias recomeçado. A hora do fato continua no `occurred_at`.
 - **Destino pausado ou excluído** no meio do caminho: as entregas que estavam na fila não saem.
 - **Segredo trocado:** vale a partir do envio seguinte. Até o destino conhecer o segredo novo, ele recusa a assinatura, e as entregas entram em nova tentativa: atualize o segredo do seu lado logo depois de trocá-lo no CRM.
 

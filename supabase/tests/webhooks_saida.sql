@@ -118,6 +118,28 @@ begin
 end
 $$;
 
+-- 20261009160000: o reenvio recomeça o prazo de 3 dias. Sem isso, a entrega que
+-- morreu pelo prazo voltava à fila e o claim seguinte a matava de novo.
+do $$
+declare v_old uuid; v_claimed uuid; v_status text;
+begin
+  insert into public.event_outbox (kind, event_key, status, attempts, created_at, last_error)
+    values ('webhook', 'teste-velha:dest', 'dead_letter', 3, pg_catalog.now() - interval '4 days', 'prazo')
+    returning id into v_old;
+  insert into r values (public.outbox_requeue(v_old), 'entrega velha (4 dias) volta para a fila', null);
+  insert into r values (
+    (select created_at > pg_catalog.now() - interval '1 minute' from public.event_outbox where id = v_old),
+    'o reenvio recomeça o prazo (created_at = agora)', null);
+
+  select c.id into v_claimed
+    from public.outbox_claim('teste-reenvio', 'webhook', 100, 8, 3 * 24 * 60 * 60) c
+   where c.id = v_old;
+  select status into v_status from public.event_outbox where id = v_old;
+  insert into r values (v_claimed is not null and v_status = 'processing',
+    'a entrega reenviada é reivindicada, e não morta de novo pelo prazo', v_status);
+end
+$$;
+
 -- ── Segredo no Vault ─────────────────────────────────────────────────────────
 set role service_role;
 do $$
