@@ -103,6 +103,7 @@ Só administrador, em **Integrações › Webhooks**: cadastrar, editar, testar,
 - **URL:** em produção, só `https`, e nunca um endereço de rede interna.
 - **Segredo:** o CRM gera (32 bytes aleatórios, 64 caracteres hexadecimais) e mostra **uma vez**, ao cadastrar e a cada troca. Depois disso ele só existe no cofre do banco e do seu lado.
 - **Registro:** cadastro, alteração (os campos, nunca a URL), exclusão, troca de segredo, teste e reenvio ficam em **Integrações › Registros**, na integração *Webhooks*, com quem fez.
+- **Histórico de entregas:** as entregas encerradas (entregues, descartadas ou esgotadas) ficam na fila por 30 dias depois da última mudança e então são apagadas. Uma esgotada pode ser reenviada enquanto estiver lá.
 
 ## 8. O que pode mudar sem aviso, e o que não
 

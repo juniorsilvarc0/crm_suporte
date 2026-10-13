@@ -19,7 +19,7 @@ type Admin = SupabaseClient<Database>;
 
 const SWEEP_INTERVAL_MS = 60_000; // SLA: carimba estouro e fecha 72h
 const TCBX_INTERVAL_MS = 5 * 60_000; // Espelho de contratos da TCBX fresco
-const MAINTENANCE_INTERVAL_MS = 60 * 60_000; // Purga de chaves/logs expirados
+const MAINTENANCE_INTERVAL_MS = 60 * 60_000; // Purga de chaves, logs e fila expirados
 const RELAY_INTERVAL_MS = 20_000; // Recuperação do relay à IA (janela de 120s)
 const WHATSAPP_INTERVAL_MS = 2 * 60_000; // Monitor de conexão do WhatsApp (só leitura)
 const WEBHOOK_INTERVAL_MS = 20_000; // Webhooks de saída (fila com backoff)
@@ -127,12 +127,15 @@ export async function runWhatsappMonitor(supabase: Admin): Promise<void> {
   }
 }
 
-/** Purga chaves de idempotência e logs de integração expirados. Nunca lança. */
+/**
+ * Purga chaves de idempotência, logs de integração (90 dias) e as entregas
+ * encerradas da fila (30 dias). Nunca lança.
+ */
 export async function runMaintenance(supabase: Admin): Promise<void> {
   try {
     const lease = await claim(supabase, "maintenance", 3500);
     if (!lease.claimed) return;
-    for (const fn of ["api_idempotency_purge", "purge_integration_logs"] as const) {
+    for (const fn of ["api_idempotency_purge", "purge_integration_logs", "outbox_purge"] as const) {
       const { error } = await supabase.rpc(fn);
       if (error) console.error(`[jobs] ${fn}`, error.code, error.message);
     }

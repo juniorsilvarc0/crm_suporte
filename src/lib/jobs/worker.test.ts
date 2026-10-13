@@ -177,11 +177,26 @@ describe("runWebhookDispatch", () => {
 });
 
 describe("runMaintenance", () => {
-  it("com o lease, purga chaves e logs", async () => {
+  it("com o lease, purga chaves, logs e a fila encerrada (retenção padrão do banco)", async () => {
     claimGranted();
     await runMaintenance(client);
     expect(rpcMock).toHaveBeenCalledWith("api_idempotency_purge");
     expect(rpcMock).toHaveBeenCalledWith("purge_integration_logs");
+    // Sem argumento: a retenção (30 dias) é a do banco, que recusa encurtar.
+    expect(rpcMock).toHaveBeenCalledWith("outbox_purge");
+  });
+
+  it("uma purga que falha não impede as outras", async () => {
+    rpcMock.mockImplementation((name: string) =>
+      name === "job_claim"
+        ? Promise.resolve({ data: { claimed: true, cursor: null }, error: null })
+        : name === "purge_integration_logs"
+          ? Promise.resolve({ data: null, error: { code: "XX000", message: "boom" } })
+          : Promise.resolve({ data: 0, error: null })
+    );
+    await runMaintenance(client);
+    expect(rpcMock).toHaveBeenCalledWith("outbox_purge");
+    expect(console.error).toHaveBeenCalledWith("[jobs] purge_integration_logs", "XX000", "boom");
   });
 
   it("sem o lease, não purga", async () => {
