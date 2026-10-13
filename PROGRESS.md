@@ -27,6 +27,26 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-13] WhatsApp: o evento `connection` da uazapi grava a queda na hora, com o motivo
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** saber na hora (e não em até 2 min) que a sessão do WhatsApp caiu ou voltou, com o motivo que a uazapi informa. Pedido do dono ("faça", 2026-10-13), sobre a pendência do monitor de 2026-10-09.
+**Arquivos alterados:** `src/features/chat/lib/connection/uazapi.ts` (+teste), `src/features/chat/lib/normalizers/uazapi.ts` (+teste), `src/features/connection/server/connection-monitor.ts` (+teste), `src/app/api/chat/webhook/uazapi/route.ts` (+teste), `src/app/api/connection/webhook/route.ts` (novo, +teste), `src/features/connection/components/webhook-refresh-button.tsx` (novo, +teste), `src/features/connection/components/connection-panel.tsx` (só encaixa o botão); docs: `docs/API.md` §4.2 e §5, `UI.md` §5.19, `PRD.md` (riscos), `.claude/skills/uazapi-integration/SKILL.md`, este PROGRESS.
+**O que foi feito:**
+- **Contrato lido no spec oficial** (`https://docs.uazapi.com/openapi-bundled.json`, `webhooks > connection`): `EventType: "connection"`, `event_id`, `type` (ex.: `"Disconnected"`) e `instance: {name, status, lastDisconnectReason, lastDisconnect}`; o motivo pode vir `unknown`. O envelope traz o token da instância.
+- **Assinatura:** `UAZAPI_WEBHOOK_EVENTS = ["messages", "messages_update", "connection"]`, a lista padrão do `registerUazapiWebhook`.
+- **Webhook:** `EventType: "connection"` → `extractUazapiConnection` (a mesma tabela de status do monitor, agora `connectionStateFromStatus`; `unknown` vira sem motivo; status desconhecido é ignorado) → `recordConnectionState` com origem `webhook`. Grava só a queda (`close`) e a volta (`open`): o `connecting` chega a cada religada curta do socket e faria o aviso global ("esperando o QR") piscar para todo mundo; esse estado segue com o monitor, que filtra a oscilação. O registro da mudança saiu do `checkWhatsappConnection` para essa função, usada pelos dois: grava só quando o estado muda, e quem chega primeiro grava.
+- **Ativação explícita:** `POST /api/connection/webhook` (admin) e o botão **Atualizar cadastro do webhook** no bloco "WhatsApp conectado". Recadastram o MESMO endereço e o MESMO segredo, com a lista atual, sem tocar na sessão (sem QR, sem logout, sem trocar segredo).
+**Decisões tomadas (revisar):**
+- **O botão, e não eu, recadastra o webhook de produção:** o "Reconectar" do painel só pede o QR e NÃO recadastra (o cadastro roda só no `persist`), então a lista nova não valeria sozinha numa reconexão. Recadastrar direto pela API seria eu mexendo na configuração do WhatsApp de produção; com o botão, quem age é o administrador, e a ação é idempotente.
+- **O motivo já vinha pela consulta de status:** o histórico de produção tem "QR Code timeout" nas oscilações de 09 e 10/10 (o `lastDisconnectReason` do `/instance/status`, nome confirmado no spec). O evento acrescenta a imediatez e pega queda mais curta que o intervalo do monitor.
+- **`unknown` deixa de ser gravado como motivo** também na consulta de status (`normalizeDisconnectReason`, uma regra só).
+**Verificação:** typecheck ✓ · lint ✓ · test ✓ · build ✓ (resultado abaixo, no fechamento).
+**Pendências / próximos passos:** depois do deploy, um administrador clica **Atualizar cadastro do webhook** em Integrações › WhatsApp (uma vez). A partir daí, cada queda e cada volta aparecem no histórico da Saúde com origem `webhook`.
+**Armadilhas descobertas:**
+- **O "Reconectar" não recadastra o webhook:** só salvar as credenciais (`persist`) ou o botão novo. A skill da uazapi dizia o contrário e foi corrigida.
+- **O doc da uazapi é o `openapi-bundled.json`:** os eventos do webhook estão em `webhooks.<evento>` (com exemplos), e não em `paths`.
+
 ## [2026-10-09] Retenção da fila de entrega: expurgo das linhas encerradas após 30 dias
 
 **Agente/Modelo:** Claude Opus 5.5.
