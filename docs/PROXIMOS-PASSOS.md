@@ -133,7 +133,7 @@ Descrição e "pronto quando" de cada uma em [`PLANO-IMPLANTACAO.md`](PLANO-IMPL
 
 ### 5.6 O que falta da Fase 10
 
-- Política de privacidade definitiva (hoje a página é um aviso provisório).
+- Política de privacidade definitiva: o texto está escrito (`src/features/legal/privacy-policy.ts`, 2026-10-09) e espera a revisão jurídica e os dados do controlador (os trechos `[[ ]]`). Enquanto houver um trecho a preencher, a página se declara rascunho e não é indexada.
 - Cópia do backup fora do servidor: requisito de go-live, ainda sem destino.
 
 ## 6. Correções e propostas fora do plano
