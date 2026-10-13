@@ -9,7 +9,11 @@ const { integrationMock, statusMock } = vi.hoisted(() => ({
 vi.mock("@/features/chat/lib/connection/integration", () => ({ getUazapiIntegration: integrationMock }));
 vi.mock("@/features/chat/lib/connection/uazapi", () => ({ getUazapiStatus: statusMock }));
 
-import { PROVIDER_UNREACHABLE, checkWhatsappConnection } from "@/features/connection/server/connection-monitor";
+import {
+  PROVIDER_UNREACHABLE,
+  checkWhatsappConnection,
+  recordConnectionState,
+} from "@/features/connection/server/connection-monitor";
 
 const INTEGRATION = { id: "integ-1", apiUrl: "https://uazapi.exemplo", token: "segredo", phone_number: "5511999990000" };
 
@@ -127,5 +131,25 @@ describe("checkWhatsappConnection", () => {
     const db = fakeSupabase(null);
 
     await expect(checkWhatsappConnection(db.supabase)).resolves.toEqual({ status: "skipped" });
+  });
+});
+
+describe("recordConnectionState (o evento connection do webhook usa o mesmo caminho)", () => {
+  it("grava a mudança com a origem informada e o motivo", async () => {
+    const db = fakeSupabase({ state: "open" });
+
+    expect(
+      await recordConnectionState(db.supabase, { integrationId: "integ-1", state: "close", reason: "Network error", source: "webhook" })
+    ).toEqual({ status: "changed", from: "open", state: "close" });
+    expect(db.inserted).toEqual([{ integration_id: "integ-1", state: "close", reason: "Network error", source: "webhook" }]);
+  });
+
+  it("o mesmo estado que o monitor já gravou não repete (quem chega primeiro grava)", async () => {
+    const db = fakeSupabase({ state: "close" });
+
+    expect(
+      await recordConnectionState(db.supabase, { integrationId: "integ-1", state: "close", reason: null, source: "webhook" })
+    ).toEqual({ status: "unchanged", state: "close" });
+    expect(db.inserted).toEqual([]);
   });
 });

@@ -1,4 +1,9 @@
 import type { NormalizedMessage } from "@/features/chat/lib/normalizers/types";
+import {
+  connectionStateFromStatus,
+  normalizeDisconnectReason,
+  type ConnectionState,
+} from "@/features/chat/lib/connection/uazapi";
 import { buildMessageLinkPreview } from "@/features/chat/lib/message-content";
 import type { MessageType } from "@/features/chat/types";
 import { cleanContactName } from "@/lib/formatters/clean-name";
@@ -113,7 +118,31 @@ export type UazapiEnvelope = {
   owner?: string;
   /** Token da INSTÂNCIA uazapi: credencial. Nunca sai do CRM (log, relay). */
   token?: string;
+  /** Evento `connection` (doc oficial): o estado da instância e o motivo da queda. */
+  instance?: { name?: string; status?: string; lastDisconnectReason?: string; lastDisconnect?: string };
+  /** Evento `connection`: a transição, quando informada (ex.: "Disconnected"). */
+  type?: string;
+  event_id?: string;
 };
+
+/**
+ * O evento `connection` (EventType "connection", doc oficial da uazapi):
+ * `instance.status` diz o estado e `instance.lastDisconnectReason`, o motivo
+ * (`unknown` quando a uazapi não sabe). `null` = status que não reconhecemos:
+ * melhor não gravar do que gravar um estado errado.
+ */
+export function extractUazapiConnection(
+  payload: UazapiEnvelope
+): { state: Exclude<ConnectionState, "unknown">; reason: string | null } | null {
+  if (uazapiEventType(payload) !== "connection") return null;
+  const instance = payload.instance && typeof payload.instance === "object" ? payload.instance : null;
+  const state = connectionStateFromStatus(typeof instance?.status === "string" ? instance.status : null);
+  if (!state) return null;
+  // Conectado não tem motivo (o lastDisconnectReason é o da queda ANTERIOR).
+  const reason =
+    state === "open" ? null : normalizeDisconnectReason(typeof instance?.lastDisconnectReason === "string" ? instance.lastDisconnectReason : null);
+  return { state, reason };
+}
 
 export function uazapiEventType(payload: UazapiEnvelope): string {
   return (payload.EventType ?? "").toString();

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { downloadUazapiMedia } from "./uazapi";
+import {
+  connectionStateFromStatus,
+  downloadUazapiMedia,
+  getUazapiStatus,
+  normalizeDisconnectReason,
+  registerUazapiWebhook,
+  UAZAPI_WEBHOOK_EVENTS,
+} from "./uazapi";
 
 function mockFetch(impl: (url: string, init: RequestInit) => Response | Promise<Response>) {
   const spy = vi.fn(impl as unknown as typeof fetch);
@@ -62,5 +69,52 @@ describe("downloadUazapiMedia", () => {
       throw new Error("network down");
     });
     expect(await downloadUazapiMedia(API, TOKEN, "MSG4")).toBeNull();
+  });
+});
+
+describe("estado e motivo da conexão", () => {
+  it("connectionStateFromStatus: conectado, conectando, desconectado; o resto é null", () => {
+    expect(connectionStateFromStatus("connected")).toBe("open");
+    expect(connectionStateFromStatus(" Connecting ")).toBe("connecting");
+    expect(connectionStateFromStatus("disconnected")).toBe("close");
+    expect(connectionStateFromStatus("banned")).toBe("close");
+    expect(connectionStateFromStatus("algo-novo")).toBeNull();
+    expect(connectionStateFromStatus(undefined)).toBeNull();
+  });
+
+  it("normalizeDisconnectReason: apara, corta em 300 e 'unknown' não é motivo", () => {
+    expect(normalizeDisconnectReason("  Network error  ")).toBe("Network error");
+    expect(normalizeDisconnectReason("unknown")).toBeNull();
+    expect(normalizeDisconnectReason("UNKNOWN")).toBeNull();
+    expect(normalizeDisconnectReason("")).toBeNull();
+    expect(normalizeDisconnectReason("x".repeat(400))).toHaveLength(300);
+  });
+
+  it("getUazapiStatus lê o lastDisconnectReason da instância (nome do spec oficial)", async () => {
+    mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({ status: { connected: false }, instance: { status: "connecting", lastDisconnectReason: "QR Code timeout" } }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    await expect(getUazapiStatus(API, TOKEN)).resolves.toMatchObject({ state: "connecting", reason: "QR Code timeout" });
+  });
+});
+
+describe("registerUazapiWebhook", () => {
+  it("assina, por padrão, mensagens, atualizações e o evento connection", async () => {
+    const spy = mockFetch(() => new Response("{}", { status: 200 }));
+    await registerUazapiWebhook(API, TOKEN, "https://suporte.exemplo.com/api/chat/webhook/uazapi?s=x");
+
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://inst.uazapi.com/webhook");
+    expect((init.headers as Record<string, string>).token).toBe(TOKEN);
+    expect(JSON.parse(init.body as string)).toEqual({
+      enabled: true,
+      url: "https://suporte.exemplo.com/api/chat/webhook/uazapi?s=x",
+      events: ["messages", "messages_update", "connection"],
+    });
+    expect(UAZAPI_WEBHOOK_EVENTS).toEqual(["messages", "messages_update", "connection"]);
   });
 });
