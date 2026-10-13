@@ -11,6 +11,7 @@ const {
   enrichMock,
   downloadMock,
   persistMediaMock,
+  recordMock,
   afterCallbacks,
 } = vi.hoisted(() => ({
   adminClientMock: vi.fn(),
@@ -22,6 +23,7 @@ const {
   enrichMock: vi.fn(),
   downloadMock: vi.fn(),
   persistMediaMock: vi.fn(),
+  recordMock: vi.fn(),
   // O que o webhook agenda com after(): no Next, roda depois da resposta.
   afterCallbacks: [] as Array<() => unknown>,
 }));
@@ -55,8 +57,16 @@ vi.mock("@/features/integrations/server/relay-dispatch", () => ({
 vi.mock("@/features/customers/server/enrich-contact", () => ({
   enrichContactFromSource: enrichMock,
 }));
-vi.mock("@/features/chat/lib/connection/uazapi", () => ({
+// O download é de mentira; a tabela de status e o motivo (usados pelo evento
+// `connection`) são os de verdade.
+vi.mock("@/features/chat/lib/connection/uazapi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/chat/lib/connection/uazapi")>()),
   downloadUazapiMedia: downloadMock,
+}));
+// O que o histórico faz com o estado (só grava na mudança) é de
+// connection-monitor.test.ts. Aqui fica O QUE o webhook manda gravar.
+vi.mock("@/features/connection/server/connection-monitor", () => ({
+  recordConnectionState: recordMock,
 }));
 vi.mock("@/features/chat/lib/media/persist-inbound", () => ({
   persistInboundMedia: persistMediaMock,
@@ -545,5 +555,90 @@ describe("POST /api/chat/webhook/uazapi — relay ao agente", () => {
       "timeout"
     );
     warn.mockRestore();
+  });
+});
+
+describe("POST /api/chat/webhook/uazapi — evento connection (formato da doc oficial)", () => {
+  // Os dois exemplos do spec da uazapi (webhooks > connection), com o token da instância.
+  const disconnected = (reason = "unknown") => ({
+    EventType: "connection",
+    owner: "5511999999999",
+    token: INSTANCE_TOKEN,
+    BaseUrl: "https://inst.uazapi.test",
+    instanceName: "Atendimento",
+    event_id: "4d42a099-7921-43ec-9774-da72901bbf13",
+    type: "Disconnected",
+    instance: { name: "Atendimento", status: "disconnected", lastDisconnectReason: reason, lastDisconnect: "2026-09-08 12:00:00.000Z" },
+  });
+  const connected = {
+    EventType: "connection",
+    owner: "5511999999999",
+    token: INSTANCE_TOKEN,
+    BaseUrl: "https://inst.uazapi.test",
+    instanceName: "Atendimento",
+    event_id: "f51310de-8e2b-4ef5-8065-dcd67e764c65",
+    instance: { name: "Atendimento", status: "connected" },
+  };
+
+  beforeEach(() => {
+    recordMock.mockResolvedValue({ status: "changed", from: "open", state: "close" });
+  });
+
+  it("queda: grava 'close' no histórico, com origem webhook; motivo 'unknown' não é motivo", async () => {
+    const response = await POST(webhook(SECRET, disconnected()));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, connection: "changed" });
+    expect(recordMock).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: "int-1",
+      state: "close",
+      reason: null,
+      source: "webhook",
+    });
+    // Evento de conexão não é mensagem: nada de contato, repasse ou mídia.
+    expect(identityMock).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
+  });
+
+  it("queda com motivo informado: o motivo vai junto", async () => {
+    await POST(webhook(SECRET, disconnected("Network error")));
+    expect(recordMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ state: "close", reason: "Network error" }));
+  });
+
+  it("volta: grava 'open', sem motivo (o lastDisconnectReason é da queda anterior)", async () => {
+    recordMock.mockResolvedValue({ status: "unchanged", state: "open" });
+    const response = await POST(webhook(SECRET, { ...connected, instance: { ...connected.instance, lastDisconnectReason: "Network error" } }));
+
+    expect(await response.json()).toEqual({ ok: true, connection: "unchanged" });
+    expect(recordMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ state: "open", reason: null }));
+  });
+
+  it("'conectando' não é gravado pelo webhook (religada curta do socket): fica com o monitor", async () => {
+    const response = await POST(webhook(SECRET, { ...connected, instance: { status: "connecting" } }));
+
+    expect(await response.json()).toEqual({ ok: true, reason: "connection_connecting" });
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("status que não reconhecemos: não grava nada (melhor que gravar um estado errado)", async () => {
+    const response = await POST(webhook(SECRET, { ...connected, instance: { status: "algo-novo" } }));
+
+    expect(await response.json()).toEqual({ ok: true, reason: "connection_unknown" });
+    expect(recordMock).not.toHaveBeenCalled();
+  });
+
+  it("o token da instância, que vem no envelope, não vai para log nenhum", async () => {
+    const spies = (["log", "info", "warn", "error"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => undefined)
+    );
+    await POST(webhook(SECRET, disconnected("Network error")));
+    expect(JSON.stringify(spies.flatMap((spy) => spy.mock.calls))).not.toContain(INSTANCE_TOKEN);
+    for (const spy of spies) spy.mockRestore();
+  });
+
+  it("sem o segredo do webhook: 401, e nada é gravado", async () => {
+    const response = await POST(webhook("b".repeat(64), disconnected()));
+    expect(response.status).toBe(401);
+    expect(recordMock).not.toHaveBeenCalled();
   });
 });

@@ -51,10 +51,24 @@ export async function checkWhatsappConnection(supabase: Admin): Promise<Connecti
     reason = PROVIDER_UNREACHABLE;
   }
 
+  return recordConnectionState(supabase, { integrationId: integration.id, state, reason, source: "poll" });
+}
+
+/**
+ * Grava o estado no histórico SÓ quando ele muda em relação ao último gravado.
+ * Usado pelo monitor (`poll`, a cada 2 min) e pelo evento `connection` do
+ * webhook da uazapi (`webhook`, na hora). Quem chega primeiro grava, com o
+ * motivo; o outro vê o mesmo estado e não repete. Nunca lança.
+ */
+export async function recordConnectionState(
+  supabase: Admin,
+  input: { integrationId: string; state: ConnectionState; reason: string | null; source: "poll" | "webhook" }
+): Promise<ConnectionCheck> {
+  const { integrationId, state, reason, source } = input;
   const { data: last, error } = await supabase
     .from("chat_connection_events")
     .select("state")
-    .eq("integration_id", integration.id)
+    .eq("integration_id", integrationId)
     .order("occurred_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -67,17 +81,19 @@ export async function checkWhatsappConnection(supabase: Admin): Promise<Connecti
   if (from === state) return { status: "unchanged", state };
 
   const { error: insertError } = await supabase.from("chat_connection_events").insert({
-    integration_id: integration.id,
+    integration_id: integrationId,
     state,
     // Conectado não tem motivo; o resto leva o que o provedor disse (ou nada).
     reason: state === "open" ? null : reason,
-    source: "poll",
+    source,
   });
   if (insertError) {
     console.error("[whatsapp-monitor] gravar mudança", insertError.code, insertError.message);
     return { status: "skipped" };
   }
 
-  console.info(`[whatsapp-monitor] ${from ?? "—"} → ${state}${reason && state !== "open" ? ` (${reason})` : ""}`);
+  console.info(
+    `[whatsapp-monitor] ${from ?? "—"} → ${state}${reason && state !== "open" ? ` (${reason})` : ""} [${source}]`
+  );
   return { status: "changed", from, state };
 }

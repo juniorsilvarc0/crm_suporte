@@ -35,6 +35,13 @@ export type UazapiStatusResult = {
 /** Teto do motivo guardado (o mesmo do check de chat_connection_events.reason). */
 const REASON_MAX = 300;
 
+/**
+ * Os eventos que o CRM assina no webhook da uazapi (doc oficial, POST /webhook).
+ * `connection` avisa na hora quando a sessão cai ou volta, com o motivo
+ * (o monitor do worker consulta o status a cada 2 min; o evento chega antes).
+ */
+export const UAZAPI_WEBHOOK_EVENTS = ["messages", "messages_update", "connection"] as const;
+
 const TIMEOUT_MS = 15000;
 
 // ---- helpers de leitura defensiva -----------------------------------------
@@ -84,15 +91,37 @@ function normalizeQr(value: string | null): string | null {
   return `data:image/png;base64,${value}`;
 }
 
+const OPEN_STATUSES = ["connected", "open"];
+const CONNECTING_STATUSES = ["connecting", "qr", "qrcode", "pairing", "waiting", "connectingsocket"];
+const CLOSED_STATUSES = ["disconnected", "close", "closed", "removed", "banned"];
+
+/**
+ * O estado de um status textual da uazapi (do `/instance/status` ou do evento
+ * `connection`). `null` = status que não reconhecemos: quem chama decide (o
+ * webhook ignora; o status da instância cai na regra de `mapState`).
+ */
+export function connectionStateFromStatus(status: string | null | undefined): Exclude<ConnectionState, "unknown"> | null {
+  const s = (status ?? "").trim().toLowerCase();
+  if (OPEN_STATUSES.includes(s)) return "open";
+  if (CONNECTING_STATUSES.includes(s)) return "connecting";
+  if (CLOSED_STATUSES.includes(s)) return "close";
+  return null;
+}
+
+/**
+ * O motivo da desconexão, como guardamos: texto curto e aparado. O provedor
+ * manda `unknown` quando não sabe; isso não é motivo, vira `null`.
+ */
+export function normalizeDisconnectReason(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim();
+  if (!text || text.toLowerCase() === "unknown") return null;
+  return text.slice(0, REASON_MAX);
+}
+
 function mapState(connected: boolean, instanceStatus: string | null): ConnectionState {
   if (connected) return "open";
-  const s = (instanceStatus ?? "").toLowerCase();
-  if (["connecting", "qr", "qrcode", "pairing", "waiting", "connectingsocket"].includes(s)) {
-    return "connecting";
-  }
-  if (["disconnected", "close", "closed", "removed", "banned"].includes(s)) {
-    return "close";
-  }
+  const known = connectionStateFromStatus(instanceStatus);
+  if (known === "connecting" || known === "close") return known;
   // sem QR ainda e sem status claro: tratamos como "connecting" para o painel
   // continuar buscando o QR.
   return instanceStatus ? "close" : "connecting";
@@ -222,7 +251,7 @@ export async function getUazapiStatus(
     connected,
     state: mapState(connected, instanceStatus),
     owner: ownerToPhone(owner),
-    reason: reason?.trim() ? reason.trim().slice(0, REASON_MAX) : null,
+    reason: normalizeDisconnectReason(reason),
   };
 }
 
@@ -234,7 +263,7 @@ export async function registerUazapiWebhook(
   apiUrl: string,
   token: string,
   webhookUrl: string,
-  events: string[] = ["messages", "messages_update"]
+  events: readonly string[] = UAZAPI_WEBHOOK_EVENTS
 ): Promise<void> {
   const base = safeBaseUrl(apiUrl);
   // sanidade: a nossa URL de webhook precisa ser http(s) válida (não SSRF —
