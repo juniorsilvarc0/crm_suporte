@@ -852,6 +852,49 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"ticket_tags": {
+                  Row: {
+                    "created_at": string,"created_by_token_id": string | null,"created_by_user_id": string | null,"tag_id": string,"ticket_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"created_by_token_id"?: string | null,"created_by_user_id"?: string | null,"tag_id": string,"ticket_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by_token_id"?: string | null,"created_by_user_id"?: string | null,"tag_id"?: string,"ticket_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_tags_created_by_token_id_fkey"
+      columns: ["created_by_token_id"]
+isOneToOne: false
+      referencedRelation: "api_tokens"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_tags_created_by_user_id_fkey"
+      columns: ["created_by_user_id"]
+isOneToOne: false
+      referencedRelation: "app_users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_tags_tag_id_fkey"
+      columns: ["tag_id"]
+isOneToOne: false
+      referencedRelation: "tags"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_tags_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "ticket_queue"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_tags_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"tickets": {
                   Row: {
                     "ai_triage": Json | null,"assigned_to_user_id": string | null,"category_id": string | null,"closed_at": string | null,"contact_id": string,"contract_id": string | null,"conversation_id": string,"created_at": string,"created_by_token_id": string | null,"created_by_user_id": string | null,"customer_id": string | null,"description": string | null,"external_id": string | null,"first_ai_response_at": string | null,"first_responded_at": string | null,"first_response_breached_at": string | null,"first_response_due_at": string,"id": string,"idempotency_key": string | null,"number": number,"priority": string,"product_id": string | null,"reopened_count": number,"resolution_breached_at": string | null,"resolution_due_at": string,"resolved_at": string | null,"search_title": string | null,"sla_first_response_minutes": number,"sla_paused_at": string | null,"sla_paused_seconds": number,"sla_resolution_minutes": number,"sla_warn_pct": number,"source": string,"status": string,"title": string,"updated_at": string,"version": number
@@ -1188,6 +1231,9 @@ isOneToOne: false
                            },
 "sla_sweep":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"ticket_add_tags":
+{ Args: { "p_actor_token_id"?: string,"p_actor_user_id"?: string,"p_names": (string)[],"p_ticket_id": string }; Returns: Json
                            },
 "ticket_apply_take_over":
 { Args: { "p_actor_user_id": string,"p_ticket_id": string }; Returns: boolean
