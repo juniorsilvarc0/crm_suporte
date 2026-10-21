@@ -98,6 +98,18 @@ O que vem em `data`:
 
 `allowed_transitions: null` quer dizer que a matriz de status não pôde ser lida agora, e não que não há destino.
 
+**Áudio do cliente.** A mensagem de áudio chega com `type: "audio"` e sem o arquivo. Para saber o que o cliente falou, peça a transcrição:
+
+```bash
+curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/messages/<message_id>/transcription" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+- Resposta: `{ "message_id", "transcription", "cached" }`. É a mesma transcrição do "Transcrever" do analista: o texto fica guardado na mensagem, então repetir sai de lá (`cached: true`), sem nova cobrança da OpenAI.
+- Sem corpo e sem `Idempotency-Key`; escopo `conversations:read`.
+- `503 transcription_unavailable`: o CRM não tem a chave da OpenAI no cofre. Siga sem o áudio (peça para o cliente escrever) e avise o time.
+- `422 not_audio`, `message_deleted` ou `audio_unavailable`; `502 transcription_failed` (repetir é seguro).
+
 ### 2.4 Abrir um ticket
 
 ```bash

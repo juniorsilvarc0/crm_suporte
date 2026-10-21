@@ -261,6 +261,7 @@ Todos os caminhos começam com `/api/v1`. `{ref}` de ticket é o id (UUID) ou o 
 | GET | `/conversations/{id}` | `conversations:read` | a conversa: quem conduz, o ticket em foco e o contato |
 | GET | `/conversations/{id}/messages` | `conversations:read` | as mensagens, da mais nova para a mais antiga |
 | POST | `/conversations/{id}/messages` | `messages:send` | envia um texto ao cliente pelo WhatsApp |
+| POST | `/conversations/{id}/messages/{message_id}/transcription` | `conversations:read` | transcreve um áudio (a mesma transcrição do analista; guardada na mensagem, repetir não cobra de novo) |
 | POST | `/conversations/{id}/handoff` | `conversations:handoff` | passa a conversa da IA para um humano |
 | PUT | `/conversations/{id}/active-ticket` | `tickets:write` | escolhe o ticket em foco da conversa (`null` tira o foco) |
 
