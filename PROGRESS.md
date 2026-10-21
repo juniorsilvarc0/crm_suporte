@@ -27,6 +27,11 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-21] Deploy: etiquetas do ticket e linha do tempo das alterações no ar (#81, #82)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "pode subir"):** `deploy/publicar.sh` a partir de `origin/main` @ `2b19d46cc9ea`, terminado às 19:31 UTC. Migrations `20261021120000_etiquetas_de_ticket` e `20261021140000_motivo_na_alteracao_do_ticket` aplicadas antes do build (baseline ✓). Rodízio limpo (web2 às 19:30, web às 19:31); `verificar` ✓; `/api/v1/health` 200; o OpenAPI público expõe `POST /tickets/{ref}/tags` e `reason` no `PATCH`; `ticket_update` com uma assinatura só; logs das réplicas sem erro. Rollback do app: `prd-rollback` = `15eada809544` (o de antes do #81). As migrations não voltam: são aditivas, e a versão anterior convive com elas.
+
 ## [2026-10-21] Linha do tempo do ticket: só as alterações, cada uma com o motivo
 
 **Agente/Modelo:** Claude Opus 5.5.
