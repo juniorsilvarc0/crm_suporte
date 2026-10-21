@@ -18,6 +18,7 @@ import { TicketDetailView } from "@/features/tickets/components/ticket-detail";
 import type {
   TicketCatalog,
   TicketDetail,
+  TicketTag,
   TicketTeamMember,
   TicketTimelinePage,
 } from "@/features/tickets/types";
@@ -144,14 +145,17 @@ const EMPTY_TIMELINE: TicketTimelinePage = { items: [], hasMore: false, nextBefo
 function renderDetail({
   ticketOverrides,
   catalogOverrides,
+  tags = [],
 }: {
   ticketOverrides?: Partial<TicketDetail>;
   catalogOverrides?: Partial<TicketCatalog>;
+  tags?: TicketTag[] | null;
 } = {}) {
   return render(
     <TicketDetailView
       ticket={ticket(ticketOverrides)}
       attachments={[]}
+      tags={tags}
       timeline={EMPTY_TIMELINE}
       catalog={catalog(catalogOverrides)}
       team={TEAM}
@@ -572,6 +576,29 @@ describe("TicketDetailView — cancelar", () => {
 });
 
 describe("TicketDetailView — lateral", () => {
+  it("mostra as etiquetas do ticket, só leitura, e diz quando não há ou quando a leitura falhou", () => {
+    const { unmount } = renderDetail({
+      tags: [
+        { id: "t1", name: "duvida", color: "amber" },
+        { id: "t2", name: "resolvido-pela-ia", color: "slate" },
+      ],
+    });
+    expect(screen.getByText("duvida")).toBeInTheDocument();
+    expect(screen.getByText("resolvido-pela-ia")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /etiqueta/i })).not.toBeInTheDocument();
+    unmount();
+
+    renderDetail();
+    expect(screen.getByText("Sem etiquetas")).toBeInTheDocument();
+  });
+
+  it("leitura das etiquetas que falhou: avisa na lateral, e o resto abre", () => {
+    renderDetail({ tags: null });
+
+    expect(screen.getByText("Não foi possível carregar as etiquetas.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alterar fila e categoria" })).toBeInTheDocument();
+  });
+
   it("trocar a fila manda product_id e category_id null num PATCH só", async () => {
     const user = userEvent.setup();
     const fetchMock = stubFetch(jsonResponse(200, { ok: true, changed: true, ticket: {} }));
@@ -726,6 +753,7 @@ describe("TicketDetailView — lateral", () => {
       <TicketDetailView
         ticket={ticket()}
         attachments={[]}
+        tags={[]}
         timeline={EMPTY_TIMELINE}
         catalog={catalog()}
         team={[
@@ -807,6 +835,7 @@ describe("TicketDetailView — lateral", () => {
         <TicketDetailView
           ticket={ticket({ customer: null, customer_id: null })}
           attachments={[]}
+          tags={[]}
           timeline={EMPTY_TIMELINE}
           catalog={catalog()}
           team={TEAM}

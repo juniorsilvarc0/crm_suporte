@@ -244,6 +244,14 @@ export function eventLines(
       // Sem o motivo: ele abre a nota interna que conversation_handoff grava no
       // mesmo instante, e a nota aparece colada a esta linha.
       return ["Pediu atendimento humano"];
+    case "ticket.tags_added": {
+      // ticket_add_tags grava só as que entraram, pelo nome que ficou cadastrado.
+      const names = Array.isArray(meta.tags)
+        ? meta.tags.filter((name): name is string => typeof name === "string" && name.trim() !== "")
+        : [];
+      if (names.length === 0) return ["Etiquetas acrescentadas"];
+      return [`${names.length === 1 ? "Etiqueta" : "Etiquetas"}: ${names.join(", ")}`];
+    }
     default:
       return ["Atividade registrada"];
   }

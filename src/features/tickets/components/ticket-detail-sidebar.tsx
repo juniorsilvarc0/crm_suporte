@@ -13,6 +13,7 @@ import {
   LogInIcon,
   RotateCcwIcon,
   RotateCwIcon,
+  TagIcon,
   UserRoundIcon,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ import { FormSelect } from "@/components/forms/form-select";
 import { ModalShell } from "@/components/layout/modal-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { ConversationTagChips } from "@/features/chat/components/conversation-tag-chips";
 import { DetailRow } from "@/features/contracts/components/contract-card";
 import { ContractStatusBadge } from "@/features/contracts/components/contract-status-badge";
 import { CustomerPicker } from "@/features/customers/components/customer-picker";
@@ -45,6 +47,7 @@ import type {
   TicketPriority,
   TicketSlaPolicy,
   TicketSource,
+  TicketTag,
   TicketTeamMember,
 } from "@/features/tickets/types";
 import { formatPhone } from "@/lib/formatters/phone";
@@ -61,6 +64,8 @@ const REFRESHING_ID = "__refreshing__";
 
 export type TicketDetailSidebarProps = {
   ticket: TicketDetail;
+  /** Só leitura (quem etiqueta é a IA, pela API v1); `null` = a leitura falhou. */
+  tags: TicketTag[] | null;
   catalog: Pick<TicketCatalog, "products" | "categories" | "priorities">;
   mutation: TicketMutation;
   /** Abre o diálogo "Atribuir" (o mesmo do menu ⋯ do cabeçalho). */
@@ -137,7 +142,7 @@ function reopenedLabel(count: number): string {
  * (`DetailRow`). A fila e a categoria ATUAIS vêm do próprio ticket, mesmo
  * arquivadas; o catálogo só oferece as ativas. Ticket encerrado é só leitura.
  */
-export function TicketDetailSidebar({ ticket, catalog, mutation, onAssign }: TicketDetailSidebarProps) {
+export function TicketDetailSidebar({ ticket, tags, catalog, mutation, onAssign }: TicketDetailSidebarProps) {
   const fieldId = useId();
   const editable = !ticket.is_terminal;
   const [classifying, setClassifying] = useState(false);
@@ -299,6 +304,16 @@ export function TicketDetailSidebar({ ticket, catalog, mutation, onAssign }: Tic
             </DetailRow>
           </>
         )}
+
+        <DetailRow icon={<TagIcon />} label="Etiquetas">
+          {tags === null ? (
+            <span className="text-muted-foreground">Não foi possível carregar as etiquetas.</span>
+          ) : tags.length === 0 ? (
+            <span className="text-muted-foreground">Sem etiquetas</span>
+          ) : (
+            <ConversationTagChips tags={tags} />
+          )}
+        </DetailRow>
 
         <DetailRow icon={<GaugeIcon />} label="Prioridade">
           {editable ? (

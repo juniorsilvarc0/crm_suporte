@@ -8,6 +8,7 @@ import type {
   TicketAttachment,
   TicketContractRef,
   TicketDetail,
+  TicketTag,
 } from "@/features/tickets/types";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
 
@@ -26,6 +27,10 @@ const ATTACHMENT_SELECT =
   "id, file_name, mime, size_bytes, uploaded_by_user_id, uploaded_by_token_id, created_at";
 const MAX_ATTACHMENTS = 100;
 
+// As etiquetas do ticket com o nome e a cor da etiqueta (ticket_tags → tags).
+const TAG_SELECT = "tag:tags!ticket_tags_tag_id_fkey(id, name, color)" as const;
+const MAX_TAGS = 100;
+
 type TicketDetailRow = TicketListRow & {
   description: string | null;
   contact_id: string | null;
@@ -42,16 +47,17 @@ type TicketDetailRow = TicketListRow & {
 };
 
 /**
- * `attachments` = `null` quando AQUELA leitura falhou: a tela diz "não foi
- * possível carregar", nunca "sem anexos". A timeline é outra leitura
- * (getTicketTimeline), que a página faz com o `ticket.id`. `fetchedAt` (ISO)
- * inicializa o relógio do selo de SLA.
+ * `attachments` e `tags` = `null` quando AQUELA leitura falhou: a tela diz "não
+ * foi possível carregar", nunca "sem anexos" ou "sem etiquetas". A timeline é
+ * outra leitura (getTicketTimeline), que a página faz com o `ticket.id`.
+ * `fetchedAt` (ISO) inicializa o relógio do selo de SLA.
  */
 export type TicketDetailResult =
   | {
       status: "ok";
       ticket: TicketDetail;
       attachments: TicketAttachment[] | null;
+      tags: TicketTag[] | null;
       fetchedAt: string;
     }
   | { status: "not_found" }
@@ -98,8 +104,9 @@ function toTicketDetail(row: TicketDetailRow): TicketDetail | null {
  * Ticket pelo protocolo (tickets.number, o número da URL /app/tickets/[number]),
  * terminal inclusive (o histórico continua existindo).
  *
- * Só a leitura do ticket decide not_found/error. A dos anexos depende do id e
- * corre depois; se falhar, vira `null` NAQUELA seção, e o detalhe abre.
+ * Só a leitura do ticket decide not_found/error. As dos anexos e das etiquetas
+ * dependem do id e correm depois; se falharem, viram `null` NAQUELA seção, e o
+ * detalhe abre.
  */
 export async function getTicketDetail(number: number): Promise<TicketDetailResult> {
   if (!Number.isSafeInteger(number) || number < 1) return { status: "not_found" };
@@ -150,7 +157,22 @@ export async function getTicketDetail(number: number): Promise<TicketDetailResul
       }));
     }
 
-    return { status: "ok", ticket, attachments, fetchedAt };
+    const tagsRes = await supabase
+      .from("ticket_tags")
+      .select(TAG_SELECT)
+      .eq("ticket_id", ticket.id)
+      .limit(MAX_TAGS);
+
+    let tags: TicketTag[] | null = null;
+    if (tagsRes.error) {
+      console.error("getTicketDetail tags failed", tagsRes.error.message);
+    } else {
+      tags = (tagsRes.data ?? [])
+        .flatMap(({ tag }) => (tag ? [{ id: tag.id, name: tag.name, color: tag.color }] : []))
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    }
+
+    return { status: "ok", ticket, attachments, tags, fetchedAt };
   } catch (error) {
     console.error("getTicketDetail threw", error);
     return { status: "error" };

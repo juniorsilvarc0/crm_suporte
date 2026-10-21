@@ -77,11 +77,15 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-function mockReads(detail: unknown) {
+function mockReads(detail: unknown, tagsResult: unknown = { data: [], error: null }) {
   const ticket = fakeQuery({ data: detail, error: null });
   const attachments = fakeQuery({ data: [], error: null });
-  fromMock.mockReturnValueOnce(ticket.builder).mockReturnValueOnce(attachments.builder);
-  return ticket.calls;
+  const tags = fakeQuery(tagsResult);
+  fromMock
+    .mockReturnValueOnce(ticket.builder)
+    .mockReturnValueOnce(attachments.builder)
+    .mockReturnValueOnce(tags.builder);
+  return { ticketCalls: ticket.calls, tagCalls: tags.calls };
 }
 
 beforeEach(() => {
@@ -94,7 +98,7 @@ afterEach(() => {
 
 describe("getTicketDetail — categoria e foco", () => {
   it("deve pedir a categoria e só o foco da conversa, pelo nome da FK", async () => {
-    const calls = mockReads(row());
+    const { ticketCalls: calls } = mockReads(row());
 
     await getTicketDetail(1024);
 
@@ -130,5 +134,37 @@ describe("getTicketDetail — categoria e foco", () => {
     expect(other.status === "ok" && other.ticket.in_focus).toBe(false);
     expect(other.status === "ok" && other.ticket.category).toBeNull();
     expect(none.status === "ok" && none.ticket.in_focus).toBe(false);
+  });
+});
+
+describe("getTicketDetail — etiquetas", () => {
+  it("deve ler as etiquetas do ticket pela FK e devolvê-las pelo nome", async () => {
+    const { tagCalls } = mockReads(row(), {
+      data: [
+        { tag: { id: "t2", name: "resolvido-pela-ia", color: "slate" } },
+        { tag: { id: "t1", name: "duvida", color: "amber" } },
+        { tag: null },
+      ],
+      error: null,
+    });
+
+    const result = await getTicketDetail(1024);
+
+    expect(fromMock).toHaveBeenNthCalledWith(3, "ticket_tags");
+    expect(tagCalls).toContainEqual(["select", "tag:tags!ticket_tags_tag_id_fkey(id, name, color)"]);
+    expect(tagCalls).toContainEqual(["eq", "ticket_id", TICKET_ID]);
+    expect(result.status === "ok" && result.tags).toEqual([
+      { id: "t1", name: "duvida", color: "amber" },
+      { id: "t2", name: "resolvido-pela-ia", color: "slate" },
+    ]);
+  });
+
+  it("leitura das etiquetas que falha vira null, e o detalhe abre", async () => {
+    mockReads(row(), { data: null, error: { message: "falhou" } });
+
+    const result = await getTicketDetail(1024);
+
+    expect(result.status).toBe("ok");
+    expect(result.status === "ok" && result.tags).toBeNull();
   });
 });

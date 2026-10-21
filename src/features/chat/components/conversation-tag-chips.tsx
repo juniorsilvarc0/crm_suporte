@@ -26,7 +26,8 @@ export const ConversationTagChips = memo(function ConversationTagChips({
   tags,
   className,
 }: {
-  tags: readonly Tag[];
+  // Só o que o chip desenha: as etiquetas do ticket chegam sem `created_at`.
+  tags: readonly Pick<Tag, "id" | "name" | "color">[];
   className?: string;
 }) {
   if (tags.length === 0) return null;
