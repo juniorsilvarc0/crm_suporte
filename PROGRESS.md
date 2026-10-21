@@ -27,6 +27,23 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-21] A IA de triagem entende áudio: transcrição pela API v1
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** o agente de suporte responder ao que o cliente FALOU num áudio, em vez de "não consigo ouvir". Pedido do dono em 2026-10-21 ("para que nosso agente também entenda áudio").
+**Arquivos alterados:** `src/features/chat/lib/transcribe-message.ts` (novo: a transcrição que morava na rota do analista), `src/app/api/chat/transcribe/route.ts` (passa a usá-la; mesmas respostas), `src/app/api/v1/conversations/[id]/messages/[message_id]/transcription/route.ts` (novo) + `src/app/api/v1/transcription.test.ts` (novo), `src/lib/api/v1/conversations.ts` (`messageTranscriptionSchema`), `src/lib/api/v1/openapi.ts`, `src/features/legal/privacy-policy.ts`; docs: `docs/API.md`, `docs/GUIA-AGENTE-IA.md`, `PRD.md` (OpenAI), este PROGRESS.
+**O que foi feito:**
+- **A API v1 não entrega o arquivo de mídia** (só o tipo), então o agente não tinha como transcrever. A transcrição do analista já existia (OpenAI, chave e modelo no cofre, texto guardado em `chat_messages.metadata.transcription`): saiu da rota para `transcribeChatMessage` (generalizar o existente, AGENTS §5), e a rota da tela segue com as mesmas respostas (os 5 testes dela passam sem mudança).
+- **`POST /api/v1/conversations/{id}/messages/{message_id}/transcription`**, escopo `conversations:read` (o preset da IA já tem): confere que a mensagem é DESTA conversa, é áudio e não foi apagada; sem a chave no cofre, `503 transcription_unavailable`. A 2ª chamada sai do texto guardado (`cached: true`), sem nova cobrança, e o analista vê o mesmo texto no chat.
+- **Política de privacidade (rascunho):** a OpenAI agora também recebe o áudio quando o cliente o manda numa conversa com a IA de triagem.
+**Decisões tomadas (revisar):**
+- **A chave fica no cofre do CRM, e não na uazapi:** a transcrição da uazapi (`/message/download` com `transcribe`) também chama a OpenAI com uma chave da OpenAI (a passada na chamada ou a salva na instância); seria a mesma conta, com a chave guardada em mais um lugar. No cofre, ela já é cifrada e serve também ao botão do analista.
+- **Escopo `conversations:read`, sem escopo novo:** transcrever é ler o conteúdo de uma mensagem que o token já pode ler; um escopo novo obrigaria a editar o token da IA.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos antigos de `verify-webhook.test.ts`) · test ✓ (4992 em 295 arquivos; 13 da rota nova, e os 5 da rota do analista sem mudança) · build ✓.
+**Pendências / próximos passos:** produção: o dono cadastrar `OPENAI_API_KEY` em Integrações › Variáveis (o cofre de produção não tinha nenhuma chave da OpenAI em 2026-10-21) e publicar este PR ("pode subir"). O agente de suporte (AgentForge) pede a transcrição a cada áudio do cliente e, se falhar, segue com o aviso de hoje.
+**Armadilhas descobertas:**
+- **O teste da rota do analista exige que, sem a chave, nem o cliente do banco seja criado:** por isso `transcribeChatMessage` recebe a configuração já lida, e quem chama lê o cofre antes.
+
 ## [2026-10-21] Linha do tempo do ticket: só as alterações, cada uma com o motivo
 
 **Agente/Modelo:** Claude Opus 5.5.

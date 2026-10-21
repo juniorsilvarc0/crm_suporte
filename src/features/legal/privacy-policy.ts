@@ -8,7 +8,8 @@ import { siteConfig } from "@/config/site";
 // antes de publicar. Enquanto houver um, a página se declara rascunho e não é
 // indexada (ver `isPolicyDraft`).
 //
-// Cada afirmação sobre o SISTEMA foi conferida no código em 2026-10-09:
+// Cada afirmação sobre o SISTEMA foi conferida no código em 2026-10-09 (a
+// transcrição de áudio para a IA de triagem, em 2026-10-21):
 // provedores externos (uazapi, OpenAI, agente de IA, sistema de gestão,
 // webhooks), o que é gravado e o que é só consultado, prazos de retenção
 // (registros 90 dias, fila 30 dias, backups 30/7 dias, sessão 7 dias), cookies
@@ -123,7 +124,7 @@ export const PRIVACY_POLICY: { updatedAt: string; sections: PolicySection[] } = 
           kind: "list",
           items: [
             "Provedor de conexão do WhatsApp (uazapi), que liga o nosso número de atendimento ao WhatsApp, e o próprio WhatsApp, que tem a sua política de privacidade.",
-            "OpenAI (Estados Unidos), apenas quando um atendente pede a transcrição de um áudio: o áudio é enviado para transcrição. É uma transferência internacional de dados (art. 33 da LGPD). [[Jurídico: indicar a garantia da transferência.]]",
+            "OpenAI (Estados Unidos), para transcrever áudios: quando um atendente pede a transcrição, ou quando o cliente manda um áudio numa conversa que está com o assistente de IA de triagem. O áudio é enviado para transcrição. É uma transferência internacional de dados (art. 33 da LGPD). [[Jurídico: indicar a garantia da transferência.]]",
             "O assistente de IA que faz a triagem, quando esse recurso estiver ativo: ele recebe as mensagens das conversas que estão com ele e os dados de contexto do cliente (contato, empresa, contrato e chamado em aberto). [[Identificar o fornecedor do assistente, quando houver.]]",
             "O nosso sistema de gestão ([[NOME DO SISTEMA DE GESTÃO]]), quando a integração está ligada: o sistema de suporte envia o telefone ou o CNPJ para consultar o cadastro do cliente.",
             "Sistemas que integramos ao suporte pela API ou por avisos automáticos (webhooks), com acesso limitado por permissão: recebem dados dos chamados, como título, descrição, status e identificadores.",
