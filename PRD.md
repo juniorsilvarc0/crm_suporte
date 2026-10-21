@@ -216,7 +216,7 @@ Não é Supabase Auth. É **JWT HS256 próprio** (`jose`) em cookie `crm-suporte
 |---|---|---|
 | **uazapi** | WhatsApp — único provedor suportado | `src/features/chat/lib/{senders,normalizers,connection}/uazapi.ts` |
 | **Agente de IA externo** | Recebe o relay das mensagens em modo `bot` e o aviso de takeover | `src/features/integrations/server/relay-message.ts`, `relay-envelope.ts` e `relay-ping.ts` (teste de conexão), `src/features/settings/lib/get-relay-url.ts`, `src/features/chat/lib/push-takeover.ts` |
-| **OpenAI** | Transcrição de áudio no chat; chave e modelo só no cofre (Vault), nunca no env | `src/app/api/chat/transcribe`, `src/features/settings/lib/get-runtime-environment.ts` |
+| **OpenAI** | Transcrição de áudio no chat, pedida pelo analista ou pela IA de triagem (API v1); chave e modelo só no cofre (Vault), nunca no env | `src/features/chat/lib/transcribe-message.ts`, `src/app/api/chat/transcribe`, `src/app/api/v1/conversations/[id]/messages/[message_id]/transcription`, `src/features/settings/lib/get-runtime-environment.ts` |
 | **Supabase Storage** | Mídia do chat e foto do contato no bucket **privado** `chat-media` (servidos por URL assinada via `/api/chat/media/[id]` e `/api/contacts/[id]/avatar`); avatar da equipe no público `profile-avatars` | `src/lib/storage/chat-media.ts`, `src/lib/storage/put-media.ts` |
 
 ## 11. Stack e decisões arquiteturais

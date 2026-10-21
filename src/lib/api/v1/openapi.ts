@@ -28,6 +28,7 @@ import {
   MESSAGES_PER_CONVERSATION_PER_HOUR,
   MESSAGES_PER_CONVERSATION_PER_MIN,
   messageSendBodySchema,
+  messageTranscriptionSchema,
 } from "@/lib/api/v1/conversations";
 import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "@/lib/api/v1/cursor";
 import {
@@ -316,6 +317,7 @@ export function buildOpenApiDocument() {
         HandoffResult: z.toJSONSchema(itemOf(handoffResultSchema)),
         ActiveTicket: z.toJSONSchema(activeTicketBodySchema, { io: "input" }),
         ActiveTicketResult: z.toJSONSchema(itemOf(activeTicketResultSchema)),
+        MessageTranscription: z.toJSONSchema(itemOf(messageTranscriptionSchema)),
         NoticeClaim: z.toJSONSchema(noticeClaimBodySchema, { io: "input" }),
         NoticeClaimResult: z.toJSONSchema(itemOf(noticeClaimResultSchema)),
         NoticeFinalize: z.toJSONSchema(noticeFinalizeBodySchema, { io: "input" }),
@@ -965,6 +967,39 @@ export function buildOpenApiDocument() {
             "400": errorResponse("Corpo inválido (`validation_error`) ou JSON inválido (`invalid_json`)."),
             "404": conversationNotFoundError,
             ...conversationTicketErrors,
+            ...authErrors,
+          },
+        },
+      },
+      "/conversations/{id}/messages/{message_id}/transcription": {
+        post: {
+          summary:
+            "Transcreve um áudio da conversa (OpenAI, com a chave e o modelo do cofre do CRM), para a IA entender o " +
+            "que o cliente falou. É a mesma transcrição do \"Transcrever\" do analista: o texto fica guardado na " +
+            "mensagem, então repetir sai de lá (`cached: true`), sem nova cobrança. Sem corpo e sem " +
+            "Idempotency-Key. Escopo: `conversations:read`.",
+          parameters: [
+            idParam("da conversa"),
+            {
+              name: "message_id",
+              in: "path",
+              required: true,
+              description: "UUID da mensagem de áudio (o `id` de `GET /conversations/{id}/messages`).",
+              schema: { type: "string", format: "uuid" },
+            },
+          ],
+          responses: {
+            "200": { description: "O texto do áudio.", content: json("MessageTranscription") },
+            "404": errorResponse("A mensagem não existe nesta conversa, ou um dos ids não é UUID (`not_found`)."),
+            "422": errorResponse(
+              "A mensagem não é um áudio (`not_audio`), foi apagada (`message_deleted`) ou o arquivo não pôde ser " +
+                "obtido (`audio_unavailable`)."
+            ),
+            "502": errorResponse("A OpenAI recusou ou falhou (`transcription_failed`). Repetir é seguro."),
+            "503": errorResponse(
+              "O CRM não tem a chave da OpenAI no cofre (`transcription_unavailable`), ou não deu para ler agora " +
+                "(`unavailable`, com `Retry-After`)."
+            ),
             ...authErrors,
           },
         },

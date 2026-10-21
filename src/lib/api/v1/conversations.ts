@@ -254,3 +254,11 @@ export const activeTicketResultSchema = z.strictObject({
   active_ticket_id: z.string().nullable().describe("O ticket em foco depois do pedido; null = sem foco."),
   changed: z.boolean().describe("false = o foco já era este."),
 });
+
+export const messageTranscriptionSchema = z.strictObject({
+  message_id: z.string(),
+  transcription: z.string().describe("O que foi dito no áudio, em texto."),
+  cached: z
+    .boolean()
+    .describe("true = já estava transcrito (por um analista ou por outra chamada); não houve nova cobrança."),
+});
