@@ -1473,7 +1473,7 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 - **Linha de fatos:** Aberto em · 1ª resposta · Solução.
 - **Grade `lg:grid-cols-3`:**
   - principal: descrição e timeline;
-  - lateral: `DetailRow` de `contract-card` com Empresa, Contato, Fila e categoria, Prioridade (a dica é o SLA **gravado no ticket**; só ao escolher outra prioridade mostra a política do catálogo, que é o que o novo snapshot aplicaria), Responsável, Origem, Reaberturas e Anexos;
+  - lateral: `DetailRow` de `contract-card` com Empresa, Contato, Fila e categoria, **Etiquetas** (só leitura, com o chip das conversas, `ConversationTagChips`: quem etiqueta é a IA, pela API v1; "Sem etiquetas" quando não há e "Não foi possível carregar as etiquetas." quando a leitura falhou, sem derrubar o detalhe), Prioridade (a dica é o SLA **gravado no ticket**; só ao escolher outra prioridade mostra a política do catálogo, que é o que o novo snapshot aplicaria), Responsável, Origem, Reaberturas e Anexos;
   - no celular, a lateral fica abaixo da timeline.
 - **Fila e categoria se editam juntas e só gravam em "Salvar":** o `CatalogCombobox` zera o valor enquanto a pessoa busca. Trocar a fila limpa a categoria no mesmo PATCH. A fila e a categoria atuais vêm do ticket, mesmo arquivadas.
 - **Conflito de versão (409):** alerta no topo, "Este ticket mudou em outro lugar", **mais um toast** e `router.refresh()`. No celular a lateral fica abaixo da timeline, e o alerta sozinho sairia da tela de quem agiu lá embaixo.
@@ -1485,7 +1485,7 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
 - **Timeline** (`ticket-timeline`), com o `ol` em `border-s`, sem `max-h`:
   - itens: status, evento, "Nota do ticket" (editar e apagar só pelo autor), "Nota no chat", mensagem compacta (Cliente, IA, Integração, Analista, Celular da empresa; "Automático" para mensagem do sistema sem token) com link para a conversa, e anexo;
   - a "Nota no chat" e a mensagem de um token levam o nome que ele tem na trilha: "IA" ou "Integração";
-  - o pedido de handoff (`ticket.handoff_requested`) aparece como "Pediu atendimento humano", com `HeadsetIcon`. O motivo não se repete ali: ele abre a nota interna gravada no mesmo instante, que fica logo acima. Evento sem texto próprio continua "Atividade registrada";
+  - o pedido de handoff (`ticket.handoff_requested`) aparece como "Pediu atendimento humano", com `HeadsetIcon`. O motivo não se repete ali: ele abre a nota interna gravada no mesmo instante, que fica logo acima. As etiquetas acrescentadas (`ticket.tags_added`) aparecem pelo nome ("Etiquetas: duvida, caixa"). Evento sem texto próprio continua "Atividade registrada";
   - "Carregar anteriores" monta o cursor com `URLSearchParams` (o `+` do fuso) e junta as páginas sem duplicar;
   - composer com Ctrl/⌘+Enter.
 - **Anexos** (`ticket-attachments`):
@@ -1505,7 +1505,7 @@ Para o gestor decidir, não para encher a tela. **Uma superfície com um número
 - **Amostra:** as contagens vêm do `count` (exatas); medianas, IA e gráfico, das linhas lidas (teto de 10.000). Passou do teto, uma linha avisa.
 - Falha de leitura: "Não foi possível carregar as métricas." + "Tentar de novo" (link para o mesmo período).
 - **IA × analista** (Fase 9 PR 2), numa banda: **quem abriu** (IA · analista · integração), **1ª resposta da IA** (mediana, com a amostra — a do analista já está no resumo, sem repetir) e **resolvidos sem o analista** ("de N resolvidos, sem nenhuma resposta do analista").
-- **Recortes** (Fase 9 PR 2), em **tabelas** (muitas classes = tabela, não gráfico): **Por fila** (ordem: mais abertos), **Por analista** (pelo responsável ATUAL; a carga em aberto primeiro) e **Clientes que mais abriram** (até 10, sem "Sem empresa" no ranking; o subtítulo diz se mostra todos ou os primeiros de N). Colunas iguais nas três: Abertos · Resolvidos · Em aberto agora · 1ª resposta (mediana "· n" respondidos). "Sem fila"/"Sem responsável" ficam por último, em tom secundário. A tabela rola dentro do cartão no celular.
+- **Recortes** (Fase 9 PR 2), em **tabelas** (muitas classes = tabela, não gráfico): **Por fila** (ordem: mais abertos), **Por analista** (pelo responsável ATUAL; a carga em aberto primeiro) e **Clientes que mais abriram** (até 10, sem "Sem empresa" no ranking; o subtítulo diz se mostra todos ou os primeiros de N). Colunas iguais nas três: Abertos · Resolvidos · Em aberto agora · 1ª resposta (mediana "· n" respondidos). "Sem fila"/"Sem responsável" ficam por último, em tom secundário. **Por categoria** ("Mãe › Filha" na subcategoria) e **Por etiqueta** (um ticket conta em cada etiqueta que tem; sem nenhuma, uma vez em "Sem etiqueta"), ordenados pelos mais abertos, têm uma coluna a mais depois de Resolvidos: **Sem analista**, os resolvidos sem nenhuma resposta do analista, isto é, o que a IA resolveu sozinha em cada tema. A tabela rola dentro do cartão no celular.
 
 ## §6. Estados de interface
 

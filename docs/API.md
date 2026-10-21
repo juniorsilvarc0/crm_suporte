@@ -252,6 +252,7 @@ Todos os caminhos começam com `/api/v1`. `{ref}` de ticket é o id (UUID) ou o 
 | POST | `/tickets/{ref}/transitions` | `tickets:write` | muda o status pela matriz (exige `If-Match`) |
 | POST | `/tickets/{ref}/assign` | `tickets:write` | troca ou tira o responsável (exige `If-Match`) |
 | POST | `/tickets/{ref}/comments` | `comments:write` | comentário interno, com o token como autor |
+| POST | `/tickets/{ref}/tags` | `tickets:write` | acrescenta etiquetas (só acrescenta; repetir é seguro, sem `Idempotency-Key` nem `If-Match`) |
 | POST | `/tickets/{ref}/attachments` | `attachments:write` | anexa um arquivo (multipart, campo `file`, até 50 MB) |
 | GET | `/tickets/{ref}/attachments/{attachment_id}` | `attachments:read` | link assinado do arquivo, válido por 10 minutos |
 | GET | `/tickets/{ref}/timeline` | `tickets:read` | a timeline do ticket, da mais nova para a mais antiga |
