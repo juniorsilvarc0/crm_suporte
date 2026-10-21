@@ -579,7 +579,8 @@ export function buildOpenApiDocument() {
           summary:
             "Altera título, descrição, prioridade, fila, categoria e empresa. Ausente não mexe; null tira. Status e " +
             "responsável têm rota própria. O mesmo valor de novo é no-op (`changed: false`) antes de conferir a " +
-            "versão. Escopo: `tickets:write`.",
+            "versão. `reason` (opcional) é o motivo numa linha: vai para a timeline junto das mudanças, e sozinho " +
+            "não altera nada. Escopo: `tickets:write`.",
           parameters: [ticketRefParam, ifMatchParam],
           requestBody: { required: true, content: json("TicketPatch") },
           responses: {

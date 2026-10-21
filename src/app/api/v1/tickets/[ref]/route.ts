@@ -43,7 +43,15 @@ export const PATCH = withApi<Params>(
     const parsed = ticketPatchBodySchema.safeParse(body.data);
     if (!parsed.success) return invalidInput(requestId, parsed.error);
 
-    const result = await updateTicket(supabase, { kind: "token", tokenId: token.id }, target.ticketId, target.version, parsed.data);
+    const { reason, ...patch } = parsed.data;
+    const result = await updateTicket(
+      supabase,
+      { kind: "token", tokenId: token.id },
+      target.ticketId,
+      target.version,
+      patch,
+      reason
+    );
     if (!result.ok) return ticketApiError(requestId, result.error);
 
     return respondWithTicket(supabase, requestId, target.ticketId, (ticket) => ({ ticket, changed: result.data.changed }));

@@ -280,12 +280,18 @@ export const ticketPatchBodySchema = z
       product_id: refId("Fila inválida.").optional(),
       category_id: refId("Categoria inválida.").optional(),
       customer_id: refId("Empresa inválida.").optional(),
+      reason: f.reason.describe(
+        "O motivo da alteração, numa linha (até 500 caracteres). Não é campo do ticket: vai para a timeline " +
+          "(`ticket.updated`), junto das mudanças."
+      ),
     },
     { error: BODY_MESSAGE }
   )
-  .refine((value) => Object.values(value).some((field) => field !== undefined), {
-    error: "Nada para alterar.",
-  });
+  // O motivo sozinho não altera nada.
+  .refine(
+    (value) => Object.entries(value).some(([key, field]) => key !== "reason" && field !== undefined),
+    { error: "Nada para alterar." }
+  );
 
 export const ticketTransitionBodySchema = z
   .strictObject({ to: f.status, reason: f.reason }, { error: BODY_MESSAGE })
