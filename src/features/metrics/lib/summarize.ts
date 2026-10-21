@@ -33,11 +33,20 @@ export type MetricNames = {
   products: Record<string, string>;
   users: Record<string, string>;
   customers: Record<string, string>;
+  /** Já no formato da tela: "Mãe › Filha" na subcategoria. */
+  categories: Record<string, string>;
+  tags: Record<string, string>;
 };
 
 export const TOP_CUSTOMERS = 10;
 
-type Dimension = "product_id" | "customer_id" | "assigned_to_user_id";
+type Dimension = "product_id" | "customer_id" | "assigned_to_user_id" | "category_id";
+
+/** As chaves de um ticket num recorte: uma por coluna, ou várias (etiquetas). */
+type KeysOf = (row: CreatedTicketRow | ResolvedTicketRow | OpenTicketRow) => Array<string | null>;
+
+// Sem etiqueta, o ticket conta uma vez em "Sem etiqueta".
+const tagKeys: KeysOf = (row) => (row.tag_ids.length > 0 ? row.tag_ids : [null]);
 
 /** Mediana; `null` sem amostra. Par = média dos dois do meio. */
 export function median(values: number[]): number | null {
@@ -60,25 +69,42 @@ function medianOf(samples: Array<number | null>): MedianMetric {
   return { medianMs: median(values), sample: values.length };
 }
 
-type Group = { opened: number; resolved: number; openNow: number; responses: Array<number | null> };
+type Group = {
+  opened: number;
+  resolved: number;
+  resolvedWithoutHuman: number;
+  openNow: number;
+  responses: Array<number | null>;
+};
 
-function groupBy(input: MetricsInput, dimension: Dimension): Map<string | null, Group> {
+function groupBy(input: MetricsInput, dimension: Dimension | KeysOf): Map<string | null, Group> {
+  const keysOf: KeysOf = typeof dimension === "function" ? dimension : (row) => [row[dimension]];
   const groups = new Map<string | null, Group>();
   const at = (id: string | null) => {
     let group = groups.get(id);
     if (!group) {
-      group = { opened: 0, resolved: 0, openNow: 0, responses: [] };
+      group = { opened: 0, resolved: 0, resolvedWithoutHuman: 0, openNow: 0, responses: [] };
       groups.set(id, group);
     }
     return group;
   };
   for (const row of input.created) {
-    const group = at(row[dimension]);
-    group.opened += 1;
-    if (row.first_responded_at) group.responses.push(elapsed(row.created_at, row.first_responded_at));
+    for (const key of keysOf(row)) {
+      const group = at(key);
+      group.opened += 1;
+      if (row.first_responded_at) group.responses.push(elapsed(row.created_at, row.first_responded_at));
+    }
   }
-  for (const row of input.resolved) at(row[dimension]).resolved += 1;
-  for (const row of input.open) at(row[dimension]).openNow += 1;
+  for (const row of input.resolved) {
+    for (const key of keysOf(row)) {
+      const group = at(key);
+      group.resolved += 1;
+      if (!row.first_responded_at) group.resolvedWithoutHuman += 1;
+    }
+  }
+  for (const row of input.open) {
+    for (const key of keysOf(row)) at(key).openNow += 1;
+  }
   return groups;
 }
 
@@ -94,6 +120,7 @@ function toRows(
     opened: group.opened,
     resolved: group.resolved,
     openNow: group.openNow,
+    resolvedWithoutHuman: group.resolvedWithoutHuman,
     firstResponse: medianOf(group.responses),
   }));
 }
@@ -131,8 +158,15 @@ function summarizeBreakdowns(input: MetricsInput, names: MetricNames): SupportBr
     "Sem empresa"
   );
   const customerCount = new Set(input.created.map((row) => row.customer_id).filter(Boolean)).size;
+  // Categoria e etiqueta: o tema de quem abriu, os mais pedidos primeiro.
+  const byCategory = toRows(groupBy(input, "category_id"), names.categories, "Sem categoria").sort(
+    (a, b) => b.opened - a.opened || b.openNow - a.openNow || byName(a, b)
+  );
+  const byTag = toRows(groupBy(input, tagKeys), names.tags, "Sem etiqueta").sort(
+    (a, b) => b.opened - a.opened || b.openNow - a.openNow || byName(a, b)
+  );
 
-  return { byProduct, byAssignee, byCustomer, customerCount };
+  return { byProduct, byAssignee, byCategory, byTag, byCustomer, customerCount };
 }
 
 function summarizeAiVsHuman(input: MetricsInput): AiVsHuman {

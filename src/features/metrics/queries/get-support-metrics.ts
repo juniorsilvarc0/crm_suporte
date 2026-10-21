@@ -18,6 +18,28 @@ export const METRIC_ROW_CAP = 10_000;
 // lista de tickets).
 const OPEN_STATUS_EXCLUDED = "resolvido";
 
+// As etiquetas vêm junto de cada ticket (embed pela FK de ticket_tags): uma
+// leitura só, sem lista de ids na URL.
+const TAGS_EMBED = "ticket_tags(tag_id)";
+
+type TagEmbed = { ticket_tags: Array<{ tag_id: string }> };
+
+function withTagIds<Row extends TagEmbed>({ ticket_tags, ...row }: Row): Omit<Row, "ticket_tags"> & { tag_ids: string[] } {
+  return { ...row, tag_ids: ticket_tags.map(({ tag_id }) => tag_id) };
+}
+
+// "Mãe › Filha" na subcategoria, como no detalhe do ticket; arquivadas
+// inclusive (o ticket guarda a categoria que tinha).
+function categoryNames(rows: Array<{ id: string; name: string; parent_id: string | null }>): Record<string, string> {
+  const byId = new Map(rows.map((row) => [row.id, row.name]));
+  return Object.fromEntries(
+    rows.map((row) => {
+      const parent = row.parent_id ? byId.get(row.parent_id) : undefined;
+      return [row.id, parent ? `${parent} › ${row.name}` : row.name];
+    })
+  );
+}
+
 /**
  * As métricas de suporte de uma janela: 5 leituras em paralelo e, depois de
  * agregar, os nomes dos recortes (service role). Qualquer falha devolve
@@ -32,7 +54,7 @@ export async function getSupportMetrics(range: MetricRange): Promise<SupportMetr
       supabase
         .from("tickets")
         .select(
-          "created_at, source, first_responded_at, first_ai_response_at, product_id, customer_id, assigned_to_user_id",
+          `created_at, source, first_responded_at, first_ai_response_at, product_id, customer_id, assigned_to_user_id, category_id, ${TAGS_EMBED}`,
           { count: "exact" }
         )
         .gte("created_at", range.startIso)
@@ -41,9 +63,10 @@ export async function getSupportMetrics(range: MetricRange): Promise<SupportMetr
         .limit(METRIC_ROW_CAP),
       supabase
         .from("tickets")
-        .select("created_at, resolved_at, first_responded_at, product_id, customer_id, assigned_to_user_id", {
-          count: "exact",
-        })
+        .select(
+          `created_at, resolved_at, first_responded_at, product_id, customer_id, assigned_to_user_id, category_id, ${TAGS_EMBED}`,
+          { count: "exact" }
+        )
         .gte("resolved_at", range.startIso)
         .lt("resolved_at", range.endIso)
         .order("resolved_at", { ascending: true })
@@ -51,7 +74,7 @@ export async function getSupportMetrics(range: MetricRange): Promise<SupportMetr
       // Em aberto: as linhas servem aos recortes; o total é o `count` exato.
       supabase
         .from("ticket_queue")
-        .select("product_id, customer_id, assigned_to_user_id", { count: "exact" })
+        .select(`product_id, customer_id, assigned_to_user_id, category_id, ${TAGS_EMBED}`, { count: "exact" })
         .eq("is_terminal", false)
         .neq("status", OPEN_STATUS_EXCLUDED)
         .limit(METRIC_ROW_CAP),
@@ -78,23 +101,25 @@ export async function getSupportMetrics(range: MetricRange): Promise<SupportMetr
       return { failed: true, range };
     }
 
-    const createdRows = (created.data ?? []) as CreatedTicketRow[];
+    const createdRows = (created.data ?? []).map(withTagIds) as CreatedTicketRow[];
     const resolvedRows = (resolved.data ?? []).flatMap((row): ResolvedTicketRow[] =>
-      row.resolved_at ? [{ ...row, resolved_at: row.resolved_at }] : []
+      row.resolved_at ? [{ ...withTagIds(row), resolved_at: row.resolved_at }] : []
     );
-    const openRows = (openNow.data ?? []) as OpenTicketRow[];
+    const openRows = (openNow.data ?? []).map(withTagIds) as OpenTicketRow[];
 
-    // Os nomes, só depois de agregar: filas e equipe são poucas (lidas
-    // inteiras); dos clientes, só os do ranking.
+    // Os nomes, só depois de agregar: filas, equipe, categorias e etiquetas são
+    // poucas (lidas inteiras); dos clientes, só os do ranking.
     const topIds = topCustomerIds({ created: createdRows, resolved: resolvedRows, open: openRows });
-    const [products, users, customers] = await Promise.all([
+    const [products, users, categories, tags, customers] = await Promise.all([
       supabase.from("products").select("id, name"),
       supabase.from("app_users").select("id, name"),
+      supabase.from("ticket_categories").select("id, name, parent_id"),
+      supabase.from("tags").select("id, name"),
       topIds.length > 0
         ? supabase.from("customers").select("id, legal_name, trade_name").in("id", topIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
-    const namesFailure = [products, users, customers].find((result) => result.error);
+    const namesFailure = [products, users, categories, tags, customers].find((result) => result.error);
     if (namesFailure?.error) {
       console.error("[metrics] getSupportMetrics (nomes)", namesFailure.error.code, namesFailure.error.message);
       return { failed: true, range };
@@ -103,6 +128,8 @@ export async function getSupportMetrics(range: MetricRange): Promise<SupportMetr
       products: Object.fromEntries((products.data ?? []).map((row) => [row.id, row.name])),
       users: Object.fromEntries((users.data ?? []).map((row) => [row.id, row.name])),
       customers: Object.fromEntries((customers.data ?? []).map((row) => [row.id, customerDisplayName(row)])),
+      categories: categoryNames(categories.data ?? []),
+      tags: Object.fromEntries((tags.data ?? []).map((row) => [row.id, row.name])),
     };
 
     return {

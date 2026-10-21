@@ -18,7 +18,7 @@ const metrics = (overrides: Partial<SupportMetrics> = {}): SupportMetrics => ({
   resolution: { medianMs: (3 * 24 + 4) * 3_600_000, sample: 35 },
   reopened: 2,
   daily: [],
-  breakdowns: { byProduct: [], byAssignee: [], byCustomer: [], customerCount: 0 },
+  breakdowns: { byProduct: [], byAssignee: [], byCategory: [], byTag: [], byCustomer: [], customerCount: 0 },
   aiVsHuman: { openedBy: { ai: 10, agent: 25, api: 5 }, firstAiResponse: { medianMs: 60_000, sample: 9 }, resolvedWithoutHuman: 4 },
   partial: false,
   ...overrides,
@@ -132,9 +132,12 @@ describe("MetricsBreakdowns", () => {
     opened: 4,
     resolved: 3,
     openNow: 2,
+    resolvedWithoutHuman: 1,
     firstResponse: { medianMs: 15 * 60_000, sample: 3 },
     ...overrides,
   });
+  // Os recortes que o teste não olha.
+  const none = { byProduct: [], byAssignee: [], byCategory: [], byTag: [] };
 
   it("uma tabela por recorte, com o lastro da mediana e 'Sem …' em tom secundário", () => {
     render(
@@ -143,6 +146,8 @@ describe("MetricsBreakdowns", () => {
         breakdowns={{
           byProduct: [row("ERP", "erp"), row("Sem fila", null)],
           byAssignee: [row("Ana Lima", "ana", { firstResponse: { medianMs: null, sample: 0 } })],
+          byCategory: [row("Suporte › Caixa", "caixa")],
+          byTag: [row("duvida", "duvida"), row("Sem etiqueta", null)],
           byCustomer: [row("Padaria São João", "padaria")],
           customerCount: 1,
         }}
@@ -162,29 +167,39 @@ describe("MetricsBreakdowns", () => {
 
     const clientes = within(screen.getByRole("region", { name: "Clientes que mais abriram" }));
     expect(clientes.getByRole("row", { name: /Padaria São João/ })).toHaveTextContent("Padaria São João4321");
+
+    // "Sem analista" (resolvidos sem resposta do analista) só em categoria e etiqueta.
+    const categorias = within(screen.getByRole("region", { name: "Por categoria" }));
+    expect(categorias.getByRole("columnheader", { name: "Sem analista" })).toBeInTheDocument();
+    expect(categorias.getByRole("row", { name: /Suporte › Caixa/ })).toHaveTextContent("Suporte › Caixa43121");
+    const etiquetas = within(screen.getByRole("region", { name: "Por etiqueta" }));
+    expect(etiquetas.getByText("Um ticket conta em cada etiqueta que tem")).toBeInTheDocument();
+    expect(etiquetas.getByRole("row", { name: /duvida/ })).toHaveTextContent("duvida43121");
+    expect(etiquetas.getByText("Sem etiqueta")).toHaveClass("text-muted-foreground");
+    expect(filas.queryByRole("columnheader", { name: "Sem analista" })).not.toBeInTheDocument();
   });
 
   it("o subtítulo do ranking de clientes diz se mostra todos ou só os primeiros", () => {
     const customers = Array.from({ length: 3 }, (_, index) => row(`Cliente ${index}`, `c${index}`));
     const { rerender } = render(
-      <MetricsBreakdowns days={30} breakdowns={{ byProduct: [], byAssignee: [], byCustomer: customers.slice(0, 1), customerCount: 1 }} />
+      <MetricsBreakdowns days={30} breakdowns={{ ...none, byCustomer: customers.slice(0, 1), customerCount: 1 }} />
     );
     expect(screen.getByText("O único cliente com ticket aberto no período")).toBeInTheDocument();
 
-    rerender(<MetricsBreakdowns days={30} breakdowns={{ byProduct: [], byAssignee: [], byCustomer: customers, customerCount: 3 }} />);
+    rerender(<MetricsBreakdowns days={30} breakdowns={{ ...none, byCustomer: customers, customerCount: 3 }} />);
     expect(screen.getByText("Os 3 clientes com ticket aberto no período")).toBeInTheDocument();
 
     const ten = Array.from({ length: 10 }, (_, index) => row(`Cliente ${index}`, `c${index}`));
-    rerender(<MetricsBreakdowns days={30} breakdowns={{ byProduct: [], byAssignee: [], byCustomer: ten, customerCount: 12 }} />);
+    rerender(<MetricsBreakdowns days={30} breakdowns={{ ...none, byCustomer: ten, customerCount: 12 }} />);
     expect(screen.getByText("Os 10 com mais tickets abertos, de 12 clientes no período")).toBeInTheDocument();
   });
 
   it("recorte sem ticket diz isso, sem tabela vazia", () => {
     render(
-      <MetricsBreakdowns days={7} breakdowns={{ byProduct: [], byAssignee: [], byCustomer: [], customerCount: 0 }} />
+      <MetricsBreakdowns days={7} breakdowns={{ ...none, byCustomer: [], customerCount: 0 }} />
     );
 
-    expect(screen.getAllByText("Nenhum ticket no período.")).toHaveLength(3);
+    expect(screen.getAllByText("Nenhum ticket no período.")).toHaveLength(5);
     expect(screen.getByText("Nenhum ticket de empresa cadastrada no período")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });

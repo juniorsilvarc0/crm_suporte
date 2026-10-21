@@ -32,7 +32,8 @@ function fakeQuery(result: unknown) {
 
 /**
  * Uma resposta por leitura, na ordem: abertos, resolvidos, em aberto,
- * estourados, reaberturas — e depois os nomes: filas, equipe, clientes.
+ * estourados, reaberturas — e depois os nomes: filas, equipe, categorias,
+ * etiquetas, clientes.
  */
 function queueQueries(...results: unknown[]) {
   const queries = results.map(fakeQuery);
@@ -58,6 +59,8 @@ describe("getSupportMetrics", () => {
       ok(null, 0),
       ok(null, 0),
       ok([], 0),
+      ok([], 0),
+      ok([], 0),
       ok([], 0)
     );
 
@@ -71,11 +74,13 @@ describe("getSupportMetrics", () => {
       "ticket_status_history",
       "products",
       "app_users",
+      "ticket_categories",
+      "tags",
     ]);
     expect(created).toEqual([
       [
         "select",
-        "created_at, source, first_responded_at, first_ai_response_at, product_id, customer_id, assigned_to_user_id",
+        "created_at, source, first_responded_at, first_ai_response_at, product_id, customer_id, assigned_to_user_id, category_id, ticket_tags(tag_id)",
         { count: "exact" },
       ],
       ["gte", "created_at", "2026-10-03T00:00:00-03:00"],
@@ -87,7 +92,7 @@ describe("getSupportMetrics", () => {
     expect(resolved).toContainEqual(["lt", "resolved_at", "2026-10-10T00:00:00-03:00"]);
     // Em aberto agora: nem encerrado nem resolvido — e sem recorte de período.
     expect(openNow).toEqual([
-      ["select", "product_id, customer_id, assigned_to_user_id", { count: "exact" }],
+      ["select", "product_id, customer_id, assigned_to_user_id, category_id, ticket_tags(tag_id)", { count: "exact" }],
       ["eq", "is_terminal", false],
       ["neq", "status", "resolvido"],
       ["limit", METRIC_ROW_CAP],
@@ -104,7 +109,15 @@ describe("getSupportMetrics", () => {
   });
 
   it("monta as métricas com as contagens exatas do banco e os nomes dos recortes", async () => {
-    const row = { first_ai_response_at: null, product_id: "erp", customer_id: "padaria", assigned_to_user_id: "ana" };
+    // Como o PostgREST entrega: as etiquetas no embed `ticket_tags`.
+    const row = {
+      first_ai_response_at: null,
+      product_id: "erp",
+      customer_id: "padaria",
+      assigned_to_user_id: "ana",
+      category_id: "caixa",
+      ticket_tags: [{ tag_id: "duvida" }],
+    };
     const calls = queueQueries(
       ok(
         [
@@ -114,18 +127,28 @@ describe("getSupportMetrics", () => {
         2
       ),
       ok([{ ...row, created_at: "2026-10-08T12:00:00Z", resolved_at: "2026-10-09T12:00:00Z", first_responded_at: null }], 1),
-      ok([{ product_id: "erp", customer_id: "padaria", assigned_to_user_id: "ana" }], 7),
+      ok([{ product_id: "erp", customer_id: "padaria", assigned_to_user_id: "ana", category_id: null, ticket_tags: [] }], 7),
       ok(null, 3),
       ok(null, 1),
       ok([{ id: "erp", name: "ERP" }], 1),
       ok([{ id: "ana", name: "Ana Lima" }], 1),
+      ok(
+        [
+          { id: "caixa", name: "Caixa", parent_id: "suporte" },
+          { id: "suporte", name: "Suporte", parent_id: null },
+        ],
+        2
+      ),
+      ok([{ id: "duvida", name: "duvida" }], 1),
       ok([{ id: "padaria", legal_name: "Padaria S. João Ltda", trade_name: "Padaria São João" }], 1)
     );
 
     const metrics = await getSupportMetrics(range);
 
+    expect(calls[7]).toEqual([["select", "id, name, parent_id"]]);
+    expect(calls[8]).toEqual([["select", "id, name"]]);
     // Só os clientes do ranking são lidos.
-    expect(calls[7]).toEqual([
+    expect(calls[9]).toEqual([
       ["select", "id, legal_name, trade_name"],
       ["in", "id", ["padaria"]],
     ]);
@@ -133,6 +156,15 @@ describe("getSupportMetrics", () => {
     expect(metrics.breakdowns.byProduct[0]).toMatchObject({ name: "ERP", opened: 2, resolved: 1, openNow: 1 });
     expect(metrics.breakdowns.byAssignee[0]).toMatchObject({ name: "Ana Lima", openNow: 1 });
     expect(metrics.breakdowns.byCustomer[0]).toMatchObject({ name: "Padaria São João", opened: 2 });
+    // A subcategoria com o nome da mãe; o em aberto sem categoria nem etiqueta cai no "Sem …".
+    expect(metrics.breakdowns.byCategory.map((r) => [r.name, r.opened, r.resolvedWithoutHuman, r.openNow])).toEqual([
+      ["Suporte › Caixa", 2, 1, 0],
+      ["Sem categoria", 0, 0, 1],
+    ]);
+    expect(metrics.breakdowns.byTag.map((r) => [r.name, r.opened, r.resolved, r.openNow])).toEqual([
+      ["duvida", 2, 1, 0],
+      ["Sem etiqueta", 0, 0, 1],
+    ]);
     expect(metrics.aiVsHuman.resolvedWithoutHuman).toBe(1);
 
     expect(metrics).toMatchObject({
@@ -158,6 +190,8 @@ describe("getSupportMetrics", () => {
       ok(null, 0),
       ok(null, 0),
       { data: null, count: null, error: { code: "42501", message: "sem permissão" } },
+      ok([], 0),
+      ok([], 0),
       ok([], 0)
     );
 

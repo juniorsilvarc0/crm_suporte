@@ -11,6 +11,9 @@ export type CreatedTicketRow = {
   product_id: string | null;
   customer_id: string | null;
   assigned_to_user_id: string | null;
+  category_id: string | null;
+  /** As etiquetas do ticket (ticket_tags), lidas junto. */
+  tag_ids: string[];
 };
 
 /** Ticket resolvido na janela (pela `resolved_at` atual). */
@@ -21,6 +24,8 @@ export type ResolvedTicketRow = {
   product_id: string | null;
   customer_id: string | null;
   assigned_to_user_id: string | null;
+  category_id: string | null;
+  tag_ids: string[];
 };
 
 /** Ticket em aberto agora: só o que os recortes precisam. */
@@ -28,6 +33,8 @@ export type OpenTicketRow = {
   product_id: string | null;
   customer_id: string | null;
   assigned_to_user_id: string | null;
+  category_id: string | null;
+  tag_ids: string[];
 };
 
 /** Uma linha de recorte (fila, cliente ou analista). `id` nulo = "sem …". */
@@ -37,12 +44,18 @@ export type BreakdownRow = {
   opened: number;
   resolved: number;
   openNow: number;
+  /** Dos resolvidos na janela, os sem nenhuma resposta do analista. */
+  resolvedWithoutHuman: number;
   firstResponse: MedianMetric;
 };
 
 export type SupportBreakdowns = {
   byProduct: BreakdownRow[];
   byAssignee: BreakdownRow[];
+  /** Pela categoria atual ("Mãe › Filha" na subcategoria). */
+  byCategory: BreakdownRow[];
+  /** Um ticket conta em cada etiqueta que tem; sem etiqueta, em "Sem etiqueta". */
+  byTag: BreakdownRow[];
   /** Os clientes com mais tickets abertos na janela (até 10). */
   byCustomer: BreakdownRow[];
   /** Quantos clientes diferentes tiveram ticket aberto na janela. */
