@@ -248,7 +248,7 @@ Todos os caminhos começam com `/api/v1`. `{ref}` de ticket é o id (UUID) ou o 
 | GET | `/tickets` | `tickets:read` | tickets, com cursor e filtros (`q` exige também `contacts:read` e `customers:read`) |
 | POST | `/tickets` | `tickets:write` | abre um ticket na conversa; ele vira o foco da conversa |
 | GET | `/tickets/{ref}` | `tickets:read` | um ticket, com o `ETag` da versão |
-| PATCH | `/tickets/{ref}` | `tickets:write` | altera título, descrição, prioridade, fila, categoria e empresa (exige `If-Match`) |
+| PATCH | `/tickets/{ref}` | `tickets:write` | altera título, descrição, prioridade, fila, categoria e empresa (exige `If-Match`); `reason` opcional, o motivo que a timeline mostra |
 | POST | `/tickets/{ref}/transitions` | `tickets:write` | muda o status pela matriz (exige `If-Match`) |
 | POST | `/tickets/{ref}/assign` | `tickets:write` | troca ou tira o responsável (exige `If-Match`) |
 | POST | `/tickets/{ref}/comments` | `comments:write` | comentário interno, com o token como autor |

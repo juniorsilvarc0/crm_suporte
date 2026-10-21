@@ -134,7 +134,7 @@ curl -sS -X PATCH "$BASE/api/v1/tickets/<ref>" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H 'If-Match: W/"3"' \
-  -d '{ "priority": "critica", "description": "Atinge todas as filiais." }'
+  -d '{ "priority": "critica", "description": "Atinge todas as filiais.", "reason": "Todas as filiais pararam" }'
 ```
 
 Mudar o status:
@@ -144,7 +144,7 @@ curl -sS -X POST "$BASE/api/v1/tickets/<ref>/transitions" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H 'If-Match: W/"4"' \
-  -d '{ "to": "aguardando_cliente" }'
+  -d '{ "to": "aguardando_cliente", "reason": "Pedi o print da tela de erro" }'
 ```
 
 Comentário interno (nunca vai ao cliente):
@@ -183,6 +183,7 @@ curl -sS -X POST "$BASE/api/v1/tickets/<ref>/attachments" \
 
 - `<ref>` é o `id` do ticket ou o protocolo (`number`), só o número.
 - `PATCH` altera `title`, `description`, `priority`, `product_id`, `category_id` e `customer_id`. Ausente não mexe; `null` tira.
+- **Diga o motivo em toda alteração** (`reason`, numa linha, até 500 caracteres), no `PATCH` e na transição: a linha do tempo do ticket mostra cada alteração com "Motivo: …" embaixo, e é por ela que o time entende o que aconteceu sem ler a conversa. No `PATCH`, o motivo não é campo do ticket e, sozinho, não altera nada.
 - `GET /ticket-statuses` mostra a matriz. Destino fora dela: `409 invalid_transition`, com `allowed` e `current`. Cancelar exige `reason`.
 - A resposta de `PATCH`, `transitions` e `assign` é `{ "ticket": {...}, "changed": true|false }` (mais `from` e `to` na transição), com o `ETag` novo.
 - `412 version_conflict`: alguém alterou o ticket. Leia de novo (`GET /tickets/<ref>`) e decida se ainda faz sentido repetir.

@@ -444,6 +444,18 @@ describe("PATCH /api/v1/tickets/{ref}", () => {
     });
   });
 
+  it("o motivo vai junto das mudanças, aparado; vazio é sem motivo", async () => {
+    await patch({ title: "[Problema] PDV trava", priority: "alta", reason: "  Cliente relatou que o PDV trava  " });
+    expect(rpcArgs("ticket_update")).toMatchObject({
+      p_patch: { title: "[Problema] PDV trava", priority: "alta", reason: "Cliente relatou que o PDV trava" },
+    });
+
+    h.rpcCalls.length = 0;
+    await patch({ priority: "baixa", reason: "   " });
+    expect(rpcArgs("ticket_update")).toMatchObject({ p_patch: { priority: "baixa" } });
+    expect(rpcArgs("ticket_update")?.p_patch).not.toHaveProperty("reason");
+  });
+
   it("sem If-Match é 428; malformado é 400; sem chamar a RPC", async () => {
     const missing = await patch({ title: "PDV trava" }, {});
     expect(missing.status).toBe(428);
@@ -507,6 +519,8 @@ describe("PATCH /api/v1/tickets/{ref}", () => {
 
   it.each([
     ["nada para alterar", {}, null],
+    ["só o motivo não altera nada", { reason: "Cliente pediu" }, null],
+    ["motivo acima de 500 caracteres", { title: "PDV trava", reason: "x".repeat(501) }, "reason"],
     ["status tem rota própria", { status: "resolvido" }, "status"],
     ["versão vai no If-Match, não no corpo", { title: "PDV trava", version: 3 }, "version"],
     ["\"\" não tira a fila: só null tira", { product_id: "" }, "product_id"],

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getTicketTimeline } from "@/features/tickets/queries/get-ticket-timeline";
+import {
+  getTicketTimeline,
+  TICKET_DETAIL_TIMELINE_SOURCES,
+} from "@/features/tickets/queries/get-ticket-timeline";
 import { ticketTimelineQuerySchema } from "@/features/tickets/schemas/ticket";
 import { requireDashboardUser } from "@/lib/auth/require-dashboard-session";
 import { createSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase/admin";
@@ -12,7 +15,8 @@ const ROUTE = "[GET /api/tickets/[id]/timeline]";
 
 /**
  * Uma página da timeline do ticket (o "Carregar anteriores" do detalhe), do
- * mais novo para o mais antigo. `before` é o `nextBefore` da página anterior,
+ * mais novo para o mais antigo, com as mesmas fontes da página: as alterações
+ * do ticket, sem a conversa (TICKET_DETAIL_TIMELINE_SOURCES). `before` é o `nextBefore` da página anterior,
  * CRU: o cliente monta a URL com URLSearchParams, porque um "+" do fuso solto
  * chega aqui como espaço e é recusado.
  *
@@ -75,7 +79,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const { items, hasMore, nextBefore } = await getTicketTimeline(id, { before });
+    // As fontes da página do detalhe: as alterações do ticket, sem a conversa.
+    const { items, hasMore, nextBefore } = await getTicketTimeline(id, {
+      before,
+      sources: TICKET_DETAIL_TIMELINE_SOURCES,
+    });
     return NextResponse.json({ ok: true, items, hasMore, nextBefore });
   } catch (cause) {
     console.error(ROUTE, cause);

@@ -27,6 +27,27 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-21] Linha do tempo do ticket: só as alterações, cada uma com o motivo
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** a linha do tempo do detalhe conta o que aconteceu com o ticket (status, resolvido, tipo, fila, prioridade, categoria), com o motivo de cada alteração numa linha, e não a conversa. Pedido do dono em 2026-10-21, olhando o SUP-1000: "não quero toda a conversa… é apenas status… se possível o resumo de uma linha do motivo da alteração".
+**Arquivos alterados:** banco: `supabase/migrations/20261021140000_motivo_na_alteracao_do_ticket.sql` (novo), `supabase/tests/ticket_update_motivo.sql` (novo); back: `src/features/tickets/server/ticket-service.ts`, `src/lib/api/v1/tickets.ts`, `src/lib/api/v1/openapi.ts`, `src/app/api/v1/tickets/[ref]/route.ts`, `src/app/api/v1/tickets.test.ts`; front: `src/features/tickets/queries/get-ticket-timeline.ts` (+teste), `src/app/api/tickets/[id]/timeline/route.ts` (+teste), `src/app/(dashboard)/app/tickets/[number]/page.tsx`, `src/features/tickets/lib/timeline-view.ts` (+teste), `src/features/tickets/components/ticket-timeline.tsx` (+teste); docs: `UI.md` §5.24, `docs/API.md`, `docs/GUIA-AGENTE-IA.md`, `docs/CONTRATO-WEBHOOKS.md`, este PROGRESS.
+**O que foi feito:**
+- **O que o SUP-1000 mostrava:** 44 mensagens das últimas 24 h ligadas na abertura (inclusive a conversa da sangria, os `#reset` e o menu da outra plataforma), foco e vínculo, e a IA alternando `aguardando_cliente` ↔ `em_atendimento` a cada pergunta, sem motivo em nada.
+- **Banco:** `ticket_update` aceita `reason` no próprio `p_patch` (até 500 caracteres, aparado; vazio é sem motivo) e grava em `ticket.updated` como `metadata = { changes, reason }`. Não é campo do ticket. **Mesma assinatura** (corpo de 20260925120900 com essa única mudança, molde do `create_ticket` em 20260929170000): uma 2ª aridade deixaria a chamada ambígua, e a própria `_tickets` recusa sobrecarga de RPC de ticket.
+- **API v1:** `PATCH /tickets/{ref}` aceita `reason` (sozinho é 400 "Nada para alterar."). As transições já aceitavam.
+- **Tela:** o detalhe lê a timeline com `TICKET_DETAIL_TIMELINE_SOURCES` (sem mensagens, sem notas do chat, sem `ticket.focused`/`unfocused`/`messages_linked`, cortados na consulta por `neq`; a nova opção `conversationEvents` vale sim por padrão, e a API v1 não muda). Cada alteração mostra "Motivo: …"; o título sai de/para; `ticket.tags_added` ganha `TagIcon`.
+**Decisões tomadas (revisar):**
+- **A conversa sai da linha do tempo do detalhe, sem botão para trazê-la de volta:** foi o pedido, e ela continua no chat ("Responder no WhatsApp"). O componente ainda sabe desenhar mensagem e nota do chat (a API v1 e quem quiser outras fontes).
+- **Notas do ticket e anexos ficam:** são registro do ticket, não conversa, e o composer de nota está na própria timeline (uma nota nova que não aparecesse seria um defeito).
+- **O motivo do pedido de humano aparece embaixo da linha**, porque a nota do chat que o repetia não está mais na lista. Se a nota estiver (outras fontes), ele não se repete.
+- **O vínculo de mensagens na abertura (24 h) continua como está:** é regra do CRM e só deixa de aparecer na tela.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos antigos de `verify-webhook.test.ts`) · test ✓ (4974 em 294 arquivos) · build ✓ · testes de SQL: `ticket_update_motivo.sql` 12 casos ✓, `tickets.sql` 164 ✓, `webhooks_saida.sql` 38 ✓, `ticket_tags.sql` 24 ✓. O filtro por `neq` repetido na mesma coluna (valores com ponto) foi conferido num PostgREST v14.14 temporário contra o banco local.
+**Pendências / próximos passos:** produção: as migrations `20261021120000` (etiquetas, PR #81) e `20261021140000` (motivo) ANTES do deploy do app; exige o "pode subir" do dono. O agente de suporte manda o motivo em cada alteração e transição (AgentForge, `services/suporte/chamado.py`).
+**Armadilhas descobertas:**
+- **`neq` repetido na mesma coluna é E no PostgREST**, e valor com ponto (`ticket.focused`) passa sem aspas. O banco falso dos testes da timeline só entende `eq`, `neq`, `lt`, `order` e `limit`: `not.in` exigiria ensiná-lo.
+- **O teste da rota da timeline simula o módulo da consulta inteiro:** constante nova exportada de lá chega `undefined` sem o `importOriginal`.
+
 ## [2026-10-21] Etiquetas do ticket: a IA etiqueta pela API v1, a tela mostra e as Métricas recortam
 
 **Agente/Modelo:** Claude Opus 5.5.

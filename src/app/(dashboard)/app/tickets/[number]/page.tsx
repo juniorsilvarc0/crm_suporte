@@ -9,7 +9,10 @@ import { formatProtocol } from "@/features/tickets/lib/protocol";
 import { getAssignableUsers } from "@/features/tickets/queries/get-assignable-users";
 import { getTicketCatalog } from "@/features/tickets/queries/get-ticket-catalog";
 import { getTicketDetail } from "@/features/tickets/queries/get-ticket-detail";
-import { getTicketTimeline } from "@/features/tickets/queries/get-ticket-timeline";
+import {
+  getTicketTimeline,
+  TICKET_DETAIL_TIMELINE_SOURCES,
+} from "@/features/tickets/queries/get-ticket-timeline";
 import type { TicketTimelinePage } from "@/features/tickets/types";
 import { getTicketFollowups } from "@/features/followups/queries/get-followups";
 import { getTicketAppointments } from "@/features/appointments/queries/get-appointments";
@@ -57,10 +60,12 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
   const [timeline, catalog, team, followups, appointments] = await Promise.all([
     // A timeline LANÇA em erro (a rota responde 500): aqui vira a seção com
     // "Tentar de novo", e o resto do detalhe abre.
-    getTicketTimeline(ticket.id).catch((error: unknown): TicketTimelinePage | null => {
-      console.error("TicketPage timeline failed", error);
-      return null;
-    }),
+    getTicketTimeline(ticket.id, { sources: TICKET_DETAIL_TIMELINE_SOURCES }).catch(
+      (error: unknown): TicketTimelinePage | null => {
+        console.error("TicketPage timeline failed", error);
+        return null;
+      }
+    ),
     getTicketCatalog(),
     getAssignableUsers(),
     // Resilientes: erro vira [] (a seção fica vazia, o resto abre).

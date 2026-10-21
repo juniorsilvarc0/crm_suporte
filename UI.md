@@ -1483,9 +1483,11 @@ Molde: §5.1 (lista) e a ficha de Clientes (detalhe). Arquivos em `src/features/
   - sem a equipe, o filtro de responsável da lista oferece só "Eu" e "Sem responsável", com "Não foi possível carregar a equipe." junto ao campo.
 - **Sem Realtime de tickets:** `router.refresh()` depois de cada ação e no `visibilitychange`.
 - **Timeline** (`ticket-timeline`), com o `ol` em `border-s`, sem `max-h`:
-  - itens: status, evento, "Nota do ticket" (editar e apagar só pelo autor), "Nota no chat", mensagem compacta (Cliente, IA, Integração, Analista, Celular da empresa; "Automático" para mensagem do sistema sem token) com link para a conversa, e anexo;
-  - a "Nota no chat" e a mensagem de um token levam o nome que ele tem na trilha: "IA" ou "Integração";
-  - o pedido de handoff (`ticket.handoff_requested`) aparece como "Pediu atendimento humano", com `HeadsetIcon`. O motivo não se repete ali: ele abre a nota interna gravada no mesmo instante, que fica logo acima. As etiquetas acrescentadas (`ticket.tags_added`) aparecem pelo nome ("Etiquetas: duvida, caixa"). Evento sem texto próprio continua "Atividade registrada";
+  - **no detalhe, só as alterações do ticket** (`TICKET_DETAIL_TIMELINE_SOURCES`, pedido do dono em 2026-10-21: "não quero toda a conversa"): status, campos (título, prioridade, fila, categoria, empresa, descrição), responsável, etiquetas, pedido de humano, "Nota do ticket" e anexo. A conversa fica no chat: mensagens, "Nota no chat", foco e vínculo de mensagens (`ticket.focused`, `ticket.unfocused`, `ticket.messages_linked`) são cortados **na consulta**, e o "Carregar anteriores" usa as mesmas fontes;
+  - **cada alteração com o motivo numa linha**, "Motivo: …" em `text-muted-foreground`, quando há: o do status (`reason` da transição) e o do evento (`metadata.reason` de `ticket.updated` e do pedido de humano);
+  - o título sai de/para ("Título: de “[Dúvida] …” para “[Problema] …”"): a troca de tipo fica à vista;
+  - o componente ainda desenha "Nota no chat" e mensagem compacta (Cliente, IA, Integração, Analista, Celular da empresa; "Automático" para mensagem do sistema sem token), com link para a conversa, para quem o chamar com essas fontes. A "Nota no chat" e a mensagem de um token levam o nome que ele tem na trilha: "IA" ou "Integração";
+  - o pedido de handoff (`ticket.handoff_requested`) aparece como "Pediu atendimento humano", com `HeadsetIcon`, e o motivo embaixo. Se a nota que ele grava no chat estiver na lista, o motivo não se repete (a nota já o diz). As etiquetas acrescentadas (`ticket.tags_added`, `TagIcon`) aparecem pelo nome ("Etiquetas: duvida, caixa"). Evento sem texto próprio continua "Atividade registrada";
   - "Carregar anteriores" monta o cursor com `URLSearchParams` (o `+` do fuso) e junta as páginas sem duplicar;
   - composer com Ctrl/⌘+Enter.
 - **Anexos** (`ticket-attachments`):

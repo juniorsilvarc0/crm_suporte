@@ -216,20 +216,23 @@ export async function createTicket(
  * Edita título, descrição, prioridade, fila, categoria ou empresa
  * (ticket_update). Só os campos presentes em `patch` vão ao banco. O mesmo
  * valor de novo é no-op (`changed: false`) antes de conferir a versão.
+ * `reason`: o motivo, numa linha, que a trilha guarda junto das mudanças
+ * (não é campo do ticket; a RPC o recebe no próprio patch).
  */
 export async function updateTicket(
   db: TicketDb,
   actor: TicketActor,
   ticketId: string,
   expectedVersion: number,
-  patch: TicketPatch
+  patch: TicketPatch,
+  reason?: string | null
 ): Promise<TicketResult<TicketChangeData>> {
   const context = "[ticket-service] updateTicket";
   const { data, error } = await db.rpc("ticket_update", {
     ...actorArgs(actor),
     p_ticket_id: ticketId,
     p_expected_version: expectedVersion,
-    p_patch: toPatchJson(patch),
+    p_patch: reason ? { ...toPatchJson(patch), reason } : toPatchJson(patch),
   });
   if (error) return rpcFailure(context, error);
 

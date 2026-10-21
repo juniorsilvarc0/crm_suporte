@@ -11,7 +11,7 @@ Um **destino** é uma URL com uma lista de eventos assinados e um segredo própr
 | Evento | Quando sai | `data` |
 |---|---|---|
 | `ticket.created` | ticket aberto (pela tela, pela API ou pela IA) | `ticket_id`, `actor_type`, `metadata` |
-| `ticket.updated` | campo do ticket alterado | `ticket_id`, `actor_type`, `metadata` (com `changes`) |
+| `ticket.updated` | campo do ticket alterado | `ticket_id`, `actor_type`, `metadata` (com `changes` e, quando quem alterou informou, `reason`) |
 | `ticket.priority_changed` | a alteração incluiu a prioridade (sai junto com `ticket.updated`) | igual ao `ticket.updated` |
 | `ticket.assigned` | responsável trocado | `ticket_id`, `actor_type`, `metadata` |
 | `ticket.status_changed` | toda transição de status (a abertura não conta: ela é `ticket.created`) | `ticket_id`, `from`, `to`, `actor_type`, `reason` |
