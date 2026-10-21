@@ -301,10 +301,51 @@ export const ticketAssignBodySchema = z.strictObject(
   { error: BODY_MESSAGE }
 );
 
+// Os limites da RPC ticket_add_tags (o nome tem o teto da tela de etiquetas).
+const TAG_NAME_MESSAGE = "Cada etiqueta tem de 1 a 30 caracteres, sem quebra de linha.";
+const TAG_LIST_MESSAGE = "Envie de 1 a 20 etiquetas.";
+const CONTROL_CHAR = /\p{Cc}/u;
+
+/** Só acrescenta: o que o ticket já tem fica, e a etiqueta nova nasce no vocabulário. */
+export const ticketTagsBodySchema = z.strictObject(
+  {
+    tags: z
+      .array(
+        z
+          .string({ error: TAG_NAME_MESSAGE })
+          .trim()
+          .min(1, TAG_NAME_MESSAGE)
+          .max(30, TAG_NAME_MESSAGE)
+          .refine((value) => !CONTROL_CHAR.test(value) && isPgSafeText(value), TAG_NAME_MESSAGE),
+        { error: TAG_LIST_MESSAGE }
+      )
+      .min(1, TAG_LIST_MESSAGE)
+      .max(20, TAG_LIST_MESSAGE)
+      .describe(
+        'Nomes das etiquetas (ex.: ["duvida", "resolvido-pela-ia"]). Sem diferença de caixa: "Dúvida" e "dúvida" ' +
+          "são a mesma, e vale o nome que já está cadastrado."
+      ),
+  },
+  { error: BODY_MESSAGE }
+);
+
 // ─── Respostas das escritas ──────────────────────────────────────────────────
 
 /** PATCH e assign: o ticket relido e se algo mudou. */
 export const ticketChangeSchema = z.strictObject({ ticket: ticketDetailSchema, changed: z.boolean() });
+/** tags: as que entraram agora e todas as do ticket. */
+export const ticketTagsResultSchema = z.strictObject({
+  added: z.array(z.string()).describe("As que entraram agora; vazio quando o ticket já tinha todas."),
+  tags: z
+    .array(
+      z.strictObject({
+        id: z.string(),
+        name: z.string(),
+        color: z.string().describe("Nome da cor na paleta do CRM (ex.: slate, amber)."),
+      })
+    )
+    .describe("Todas as etiquetas do ticket, em ordem de nome."),
+});
 /** transitions: o mesmo, com de onde para onde. */
 export const ticketTransitionResultSchema = ticketChangeSchema.extend({
   from: ticketSchema.shape.status,

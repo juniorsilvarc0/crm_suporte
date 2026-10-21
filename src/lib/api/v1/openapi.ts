@@ -44,6 +44,8 @@ import {
   ticketDetailSchema,
   ticketPatchBodySchema,
   ticketSchema,
+  ticketTagsBodySchema,
+  ticketTagsResultSchema,
   ticketTransitionBodySchema,
   ticketTransitionResultSchema,
 } from "@/lib/api/v1/tickets";
@@ -299,6 +301,8 @@ export function buildOpenApiDocument() {
         TicketPatch: z.toJSONSchema(ticketPatchBodySchema, { io: "input" }),
         TicketTransition: z.toJSONSchema(ticketTransitionBodySchema, { io: "input" }),
         TicketAssign: z.toJSONSchema(ticketAssignBodySchema, { io: "input" }),
+        TicketTags: z.toJSONSchema(itemOf(ticketTagsResultSchema)),
+        TicketTagsAdd: z.toJSONSchema(ticketTagsBodySchema, { io: "input" }),
         Comment: z.toJSONSchema(itemOf(commentSchema)),
         CommentCreate: z.toJSONSchema(commentBodySchema, { io: "input" }),
         Attachment: z.toJSONSchema(itemOf(attachmentSchema)),
@@ -679,6 +683,25 @@ export function buildOpenApiDocument() {
             "413": errorResponse("Corpo acima de 1 MB (`payload_too_large`)."),
             "415": errorResponse("Corpo fora de JSON, multipart inclusive (`unsupported_media_type`)."),
             "422": errorResponse("Idempotency-Key já usada com outra requisição (`idempotency_key_reused`)."),
+            "503": unavailableError,
+            ...authErrors,
+          },
+        },
+      },
+      "/tickets/{ref}/tags": {
+        post: {
+          summary:
+            "Acrescenta etiquetas ao ticket, com o token como autor. Só acrescenta: nada aqui tira etiqueta, e vale " +
+            "também em ticket encerrado. A etiqueta que ainda não existe é criada (cor `slate`); sem diferença de " +
+            "caixa, vale o nome já cadastrado. O que entrou vai para a timeline (`ticket.tags_added`). Repetir é " +
+            "seguro (o que o ticket já tem não entra de novo); por isso não pede Idempotency-Key nem If-Match, e a " +
+            "versão do ticket não muda. Escopo: `tickets:write`.",
+          parameters: [ticketRefParam],
+          requestBody: { required: true, content: json("TicketTagsAdd") },
+          responses: {
+            "200": { description: "As que entraram agora e todas as do ticket.", content: json("TicketTags") },
+            "400": errorResponse("Corpo inválido (`validation_error`, com `fields`) ou JSON inválido (`invalid_json`)."),
+            "404": ticketNotFoundError,
             "503": unavailableError,
             ...authErrors,
           },
