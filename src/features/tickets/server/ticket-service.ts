@@ -19,6 +19,7 @@ import type {
   TicketError,
   TicketResult,
   TicketStatusKey,
+  TicketTagsData,
   TransitionTicketData,
 } from "@/features/tickets/types";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -111,6 +112,11 @@ const handoffResultSchema = z.object({
   ticket_id: uuidSchema.nullable(),
   note_id: uuidSchema.nullable(),
   conversation_external_id: externalIdSchema,
+});
+
+const addTagsResultSchema = z.object({
+  added: z.array(z.string()),
+  tags: z.array(z.object({ id: uuidSchema, name: z.string(), color: z.string() })),
 });
 
 // Só o sinal do push, lido ANTES do envelope inteiro: a RPC já fez commit, e se
@@ -385,4 +391,34 @@ export async function handoffConversation(
 
   const { conversation_id, status, changed, ticket_id, note_id } = parsed.data;
   return { ok: true, data: { conversation: { id: conversation_id, status }, changed, ticket_id, note_id } };
+}
+
+/**
+ * Acrescenta etiquetas ao ticket (ticket_add_tags). Só acrescenta: a que ainda
+ * não existe nasce no vocabulário, a que o ticket já tem não entra de novo, e
+ * o que entrou vai para a trilha (`ticket.tags_added`). Vale em ticket
+ * encerrado e não mexe na versão.
+ */
+export async function addTicketTags(
+  db: TicketDb,
+  actor: TicketActor,
+  ticketId: string,
+  names: string[]
+): Promise<TicketResult<TicketTagsData>> {
+  const context = "[ticket-service] addTicketTags";
+  const { data, error } = await db.rpc("ticket_add_tags", {
+    ...actorArgs(actor),
+    p_ticket_id: ticketId,
+    p_names: names,
+  });
+  if (error) return rpcFailure(context, error);
+
+  const parsed = addTagsResultSchema.safeParse(data);
+  if (!parsed.success) return unexpectedResult(context, parsed.error);
+
+  const { added, tags } = parsed.data;
+  return {
+    ok: true,
+    data: { added, tags: tags.map(({ id, name, color }) => ({ id, name, color })) },
+  };
 }

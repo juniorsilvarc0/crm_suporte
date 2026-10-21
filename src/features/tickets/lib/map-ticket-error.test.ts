@@ -142,6 +142,7 @@ const TAG_CASES: ReadonlyArray<readonly [string, number, string, string | undefi
   ["INVALID_SOURCE", 400, "validation", undefined],
   ["INVALID_ASSIGNEE", 400, "validation", undefined],
   ["INVALID_HANDOFF", 400, "validation", undefined],
+  ["INVALID_TAGS", 400, "validation", "tags"],
   ["FORBIDDEN", 403, "forbidden", undefined],
   ["INVALID_ACTOR", 500, "internal", undefined],
   ["INVALID_SENDER", 500, "internal", undefined],

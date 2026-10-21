@@ -157,6 +157,21 @@ curl -sS -X POST "$BASE/api/v1/tickets/<ref>/comments" \
   -d '{ "body": "Cliente informou o número da nota: 1234." }'
 ```
 
+Etiquetas (para os relatórios: o tipo do pedido, como evoluiu, como terminou):
+
+```bash
+curl -sS -X POST "$BASE/api/v1/tickets/<ref>/tags" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "tags": ["duvida", "caixa", "resolvido-pela-ia"] }'
+```
+
+- Só acrescenta: nenhuma rota tira etiqueta do ticket. Vale também em ticket resolvido ou encerrado.
+- A que ainda não existe é criada no vocabulário de etiquetas (o mesmo das conversas), na cor `slate`. Sem diferença de caixa: `Dúvida` e `dúvida` são a mesma, e vale o nome já cadastrado.
+- Repetir é seguro: o que o ticket já tem não entra de novo. Por isso não pede `Idempotency-Key` (a que vier é ignorada) nem `If-Match`, e a versão do ticket não muda.
+- Resposta: `added` (as que entraram agora) e `tags` (todas as do ticket). O que entrou aparece na timeline como `ticket.tags_added`.
+- De 1 a 20 por chamada, cada uma com até 30 caracteres. Escopo `tickets:write`, que o preset da IA já tem.
+
 Anexo (só o campo `file`, até 50 MB):
 
 ```bash

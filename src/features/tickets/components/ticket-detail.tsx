@@ -20,6 +20,7 @@ import type {
   TicketAttachment,
   TicketCatalog,
   TicketDetail,
+  TicketTag,
   TicketTeamMember,
   TicketTimelinePage,
 } from "@/features/tickets/types";
@@ -37,6 +38,8 @@ export type TicketDetailViewProps = {
   ticket: TicketDetail;
   /** `null` = a leitura dos anexos falhou (a seção diz; o resto abre). */
   attachments: TicketAttachment[] | null;
+  /** As etiquetas do ticket; `null` = a leitura falhou (a lateral diz). */
+  tags: TicketTag[] | null;
   /** A 1ª página da timeline, como veio do servidor; `null` = falhou. */
   timeline: TicketTimelinePage | null;
   catalog: TicketCatalog;
@@ -63,6 +66,7 @@ export type TicketDetailViewProps = {
 export function TicketDetailView({
   ticket,
   attachments,
+  tags,
   timeline,
   catalog,
   team,
@@ -154,6 +158,7 @@ export function TicketDetailView({
           <Section title="Detalhes">
             <TicketDetailSidebar
               ticket={ticket}
+              tags={tags}
               catalog={catalog}
               mutation={mutation}
               onAssign={() => setAssignOpen(true)}

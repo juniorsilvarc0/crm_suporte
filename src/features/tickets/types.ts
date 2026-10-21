@@ -167,6 +167,10 @@ export type TicketAttachment = {
   created_at: string;
 };
 
+// Etiqueta do ticket: do vocabulário único (`tags`, o mesmo das conversas), com
+// o nome da cor da paleta. Só se acrescenta (RPC ticket_add_tags).
+export type TicketTag = { id: string; name: string; color: string };
+
 // Timeline do detalhe: união discriminada por `kind`. `at` é o instante que
 // ordena (occurred_at da trilha, created_at do resto), cru do PostgREST. Na
 // mesma transação a trilha grava tudo com o MESMO occurred_at: a ordem entre
@@ -317,7 +321,8 @@ export type TicketErrorField =
   | "version"
   | "idempotency_key"
   | "external_id"
-  | "ai_triage";
+  | "ai_triage"
+  | "tags";
 
 // Erro de negócio do serviço de tickets (map-ticket-error). `message` é
 // amigável e nunca repassa error.message do banco. Extras por código:
@@ -373,6 +378,10 @@ export type HandoffData = {
   ticket_id: string | null;
   note_id: string | null;
 };
+
+// Etiquetas acrescentadas (ticket_add_tags). `added` = os nomes que entraram
+// agora (vazio na repetição); `tags` = todas as do ticket, pelo nome.
+export type TicketTagsData = { added: string[]; tags: TicketTag[] };
 
 // Corpo de erro de negócio das rotas de ticket (ticketErrorBody), como a tela o
 // lê. `errors` marca o campo do input; os extras só vêm no `code` que os tem.

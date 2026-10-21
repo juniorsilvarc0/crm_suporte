@@ -22,6 +22,8 @@ const created = (overrides: Partial<CreatedTicketRow> = {}): CreatedTicketRow =>
   product_id: null,
   customer_id: null,
   assigned_to_user_id: null,
+  category_id: null,
+  tag_ids: [],
   ...overrides,
 });
 
@@ -32,6 +34,8 @@ const resolved = (overrides: Partial<ResolvedTicketRow> = {}): ResolvedTicketRow
   product_id: null,
   customer_id: null,
   assigned_to_user_id: null,
+  category_id: null,
+  tag_ids: [],
   ...overrides,
 });
 
@@ -39,6 +43,8 @@ const open = (overrides: Partial<OpenTicketRow> = {}): OpenTicketRow => ({
   product_id: null,
   customer_id: null,
   assigned_to_user_id: null,
+  category_id: null,
+  tag_ids: [],
   ...overrides,
 });
 
@@ -62,7 +68,7 @@ const input = (overrides: Partial<MetricsInput> = {}): MetricsInput => {
   };
 };
 
-const NO_NAMES: MetricNames = { products: {}, users: {}, customers: {} };
+const NO_NAMES: MetricNames = { products: {}, users: {}, customers: {}, categories: {}, tags: {} };
 const summarize = (value: MetricsInput, names: MetricNames = NO_NAMES) => summarizeSupportMetrics(value, range, names);
 
 describe("período", () => {
@@ -169,6 +175,8 @@ describe("summarizeSupportMetrics — recortes", () => {
     products: { erp: "ERP", fiscal: "Fiscal" },
     users: { ana: "Ana Lima", bruno: "Bruno Costa" },
     customers: { padaria: "Padaria São João", mercado: "Mercado Bom Preço" },
+    categories: { caixa: "Suporte › Caixa", fiscal: "Suporte › Fiscal" },
+    tags: { duvida: "duvida", ia: "resolvido-pela-ia" },
   };
 
   it("por fila: abertos, resolvidos, em aberto agora e a mediana da 1ª resposta, com 'Sem fila' por último", () => {
@@ -187,9 +195,33 @@ describe("summarizeSupportMetrics — recortes", () => {
     );
 
     expect(metrics.breakdowns.byProduct).toEqual([
-      { id: "erp", name: "ERP", opened: 2, resolved: 0, openNow: 1, firstResponse: { medianMs: 20 * 60_000, sample: 2 } },
-      { id: "fiscal", name: "Fiscal", opened: 1, resolved: 1, openNow: 2, firstResponse: { medianMs: null, sample: 0 } },
-      { id: null, name: "Sem fila", opened: 1, resolved: 0, openNow: 0, firstResponse: { medianMs: null, sample: 0 } },
+      {
+        id: "erp",
+        name: "ERP",
+        opened: 2,
+        resolved: 0,
+        openNow: 1,
+        resolvedWithoutHuman: 0,
+        firstResponse: { medianMs: 20 * 60_000, sample: 2 },
+      },
+      {
+        id: "fiscal",
+        name: "Fiscal",
+        opened: 1,
+        resolved: 1,
+        openNow: 2,
+        resolvedWithoutHuman: 0,
+        firstResponse: { medianMs: null, sample: 0 },
+      },
+      {
+        id: null,
+        name: "Sem fila",
+        opened: 1,
+        resolved: 0,
+        openNow: 0,
+        resolvedWithoutHuman: 0,
+        firstResponse: { medianMs: null, sample: 0 },
+      },
     ]);
   });
 
@@ -235,6 +267,49 @@ describe("summarizeSupportMetrics — recortes", () => {
     const value = input({ created: Array.from({ length: 12 }, (_, index) => created({ customer_id: `c${index}` })) });
 
     expect(topCustomerIds(value, 10)).toHaveLength(10);
+  });
+
+  it("por categoria: o tema de quem abriu, os mais pedidos primeiro, com os resolvidos sem o analista", () => {
+    const metrics = summarize(
+      input({
+        created: [created({ category_id: "caixa" }), created({ category_id: "caixa" }), created({ category_id: "fiscal" }), created()],
+        resolved: [
+          resolved({ category_id: "caixa", first_responded_at: null }),
+          resolved({ category_id: "caixa" }),
+          resolved({ category_id: "fiscal", first_responded_at: null }),
+        ],
+        open: [open({ category_id: "fiscal" })],
+      }),
+      names
+    );
+
+    expect(
+      metrics.breakdowns.byCategory.map((row) => [row.name, row.opened, row.resolved, row.resolvedWithoutHuman, row.openNow])
+    ).toEqual([
+      ["Suporte › Caixa", 2, 2, 1, 0],
+      ["Suporte › Fiscal", 1, 1, 1, 1],
+      ["Sem categoria", 1, 0, 0, 0],
+    ]);
+  });
+
+  it("por etiqueta: o ticket conta em cada etiqueta que tem; sem etiqueta conta uma vez em 'Sem etiqueta'", () => {
+    const metrics = summarize(
+      input({
+        created: [created({ tag_ids: ["duvida", "ia"] }), created({ tag_ids: ["duvida"] }), created()],
+        resolved: [resolved({ tag_ids: ["duvida", "ia"], first_responded_at: null })],
+        open: [open({ tag_ids: ["duvida"] }), open()],
+      }),
+      names
+    );
+
+    expect(
+      metrics.breakdowns.byTag.map((row) => [row.name, row.opened, row.resolved, row.resolvedWithoutHuman, row.openNow])
+    ).toEqual([
+      ["duvida", 2, 1, 1, 1],
+      // Empate em abertos: desempata o em aberto agora, como no recorte por fila.
+      ["Sem etiqueta", 1, 0, 0, 1],
+      ["resolvido-pela-ia", 1, 1, 1, 0],
+    ]);
   });
 
   it("id sem nome não some: vira '—'", () => {

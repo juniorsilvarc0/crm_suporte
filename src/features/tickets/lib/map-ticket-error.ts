@@ -244,6 +244,16 @@ const TAG_ERRORS: ReadonlyArray<readonly [string, TicketErrorEntry]> = [
       message: "Use um motivo de 1 a 500 caracteres e um resumo de até 4.000.",
     },
   ],
+  // Etiquetas do ticket (migration 20261021120000_etiquetas_de_ticket).
+  [
+    "INVALID_TAGS",
+    {
+      status: 400,
+      code: "validation",
+      message: "Envie de 1 a 20 etiquetas, cada uma com até 30 caracteres.",
+      field: "tags",
+    },
+  ],
 
   // 403 — ator inativo ou revogado entre o guard e a RPC, ou token querendo assumir.
   [

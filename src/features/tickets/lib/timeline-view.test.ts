@@ -379,3 +379,19 @@ describe("mensagem compacta", () => {
     });
   });
 });
+
+describe("eventLines: etiquetas acrescentadas", () => {
+  const lines = (metadata: Record<string, unknown>) =>
+    eventLines(event({ event_type: "ticket.tags_added", actor_type: "ai", actor_user_id: null, metadata }), people);
+
+  it("diz quais entraram, pelo nome; uma só no singular", () => {
+    expect(lines({ tags: ["duvida", "caixa"] })).toEqual(["Etiquetas: duvida, caixa"]);
+    expect(lines({ tags: ["resolvido-pela-ia"] })).toEqual(["Etiqueta: resolvido-pela-ia"]);
+  });
+
+  it("metadata fora do formato não vira texto cru", () => {
+    expect(lines({})).toEqual(["Etiquetas acrescentadas"]);
+    expect(lines({ tags: [42, " "] })).toEqual(["Etiquetas acrescentadas"]);
+    expect(lines({ tags: "duvida" })).toEqual(["Etiquetas acrescentadas"]);
+  });
+});

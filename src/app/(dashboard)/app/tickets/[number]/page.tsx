@@ -53,7 +53,7 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
   if (detail.status === "not_found") notFound();
   if (detail.status === "error") return <DetailUnavailable />;
 
-  const { ticket, attachments, fetchedAt } = detail;
+  const { ticket, attachments, tags, fetchedAt } = detail;
   const [timeline, catalog, team, followups, appointments] = await Promise.all([
     // A timeline LANÇA em erro (a rota responde 500): aqui vira a seção com
     // "Tentar de novo", e o resto do detalhe abre.
@@ -73,6 +73,7 @@ export default async function TicketPage({ params }: { params: Promise<{ number:
       <TicketDetailView
         ticket={ticket}
         attachments={attachments}
+        tags={tags}
         timeline={timeline}
         catalog={catalog}
         team={team}

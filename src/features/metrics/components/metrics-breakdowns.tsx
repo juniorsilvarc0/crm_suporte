@@ -4,9 +4,10 @@ import type { BreakdownRow, SupportBreakdowns } from "@/features/metrics/types";
 import { formatNumber } from "@/lib/formatters/numbers";
 
 /**
- * Os recortes da janela: por fila, por analista (o responsável atual) e os
- * clientes que mais abriram. Tabelas, não gráficos: são muitas classes, e o
- * gestor compara número com número (skill dataviz: mais de ~7 classes = tabela).
+ * Os recortes da janela: por fila, por analista (o responsável atual), por
+ * categoria, por etiqueta e os clientes que mais abriram. Tabelas, não
+ * gráficos: são muitas classes, e o gestor compara número com número (skill
+ * dataviz: mais de ~7 classes = tabela).
  */
 export function MetricsBreakdowns({ breakdowns, days }: { breakdowns: SupportBreakdowns; days: number }) {
   return (
@@ -22,6 +23,20 @@ export function MetricsBreakdowns({ breakdowns, days }: { breakdowns: SupportBre
         description="Pelo responsável atual do ticket"
         firstColumn="Analista"
         rows={breakdowns.byAssignee}
+      />
+      <BreakdownTable
+        title="Por categoria"
+        description="Pela categoria atual · sem analista = resolvido sem resposta do analista"
+        firstColumn="Categoria"
+        rows={breakdowns.byCategory}
+        withoutHuman
+      />
+      <BreakdownTable
+        title="Por etiqueta"
+        description="Um ticket conta em cada etiqueta que tem"
+        firstColumn="Etiqueta"
+        rows={breakdowns.byTag}
+        withoutHuman
       />
       <div className="xl:col-span-2">
         <BreakdownTable
@@ -48,11 +63,14 @@ function BreakdownTable({
   description,
   firstColumn,
   rows,
+  withoutHuman = false,
 }: {
   title: string;
   description: string;
   firstColumn: string;
   rows: BreakdownRow[];
+  /** A coluna "Sem analista": o que a IA resolveu sozinha, por tema. */
+  withoutHuman?: boolean;
 }) {
   return (
     <section aria-label={title} className="min-w-0 rounded-xl border border-border/60 bg-card p-5 shadow-soft">
@@ -70,6 +88,7 @@ function BreakdownTable({
                 <TableHead>{firstColumn}</TableHead>
                 <TableHead className="text-right">Abertos</TableHead>
                 <TableHead className="text-right">Resolvidos</TableHead>
+                {withoutHuman ? <TableHead className="text-right">Sem analista</TableHead> : null}
                 <TableHead className="text-right">Em aberto agora</TableHead>
                 <TableHead className="text-right">1ª resposta</TableHead>
               </TableRow>
@@ -82,6 +101,9 @@ function BreakdownTable({
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(row.opened)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatNumber(row.resolved)}</TableCell>
+                  {withoutHuman ? (
+                    <TableCell className="text-right tabular-nums">{formatNumber(row.resolvedWithoutHuman)}</TableCell>
+                  ) : null}
                   <TableCell className="text-right tabular-nums">{formatNumber(row.openNow)}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatMetricDuration(row.firstResponse.medianMs)}
