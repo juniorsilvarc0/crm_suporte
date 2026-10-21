@@ -16,7 +16,8 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 // A montagem da página tem teste próprio (get-ticket-timeline.test.ts); aqui
 // vale o que a rota faz em volta dela.
-vi.mock("@/features/tickets/queries/get-ticket-timeline", () => ({
+vi.mock("@/features/tickets/queries/get-ticket-timeline", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/tickets/queries/get-ticket-timeline")>()),
   getTicketTimeline: timelineMock,
 }));
 
@@ -187,7 +188,11 @@ describe("GET /api/tickets/[id]/timeline", () => {
     const json = await response.json();
 
     expect(response.status).toBe(200);
-    expect(timelineMock).toHaveBeenCalledWith(TICKET_ID, { before: undefined });
+    // As fontes da página do detalhe: as alterações, sem a conversa.
+    expect(timelineMock).toHaveBeenCalledWith(TICKET_ID, {
+      before: undefined,
+      sources: { comments: true, messages: false, notes: false, conversationEvents: false },
+    });
     expect(json).toEqual({ ok: true, ...page });
   });
 
@@ -197,7 +202,10 @@ describe("GET /api/tickets/[id]/timeline", () => {
     const response = await get(`?${new URLSearchParams({ before: CURSOR })}`);
 
     expect(response.status).toBe(200);
-    expect(timelineMock).toHaveBeenCalledWith(TICKET_ID, { before: CURSOR });
+    expect(timelineMock).toHaveBeenCalledWith(TICKET_ID, {
+      before: CURSOR,
+      sources: { comments: true, messages: false, notes: false, conversationEvents: false },
+    });
   });
 
   it("ticket que existe com página vazia → 200 vazio, não 404", async () => {

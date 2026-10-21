@@ -18,6 +18,7 @@ import {
   PencilIcon,
   RotateCwIcon,
   StickyNoteIcon,
+  TagIcon,
   TicketIcon,
   Trash2Icon,
   UserRoundIcon,
@@ -49,6 +50,7 @@ import {
   buildTimelinePeople,
   commentToTimelineItem,
   eventLines,
+  eventReason,
   mergeTimelineItems,
   messageSenderLabel,
   messageSummary,
@@ -116,7 +118,9 @@ function leavesGap(next: TicketTimelinePage, previous: TicketTimelinePage | null
 /**
  * Timeline do ticket (spec 4b): status, eventos, notas do ticket, notas e
  * mensagens do WhatsApp e anexos numa lista só, do mais antigo para o mais
- * novo, com "Carregar anteriores" no topo e a nota nova embaixo.
+ * novo, com "Carregar anteriores" no topo e a nota nova embaixo. Desenha o que
+ * a página mandar: o detalhe manda só as alterações do ticket, sem a conversa
+ * (TICKET_DETAIL_TIMELINE_SOURCES), e cada alteração com o motivo, quando há.
  *
  * Sem Realtime: a página do servidor manda a 1ª página, e cada ação faz o
  * `router.refresh()`. A nota que a rota devolve entra na hora; a página nova
@@ -161,6 +165,7 @@ export function TicketTimeline({
   const [olderFailed, setOlderFailed] = useState(false);
   const loadingOlderRef = useRef(false);
   const [action, setAction] = useState<CommentAction | null>(null);
+  const visibleIds = useMemo(() => new Set(items.map((item) => item.id)), [items]);
 
   const cursor: Cursor | null =
     olderCursor ?? (initial ? { hasMore: initial.hasMore, nextBefore: initial.nextBefore } : null);
@@ -229,6 +234,7 @@ export function TicketTimeline({
           <TimelineEntry
             key={timelineItemKey(item)}
             item={item}
+            visibleIds={visibleIds}
             ticketId={ticketId}
             conversationId={conversationId}
             people={people}
@@ -334,6 +340,8 @@ function RetryButton({ onRetry, pending = false }: { onRetry: () => void; pendin
 
 type EntryProps = {
   item: TimelineItem;
+  /** Os ids da lista: o pedido de humano não repete o motivo que a nota dele já diz. */
+  visibleIds: ReadonlySet<string>;
   ticketId: string;
   conversationId: string;
   people: TimelinePeople;
@@ -366,6 +374,8 @@ function EntryIcon({ item }: { item: TimelineItem }) {
           return <PencilIcon className={className} />;
         case "ticket.handoff_requested":
           return <HeadsetIcon className={className} />;
+        case "ticket.tags_added":
+          return <TagIcon className={className} />;
         default:
           return <CircleDotIcon className={className} />;
       }
@@ -459,8 +469,9 @@ function StatusEntry({
   );
 }
 
-function EventEntry({ item, people, catalog }: EntryProps & { item: TimelineEventItem }) {
+function EventEntry({ item, visibleIds, people, catalog }: EntryProps & { item: TimelineEventItem }) {
   const lines = eventLines(item, people, catalog);
+  const reason = eventReason(item, visibleIds);
   return (
     <div className="min-w-0">
       {lines.map((line, index) => (
@@ -468,6 +479,11 @@ function EventEntry({ item, people, catalog }: EntryProps & { item: TimelineEven
           {line}
         </p>
       ))}
+      {reason ? (
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+          Motivo: {reason}
+        </p>
+      ) : null}
       <EntryMeta who={trailActorLabel(item, people)} at={item.at} />
     </div>
   );

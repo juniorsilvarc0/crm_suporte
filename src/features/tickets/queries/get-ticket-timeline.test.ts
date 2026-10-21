@@ -10,6 +10,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 import { compareTimelineItems } from "@/features/tickets/lib/ticket-timeline";
 import {
   getTicketTimeline,
+  TICKET_DETAIL_TIMELINE_SOURCES,
   TIMELINE_ATTACHMENT_SELECT,
   TIMELINE_COMMENT_SELECT,
   TIMELINE_EVENT_SELECT,
@@ -429,8 +430,9 @@ describe("getTicketTimeline: união", () => {
   });
 });
 
-// A API v1 liga cada parte pelo escopo do token. A tela não passa `sources` e
-// lê tudo (o 1º teste do arquivo fixa as cinco cadeias, sem `neq`).
+// A API v1 liga cada parte pelo escopo do token, e a tela do detalhe lê só as
+// alterações (TICKET_DETAIL_TIMELINE_SOURCES). Sem `sources`, lê tudo (o 1º
+// teste do arquivo fixa as cinco cadeias, sem `neq`).
 describe("getTicketTimeline: fontes cortadas na origem", () => {
   const everything = () =>
     seed({
@@ -472,7 +474,31 @@ describe("getTicketTimeline: fontes cortadas na origem", () => {
     expect(ids(page)).toEqual(["s", "e", "c", "a"]);
   });
 
-  it("tudo ligado é igual ao padrão da tela", async () => {
+  it("a tela do detalhe: as alterações do ticket, sem a conversa nem o foco e o vínculo, cortados NA CONSULTA", async () => {
+    seed({
+      status: [statusRow(9, { id: "s" })],
+      events: [
+        eventRow(8, { id: "upd", event_type: "ticket.updated", metadata: { changes: {} } }),
+        eventRow(7, { id: "foco", event_type: "ticket.focused", metadata: {} }),
+        eventRow(6, { id: "sai", event_type: "ticket.unfocused", metadata: {} }),
+        eventRow(5, { id: "vinculo", event_type: "ticket.messages_linked", metadata: { count: 44 } }),
+        eventRow(4, { id: "humano", event_type: "ticket.handoff_requested", metadata: { reason: "Pediu" } }),
+      ],
+      comments: [commentRow(3, { id: "c" })],
+      messages: [messageRow(2, { id: "msg" })],
+      attachments: [attachmentRow(1, { id: "a" })],
+    });
+
+    const page = await getTicketTimeline(TICKET, { sources: TICKET_DETAIL_TIMELINE_SOURCES });
+
+    expect(ids(page)).toEqual(["s", "upd", "humano", "c", "a"]);
+    expect(callsOf("chat_messages")).toEqual([]);
+    for (const type of ["ticket.focused", "ticket.unfocused", "ticket.messages_linked"]) {
+      expect(callsOf("ticket_events")[0]).toContainEqual(["neq", "event_type", type]);
+    }
+  });
+
+  it("tudo ligado é igual ao padrão sem `sources`", async () => {
     everything();
 
     const page = await getTicketTimeline(TICKET, { sources: { comments: true, messages: true, notes: true } });

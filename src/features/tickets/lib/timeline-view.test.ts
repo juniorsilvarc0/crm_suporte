@@ -4,6 +4,7 @@ import {
   buildTimelinePeople,
   commentToTimelineItem,
   eventLines,
+  eventReason,
   mergeTimelineItems,
   messageSenderLabel,
   messageSummary,
@@ -297,7 +298,7 @@ describe("eventLines", () => {
         "ticket.updated"
       )
     ).toEqual([
-      "Título alterado para “Erro ao emitir nota”",
+      "Título: de “Erro” para “Erro ao emitir nota”",
       "Descrição editada",
       "Prioridade: de Média para Alta",
       "Fila: Sistema Fiscal",
@@ -393,5 +394,40 @@ describe("eventLines: etiquetas acrescentadas", () => {
     expect(lines({})).toEqual(["Etiquetas acrescentadas"]);
     expect(lines({ tags: [42, " "] })).toEqual(["Etiquetas acrescentadas"]);
     expect(lines({ tags: "duvida" })).toEqual(["Etiquetas acrescentadas"]);
+  });
+});
+
+describe("eventLines: título e motivo da alteração", () => {
+  it("o título diz de onde e para onde (a troca de tipo fica à vista); sem o de, só o para", () => {
+    const updated = (changes: Record<string, unknown>) =>
+      eventLines(event({ event_type: "ticket.updated", metadata: { changes } }), people);
+
+    expect(updated({ title: { from: "[Dúvida] Sangria errada", to: "[Problema] Caixa travou" } })).toEqual([
+      "Título: de “[Dúvida] Sangria errada” para “[Problema] Caixa travou”",
+    ]);
+    expect(updated({ title: { to: "Caixa travou" } })).toEqual(["Título alterado para “Caixa travou”"]);
+    expect(updated({ title: {} })).toEqual(["Título alterado"]);
+  });
+});
+
+describe("eventReason", () => {
+  const reasonOf = (eventType: string, metadata: Record<string, unknown>, visible?: ReadonlySet<string>) =>
+    eventReason(event({ event_type: eventType, metadata }), visible);
+
+  it("o motivo da alteração, aparado; sem motivo, nada", () => {
+    expect(reasonOf("ticket.updated", { changes: {}, reason: "  Cliente relatou travamento  " })).toBe(
+      "Cliente relatou travamento"
+    );
+    expect(reasonOf("ticket.updated", { changes: {} })).toBeNull();
+    expect(reasonOf("ticket.updated", { changes: {}, reason: "   " })).toBeNull();
+    expect(reasonOf("ticket.updated", { changes: {}, reason: 42 })).toBeNull();
+  });
+
+  it("pedido de humano: o motivo aparece, a menos que a nota do chat (que já o diz) esteja na lista", () => {
+    const metadata = { reason: "Cliente pediu um atendente", note_id: "m3" };
+
+    expect(reasonOf("ticket.handoff_requested", metadata)).toBe("Cliente pediu um atendente");
+    expect(reasonOf("ticket.handoff_requested", metadata, new Set(["outro"]))).toBe("Cliente pediu um atendente");
+    expect(reasonOf("ticket.handoff_requested", metadata, new Set(["m3"]))).toBeNull();
   });
 });

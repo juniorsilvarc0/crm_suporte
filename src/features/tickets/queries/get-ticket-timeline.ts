@@ -147,8 +147,19 @@ const readStatusHistory: Reader = async (db, ticketId, before, limit) => {
   });
 };
 
-const readEvents: Reader = async (db, ticketId, before, limit) => {
+// Os eventos que só dizem respeito à conversa, e não ao ticket: o foco e as
+// mensagens vinculadas na abertura.
+export const CONVERSATION_EVENT_TYPES = [
+  "ticket.focused",
+  "ticket.unfocused",
+  "ticket.messages_linked",
+] as const;
+
+const readEvents = (includeConversationEvents: boolean): Reader => async (db, ticketId, before, limit) => {
   let query = db.from("ticket_events").select(TIMELINE_EVENT_SELECT).eq("ticket_id", ticketId);
+  if (!includeConversationEvents) {
+    for (const type of CONVERSATION_EVENT_TYPES) query = query.neq("event_type", type);
+  }
   if (before) query = query.lt("occurred_at", before);
   const result = await query
     .order("occurred_at", { ascending: false })
@@ -283,16 +294,31 @@ export type TimelineSources = {
   messages: boolean;
   /** Notas internas no chat (só valem com `messages`). */
   notes: boolean;
+  /** Foco e mensagens vinculadas (CONVERSATION_EVENT_TYPES). Ausente = sim. */
+  conversationEvents?: boolean;
 };
 
 const ALL_SOURCES: TimelineSources = { comments: true, messages: true, notes: true };
+
+/**
+ * A timeline do detalhe (/app/tickets/[number]) é a das ALTERAÇÕES do ticket:
+ * status, campos, responsável, etiquetas, pedido de humano, notas e anexos. A
+ * conversa (mensagens, notas do chat, foco e vínculo) fica no chat. A página e
+ * o "Carregar anteriores" usam as mesmas fontes, senão as páginas não batem.
+ */
+export const TICKET_DETAIL_TIMELINE_SOURCES: TimelineSources = {
+  comments: true,
+  messages: false,
+  notes: false,
+  conversationEvents: false,
+};
 
 const skipSource: Reader = async () => ({ items: [], hitLimit: false });
 
 function readersFor(sources: TimelineSources): readonly Reader[] {
   return [
     readStatusHistory,
-    readEvents,
+    readEvents(sources.conversationEvents ?? true),
     sources.comments ? readComments : skipSource,
     sources.messages ? readMessages(sources.notes) : skipSource,
     readAttachments,

@@ -199,6 +199,58 @@ describe("TicketTimeline", () => {
     expect(request).not.toHaveTextContent("Cliente pediu um atendente");
   });
 
+  it("o pedido de humano sem a nota na lista (o detalhe não traz a conversa): o motivo sai embaixo", () => {
+    renderTimeline(
+      page([
+        event({
+          event_type: "ticket.handoff_requested",
+          actor_type: "ai",
+          actor_user_id: null,
+          metadata: { reason: "Precisa de acesso remoto", note_id: "m9" },
+        }),
+      ])
+    );
+
+    const [request] = entries();
+    expect(request).toHaveTextContent("Pediu atendimento humano");
+    expect(request).toHaveTextContent("Motivo: Precisa de acesso remoto");
+  });
+
+  it("a alteração de campo com o motivo numa linha, e o título de/para", () => {
+    renderTimeline(
+      page([
+        event({
+          event_type: "ticket.updated",
+          actor_type: "ai",
+          actor_user_id: null,
+          metadata: {
+            changes: {
+              title: { from: "[Dúvida] Sangria errada", to: "[Problema] Caixa travou" },
+              priority: { from: "media", to: "alta" },
+            },
+            reason: "Cliente relatou que o caixa travou depois da orientação",
+          },
+        }),
+        event({
+          id: "ev-tags",
+          at: "2026-09-26T12:00:00+00:00",
+          event_type: "ticket.tags_added",
+          actor_type: "ai",
+          actor_user_id: null,
+          metadata: { tags: ["evoluiu-para-problema"] },
+        }),
+      ])
+    );
+
+    const [tags, change] = entries();
+    expect(change).toHaveTextContent("Título: de “[Dúvida] Sangria errada” para “[Problema] Caixa travou”");
+    expect(change).toHaveTextContent("Prioridade: de Média para Alta");
+    expect(change).toHaveTextContent("Motivo: Cliente relatou que o caixa travou depois da orientação");
+    expect(change).toHaveTextContent("IA");
+    expect(tags).toHaveTextContent("Etiqueta: evoluiu-para-problema");
+    expect(tags).not.toHaveTextContent("Motivo");
+  });
+
   it("o token de integração tem um nome só: na nota, na mensagem e na trilha", () => {
     renderTimeline(
       page([

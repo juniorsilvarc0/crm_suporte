@@ -152,10 +152,14 @@ function updatedLines(raw: unknown, catalog: TimelineCatalog | null | undefined)
   if (!changes) return ["Dados do ticket alterados"];
 
   const lines: string[] = [];
+  // De e para: a troca de "[Dúvida] …" para "[Problema] …" fica à vista.
   const title = asRecord(changes.title);
   if (title) {
+    const from = typeof title.from === "string" ? title.from.trim() : "";
     const to = typeof title.to === "string" ? title.to.trim() : "";
-    lines.push(to ? `Título alterado para “${to}”` : "Título alterado");
+    lines.push(
+      from && to ? `Título: de “${from}” para “${to}”` : to ? `Título alterado para “${to}”` : "Título alterado"
+    );
   }
   if (changes.description !== undefined) lines.push("Descrição editada");
 
@@ -241,8 +245,7 @@ export function eventLines(
     case "ticket.updated":
       return updatedLines(meta.changes, catalog);
     case "ticket.handoff_requested":
-      // Sem o motivo: ele abre a nota interna que conversation_handoff grava no
-      // mesmo instante, e a nota aparece colada a esta linha.
+      // O motivo sai em eventReason, na linha de baixo.
       return ["Pediu atendimento humano"];
     case "ticket.tags_added": {
       // ticket_add_tags grava só as que entraram, pelo nome que ficou cadastrado.
@@ -255,6 +258,25 @@ export function eventLines(
     default:
       return ["Atividade registrada"];
   }
+}
+
+/**
+ * O motivo do evento, numa linha (`metadata.reason`): o da alteração
+ * (`ticket.updated`) e o do pedido de humano. No pedido de humano ele também
+ * abre a nota que conversation_handoff grava no chat no mesmo instante: se a
+ * nota está na lista (`visibleIds`), o motivo não se repete aqui.
+ */
+export function eventReason(
+  item: Pick<TimelineEventItem, "event_type" | "metadata">,
+  visibleIds?: ReadonlySet<string>
+): string | null {
+  const reason = typeof item.metadata.reason === "string" ? item.metadata.reason.trim() : "";
+  if (!reason) return null;
+  const noteId = item.metadata.note_id;
+  if (item.event_type === "ticket.handoff_requested" && typeof noteId === "string" && visibleIds?.has(noteId)) {
+    return null;
+  }
+  return reason;
 }
 
 const SENDER_LABEL: Record<TicketMessageSender, string> = {
