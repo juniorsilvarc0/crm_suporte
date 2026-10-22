@@ -5,8 +5,9 @@ import userEvent from "@testing-library/user-event";
 // Em teste: o colar global e a fiação dos tickets. O que busca na rede ou
 // desenha por conta própria (rodapé, bolhas, painel do contato, tela de envio,
 // chip) vira marcador; o chip e o painel guardam as props que receberam.
-const { useConversationTicketsMock, received } = vi.hoisted(() => ({
+const { useConversationTicketsMock, useCustomerContextMock, received } = vi.hoisted(() => ({
   useConversationTicketsMock: vi.fn(),
+  useCustomerContextMock: vi.fn(),
   received: {
     chip: null as Record<string, unknown> | null,
     sheet: null as Record<string, unknown> | null,
@@ -21,6 +22,9 @@ vi.mock("@/features/settings/hooks/use-team-directory", () => ({
 }));
 vi.mock("@/features/tickets/hooks/use-conversation-tickets", () => ({
   useConversationTickets: (...args: unknown[]) => useConversationTicketsMock(...args),
+}));
+vi.mock("@/features/chat/hooks/use-customer-context", () => ({
+  useCustomerContext: (...args: unknown[]) => useCustomerContextMock(...args),
 }));
 vi.mock("@/features/tickets/hooks/use-ticket-catalog", () => ({
   useTicketCatalog: () => ({ catalog: null, failed: false, retry: vi.fn() }),
@@ -51,6 +55,8 @@ vi.mock("@/features/chat/components/file-preview-dialog", () => ({
 
 import { ChatView } from "@/features/chat/components/chat-view";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
+import type { UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
+import type { CustomerContextResult } from "@/features/customer-source/types";
 import type { ChatConversation, ChatMessage } from "@/features/chat/types";
 import type { ConversationTicketsState } from "@/features/tickets/hooks/use-conversation-tickets";
 
@@ -116,6 +122,13 @@ function stubTickets(): ConversationTicketsState {
   return tickets;
 }
 
+/** O cliente na TCBX do hook falso: o MESMO objeto a cada render. */
+function stubCustomerContext(result: CustomerContextResult | null = null): UseCustomerContext {
+  const state: UseCustomerContext = { loading: result === null, result, retry: vi.fn() };
+  useCustomerContextMock.mockReturnValue(state);
+  return state;
+}
+
 // O jsdom não rola: o "ir para o fim" da montagem chama `scrollTo` no contêiner.
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
 
@@ -130,6 +143,7 @@ afterAll(() => {
 
 beforeEach(() => {
   stubTickets();
+  stubCustomerContext();
 });
 
 afterEach(() => {
@@ -305,5 +319,72 @@ describe("ChatView · tickets da conversa", () => {
     );
 
     expect(tickets.notifyInbound).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChatView · cliente em atraso", () => {
+  const overdue: CustomerContextResult = {
+    state: "ok",
+    context: {
+      externalId: "33",
+      tipoPessoa: "PJ",
+      documento: "12321030000189",
+      razaoSocial: "EMPRESA LTDA",
+      nomeFantasia: "EMPRESA",
+      status: "ativo",
+      emailPrincipal: null,
+      emailFinanceiro: null,
+      telefonePrincipal: null,
+      telefoneSecundario: null,
+      contratos: [],
+      titulosEmAberto: [
+        {
+          id: 1,
+          contratoId: 40,
+          contratoNumero: "CT-40",
+          descricao: "Mensalidade",
+          tipo: "mensalidade",
+          dataEmissao: null,
+          dataVencimento: "2020-01-05",
+          valorPrincipal: 199,
+          multaValor: 0,
+          jurosValor: 0,
+          situacao: "aberto",
+          parcelaN: null,
+          parcelaDe: null,
+        },
+      ],
+      contatos: [],
+    },
+  };
+
+  it("consulta a TCBX pelo contato, uma vez; o painel recebe a MESMA leitura", async () => {
+    const user = userEvent.setup();
+    const customerContext = stubCustomerContext();
+    renderChatView();
+
+    await user.click(screen.getByRole("button", { name: "Dados de Maria Souza" }));
+
+    expect(useCustomerContextMock).toHaveBeenLastCalledWith(CONVERSATION.contact_id, true);
+    expect(received.sheet?.customerContext).toBe(customerContext);
+  });
+
+  it("com título vencido, o alerta aparece; Ver detalhes abre o painel do contato", async () => {
+    const user = userEvent.setup();
+    stubCustomerContext(overdue);
+    renderChatView();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Cliente em atraso: 1 título vencido");
+    await user.click(screen.getByRole("button", { name: "Ver detalhes" }));
+
+    expect(screen.getByText("Painel do contato")).toBeInTheDocument();
+    expect(received.sheet?.initialView).toBe("info");
+  });
+
+  it("em dia ou sem resposta da TCBX: sem alerta", () => {
+    stubCustomerContext({ state: "unavailable" });
+    renderChatView();
+
+    expect(screen.queryByText(/Cliente em atraso/)).toBeNull();
   });
 });
