@@ -56,6 +56,7 @@ import {
   noticeFinalizeBodySchema,
   noticeFinalizeResultSchema,
 } from "@/lib/api/v1/notices";
+import { contactFinancialSchema } from "@/lib/api/v1/financial";
 import { API_SCOPES } from "@/lib/api/v1/scopes";
 
 // Contrato público da API v1, servido em GET /api/v1/openapi.json (D14). Os
@@ -287,6 +288,7 @@ export function buildOpenApiDocument() {
         SlaPolicies: z.toJSONSchema(listOf(slaPolicySchema)),
         Users: z.toJSONSchema(listOf(assignableUserSchema)),
         Contact: z.toJSONSchema(itemOf(contactSchema)),
+        ContactFinancial: z.toJSONSchema(itemOf(contactFinancialSchema)),
         ContactPage: z.toJSONSchema(pageOf(contactSchema)),
         ContactCreate: z.toJSONSchema(createContactSchema, { io: "input" }),
         ContactUpdate: z.toJSONSchema(updateContactSchema, { io: "input" }),
@@ -462,6 +464,29 @@ export function buildOpenApiDocument() {
             "404": notFoundError,
             "422": errorResponse(
               "`phone` no corpo (`phone_immutable`), ou empresa arquivada ou inexistente (`invalid_customer`)."
+            ),
+            ...authErrors,
+          },
+        },
+      },
+      "/contacts/{id}/financial": {
+        get: {
+          summary:
+            "A situação do cliente do contato, consultada AO VIVO na TCBX: documento, nome fantasia, razão social, " +
+            "o selo da empresa (a regra da tela), o selo da pessoa (o papel dela no cliente: dono, financeiro, " +
+            "operacional...) e os títulos em aberto, separados em vencidos e a vencer, com os totais. Resolve pelo " +
+            "CNPJ da empresa do contato e, sem empresa, pelo telefone. A TCBX não manda boleto (link, linha " +
+            "digitável ou PIX): só vencimento e valores. Escopo: `financial:read`.",
+          parameters: [idParam("do contato")],
+          responses: {
+            "200": {
+              description: "A situação; `found: false` quando a TCBX não tem o cliente.",
+              content: json("ContactFinancial"),
+            },
+            "404": notFoundError,
+            "503": errorResponse(
+              "A TCBX não respondeu, ou não deu para ler o contato agora (`unavailable`, com `Retry-After`); ou a " +
+                "integração não está configurada (`source_not_configured`)."
             ),
             ...authErrors,
           },

@@ -110,6 +110,22 @@ curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/messages/<message
 - `503 transcription_unavailable`: o CRM não tem a chave da OpenAI no cofre. Siga sem o áudio (peça para o cliente escrever) e avise o time.
 - `422 not_audio`, `message_deleted` ou `audio_unavailable`; `502 transcription_failed` (repetir é seguro).
 
+**Situação financeira do cliente.** Com o `contact.id` do contexto:
+
+```bash
+curl -sS "$BASE/api/v1/contacts/<contact_id>/financial" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+- Escopo `financial:read` (no preset desde 2026-10-22; token mais antigo precisa de "Aplicar IA de triagem" na edição). Sem ele: `403 insufficient_scope`.
+- A consulta vai à TCBX na hora. Guarde o resultado por alguns minutos em vez de consultar a cada mensagem.
+- `data.overdue: true` quer dizer que há título vencido (vencimento antes de hoje). Os títulos vêm em `invoices_overdue` e `invoices_upcoming`, com `due_date` e `amount`.
+- Também vêm o documento (`document`), o nome fantasia (`trade_name`), o selo da empresa (`company_badge`, o mesmo da tela) e o da pessoa (`contact_role`: `dono`, `financeiro`, `operacional`, `gerente` ou `outro`; `null` quando o telefone não está entre os contatos da TCBX).
+- `found: false`: a TCBX não achou o cliente. `503 source_not_configured` ou `503 unavailable`: siga o atendimento sem a informação, nunca trave o suporte por ela.
+- Não há boleto, linha digitável nem PIX na resposta: para a 2ª via, encaminhe o cliente ao financeiro.
+
+Em dia, não fale de financeiro. Em atraso, dê um aviso breve antes de seguir com o suporte, sem valores (quem escreve pode não ser quem paga), e não repita o aviso na mesma conversa.
+
 ### 2.4 Abrir um ticket
 
 ```bash

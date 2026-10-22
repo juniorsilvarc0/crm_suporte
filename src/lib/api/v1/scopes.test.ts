@@ -41,4 +41,9 @@ describe("escopos da API v1", () => {
     // As mensagens da conversa ela lê: é com o cliente que ela fala.
     expect(hasScope(AI_TRIAGE_PRESET, "conversations:read")).toBe(true);
   });
+
+  it("a IA lê a situação financeira do cliente: avisa quem está em atraso", () => {
+    expect(API_SCOPES).toContain("financial:read");
+    expect(hasScope(AI_TRIAGE_PRESET, "financial:read")).toBe(true);
+  });
 });

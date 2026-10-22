@@ -9,6 +9,7 @@ import {
   Loader2Icon,
   PhoneIcon,
   SearchIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +24,7 @@ import { NO_TAGS } from "@/features/chat/lib/conversation-tags";
 import { useContactInfo } from "@/features/chat/hooks/use-contact-info";
 import { useCustomerContext, type UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import { isActiveContract } from "@/features/customer-source/active-contract";
+import { financialSituation } from "@/features/customer-source/financial";
 import { summarizeCustomerContext } from "@/features/customer-source/summarize";
 import {
   contactDisplayName,
@@ -49,7 +51,7 @@ import {
 } from "@/features/tickets/hooks/use-conversation-tickets";
 import { useTicketCatalog } from "@/features/tickets/hooks/use-ticket-catalog";
 import { formatCnpj } from "@/lib/formatters/cnpj";
-import { formatDate } from "@/lib/formatters/date";
+import { formatDate, getTodayAppDateKey } from "@/lib/formatters/date";
 import { formatMoney } from "@/lib/formatters/money";
 import { formatPhoneBR } from "@/lib/formatters/phone";
 import { cn } from "@/lib/utils";
@@ -108,6 +110,7 @@ export function ContactInfoSheet({
   onSearch,
   initialView = "info",
   tickets: sharedTickets,
+  customerContext: sharedCustomerContext,
 }: {
   conversation: ChatConversation;
   portalContainer: RefObject<HTMLDivElement | null>;
@@ -127,6 +130,11 @@ export function ContactInfoSheet({
    * painel lê os seus.
    */
   tickets?: ConversationTicketsState;
+  /**
+   * O cliente na TCBX, quando quem monta já o lê (o `ChatView`, para o alerta de
+   * atraso): uma consulta só por conversa. Sem ele, o painel consulta a sua.
+   */
+  customerContext?: UseCustomerContext;
 }) {
   const [open, setOpen] = useState(true);
   const [pending, setPending] = useState<PendingAction>(null);
@@ -165,8 +173,13 @@ export function ContactInfoSheet({
   const contact = info?.contact ?? null;
   const customer = info?.customer ?? null;
   // Contexto do cliente na fonte externa (TCBX): por contato (a rota resolve por
-  // CNPJ da empresa ou pelo telefone), então vale para qualquer conversa.
-  const externalContext = useCustomerContext(contact?.id ?? null, Boolean(contact));
+  // CNPJ da empresa ou pelo telefone), então vale para qualquer conversa. Com o
+  // de quem monta, a consulta própria nem sai (`null`).
+  const ownExternalContext = useCustomerContext(
+    sharedCustomerContext ? null : (contact?.id ?? null),
+    !sharedCustomerContext && Boolean(contact)
+  );
+  const externalContext = sharedCustomerContext ?? ownExternalContext;
   // A empresa tem contrato ATIVO na TCBX? O selo interno (contract_status) é nulo
   // para empresa TCBX; sem isto, o grupo "Empresa" mostraria "Sem contrato" ao
   // lado do "Ativo" do grupo da TCBX. Mesma precedência da ficha de Clientes (#53).
@@ -692,6 +705,10 @@ function ExternalContextGroup({ state }: { state: UseCustomerContext }) {
   }
 
   const summary = summarizeCustomerContext(result.context);
+  // Vencido = antes de hoje; o "Próx. vencimento" é o próximo A VENCER — com o
+  // mínimo de todos, o cliente em atraso via uma data passada como "próxima".
+  const situation = financialSituation(result.context, getTodayAppDateKey());
+  const overdueCount = situation.overdue.length;
   const contractLabel =
     summary.contratoCount > 1
       ? `${summary.contratoCount} contratos`
@@ -708,9 +725,14 @@ function ExternalContextGroup({ state }: { state: UseCustomerContext }) {
       {summary.situacao ? <InfoRow label="Situação" value={capitalize(summary.situacao)} /> : null}
       {contractLabel ? <InfoRow label="Contrato" value={contractLabel} /> : null}
       <InfoRow label="Em aberto" value={openLabel} />
-      {summary.quantidadeEmAberto > 0 && summary.proximoVencimento ? (
-        <InfoRow label="Próx. vencimento" value={formatDate(summary.proximoVencimento)} />
+      {overdueCount > 0 ? (
+        <InfoRow
+          icon={<TriangleAlertIcon className="text-amber-600 dark:text-amber-400" />}
+          label="Vencidos"
+          value={`${overdueCount} ${overdueCount === 1 ? "título" : "títulos"} · ${formatMoney(situation.totalOverdue)} · desde ${formatDate(situation.oldestOverdue)}`}
+        />
       ) : null}
+      {situation.nextDue ? <InfoRow label="Próx. vencimento" value={formatDate(situation.nextDue)} /> : null}
     </InfoGroup>
   );
 }

@@ -31,7 +31,7 @@ describe("acesso do token", () => {
     expect(describeTokenAccess({ scopes: [], actor_type: "api" })).toBe("Sem escopo");
     expect(describeTokenAccess({ scopes: [...AI_TRIAGE_PRESET], actor_type: "ai" })).toBe("IA de triagem");
     // Os escopos da IA num token de integração não são "IA de triagem".
-    expect(describeTokenAccess({ scopes: [...AI_TRIAGE_PRESET], actor_type: "api" })).toBe("12 escopos");
+    expect(describeTokenAccess({ scopes: [...AI_TRIAGE_PRESET], actor_type: "api" })).toBe("13 escopos");
     expect(describeTokenAccess({ scopes: ["tickets:read"], actor_type: "api" })).toBe("1 escopo");
   });
 
