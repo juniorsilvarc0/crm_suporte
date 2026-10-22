@@ -27,6 +27,11 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-22] Deploy: alerta de cliente em atraso e situação financeira para a IA no ar (#85)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "pode subir"):** `deploy/publicar.sh` a partir de `origin/main` @ `bfedfaa069bb`, terminado às 21:38 UTC. Sem migration. Rodízio limpo (web2 às 21:37, web às 21:38); `verificar` ✓; `/api/v1/health` 200; o OpenAPI público expõe `GET /contacts/{id}/financial` e o schema `ContactFinancial`, e a rota responde 401 sem token; logs das réplicas sem erro. O token da IA de triagem em produção ainda NÃO tem `financial:read`: até o dono acrescentá-lo (Integrações › API do CRM, editar o token), a rota responde 403 ao agente, que para de pedir por 10 min e atende como antes. Rollback do app: `prd-rollback` = `018498d6ccd9` (#84).
+
 ## [2026-10-22] Cliente em atraso: alerta no chat e situação financeira para a IA (API v1)
 
 **Agente/Modelo:** Claude Opus 5.5.
@@ -54,6 +59,11 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 - **`formatMoney` arredonda para reais inteiros** (R$ 402). O alerta e o painel usam ele, para bater com a linha "Em aberto". O valor exato está na API (`amount`).
 - **Teste do `ChatView` que espia o `fetch`** (o do "Assumir") quebra com qualquer hook novo que busque na montagem: o `mockResolvedValue` devolve o MESMO `Response`, e a 1ª leitura consome o corpo. Simule o hook (`useCustomerContext` já está simulado no teste).
 
+## [2026-10-21] Deploy: transcrição de áudio para a IA no ar (#84)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "pode subir"):** `deploy/publicar.sh` a partir de `origin/main` @ `018498d6ccd9`, terminado às 20:09 UTC. Sem migration. Rodízio limpo (web2 às 20:08, web às 20:09); `verificar` ✓; `/api/v1/health` 200; o OpenAPI público expõe `POST /conversations/{id}/messages/{message_id}/transcription`; logs das réplicas sem erro. O cofre de produção ainda NÃO tem `OPENAI_API_KEY`: até o dono cadastrar, a rota responde `503 transcription_unavailable` (e o agente pede para o cliente escrever). Rollback do app: `prd-rollback` = `2b19d46cc9ea` (#81 e #82).
+
 ## [2026-10-21] A IA de triagem entende áudio: transcrição pela API v1
 
 **Agente/Modelo:** Claude Opus 5.5.
@@ -70,6 +80,11 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 **Pendências / próximos passos:** produção: o dono cadastrar `OPENAI_API_KEY` em Integrações › Variáveis (o cofre de produção não tinha nenhuma chave da OpenAI em 2026-10-21) e publicar este PR ("pode subir"). O agente de suporte (AgentForge) pede a transcrição a cada áudio do cliente e, se falhar, segue com o aviso de hoje.
 **Armadilhas descobertas:**
 - **O teste da rota do analista exige que, sem a chave, nem o cliente do banco seja criado:** por isso `transcribeChatMessage` recebe a configuração já lida, e quem chama lê o cofre antes.
+
+## [2026-10-21] Deploy: etiquetas do ticket e linha do tempo das alterações no ar (#81, #82)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "pode subir"):** `deploy/publicar.sh` a partir de `origin/main` @ `2b19d46cc9ea`, terminado às 19:31 UTC. Migrations `20261021120000_etiquetas_de_ticket` e `20261021140000_motivo_na_alteracao_do_ticket` aplicadas antes do build (baseline ✓). Rodízio limpo (web2 às 19:30, web às 19:31); `verificar` ✓; `/api/v1/health` 200; o OpenAPI público expõe `POST /tickets/{ref}/tags` e `reason` no `PATCH`; `ticket_update` com uma assinatura só; logs das réplicas sem erro. Rollback do app: `prd-rollback` = `15eada809544` (o de antes do #81). As migrations não voltam: são aditivas, e a versão anterior convive com elas.
 
 ## [2026-10-21] Linha do tempo do ticket: só as alterações, cada uma com o motivo
 
