@@ -8,6 +8,7 @@ export const API_SCOPES = [
   "contacts:write",
   "customers:read",
   "customers:write",
+  "financial:read",
   "catalog:read",
   "tickets:read",
   "tickets:write",
@@ -30,12 +31,14 @@ export type ApiScope = (typeof API_SCOPES)[number];
  * cliente na troca de status, dado à parte) e `comments:read`: a IA
  * escreve comentário interno, mas não lê comentário nem nota interna do time,
  * para não ter como repeti-los ao cliente (a mesma regra do /context).
+ * `financial:read` (2026-10-22, pedido do dono): a IA avisa o cliente em atraso.
  */
 export const AI_TRIAGE_PRESET: readonly ApiScope[] = [
   "context:read",
   "contacts:read",
   "contacts:write",
   "customers:read",
+  "financial:read",
   "catalog:read",
   "tickets:read",
   "tickets:write",

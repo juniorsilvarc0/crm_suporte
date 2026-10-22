@@ -8,6 +8,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   context: "Contexto da triagem",
   contacts: "Contatos",
   customers: "Empresas",
+  financial: "Financeiro do cliente (TCBX)",
   catalog: "Catálogos (filas, categorias e status)",
   tickets: "Tickets",
   comments: "Comentários internos",
