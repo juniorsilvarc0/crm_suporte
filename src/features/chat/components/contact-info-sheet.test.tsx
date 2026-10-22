@@ -14,6 +14,7 @@ import {
   type ContactInfoInitialView,
 } from "@/features/chat/components/contact-info-sheet";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
+import type { UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import type { ChatConversation } from "@/features/chat/types";
 import type { ConversationTicketsState } from "@/features/tickets/hooks/use-conversation-tickets";
 import type { TicketListItem } from "@/features/tickets/types";
@@ -189,11 +190,13 @@ function Harness({
   conversation,
   initialView,
   tickets,
+  customerContext,
   onClose,
 }: {
   conversation: ChatConversation;
   initialView?: ContactInfoInitialView;
   tickets?: ConversationTicketsState;
+  customerContext?: UseCustomerContext;
   onClose: () => void;
 }) {
   const conversationRef = useRef<HTMLDivElement>(null);
@@ -206,6 +209,7 @@ function Harness({
         onClose={onClose}
         initialView={initialView}
         tickets={tickets}
+        customerContext={customerContext}
       />
     </div>
   );
@@ -287,6 +291,57 @@ describe("ContactInfoSheet · contrato da empresa", () => {
     // O selo da empresa reflete a TCBX, não o selo interno (nulo) "Sem contrato".
     expect(await screen.findByText("Contrato ativo (TCBX)")).toBeInTheDocument();
     expect(screen.queryByText("Sem contrato")).not.toBeInTheDocument();
+  });
+});
+
+describe("ContactInfoSheet · cliente em atraso", () => {
+  const invoice = (id: number, due: string) => ({
+    id,
+    contratoId: 1,
+    contratoNumero: "CT-1",
+    descricao: "Mensalidade",
+    tipo: "mensalidade",
+    dataEmissao: null,
+    dataVencimento: due,
+    valorPrincipal: 199,
+    multaValor: 0,
+    jurosValor: 0,
+    situacao: "aberto",
+    parcelaN: null,
+    parcelaDe: null,
+  });
+  const shared: UseCustomerContext = {
+    loading: false,
+    retry: vi.fn(),
+    result: {
+      state: "ok",
+      context: {
+        externalId: "9",
+        tipoPessoa: "PJ",
+        documento: "41582874000181",
+        razaoSocial: "W J MOVEIS LTDA",
+        nomeFantasia: null,
+        status: "ativo",
+        emailPrincipal: null,
+        emailFinanceiro: null,
+        telefonePrincipal: null,
+        telefoneSecundario: null,
+        contratos: [],
+        titulosEmAberto: [invoice(1, "2099-01-05"), invoice(2, "2020-01-05")],
+        contatos: [],
+      },
+    },
+  };
+
+  it("com a leitura do chat, não consulta a TCBX de novo; mostra os vencidos e o próximo A VENCER", async () => {
+    const fetchMock = routeFetch({ tickets: [ticketsOk] });
+    render(<Harness conversation={CONVERSATION} customerContext={shared} onClose={vi.fn()} />);
+
+    expect(await screen.findByText("1 título · R$ 199 · desde 05/01/2020")).toBeInTheDocument();
+    expect(screen.getByText("Vencidos")).toBeInTheDocument();
+    // O vencido não passa por "próximo": o próximo é o que ainda vai vencer.
+    expect(screen.getByText("05/01/2099")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/external-context"))).toBe(false);
   });
 });
 

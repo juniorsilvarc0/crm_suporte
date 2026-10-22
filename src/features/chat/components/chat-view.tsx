@@ -36,7 +36,9 @@ import {
   type AnchorRect,
 } from "@/features/chat/components/message-context-menu";
 import { MessageSelectionBar } from "@/features/chat/components/message-selection-bar";
+import { OverdueBanner } from "@/features/chat/components/overdue-banner";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
+import { useCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import {
   MAX_ATTACHMENT_BATCH,
   appendAttachmentDrafts,
@@ -235,6 +237,9 @@ export function ChatView({
   );
   // Rótulos e matriz do chip; o `ChatView` remonta a cada conversa aberta.
   const ticketCatalog = useTicketCatalog();
+  // O cliente na TCBX: UMA leitura por conversa aberta, para o alerta de atraso
+  // e para o painel do contato, que a recebe pronta (como os tickets).
+  const customerContext = useCustomerContext(conversation.contact_id, true);
   // "Assumir": com ticket em foco, o take-over do ticket; sem, o PATCH de hoje.
   const ticketTakeOver = useConversationTakeOver({
     status: conversation.status,
@@ -836,6 +841,8 @@ export function ChatView({
         }
       />
 
+      <OverdueBanner state={customerContext} onOpenDetails={() => setContactView("info")} />
+
       {searchOpen && (
         <ConversationSearch
           conversationId={conversation.id}
@@ -1139,6 +1146,7 @@ export function ChatView({
           tagsController={tagsController}
           initialView={contactView}
           tickets={tickets}
+          customerContext={customerContext}
           onClose={() => setContactView(null)}
           onSearch={onLoadAround ? () => onSearchOpenChange(true) : undefined}
         />

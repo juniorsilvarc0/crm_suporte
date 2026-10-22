@@ -35,6 +35,19 @@ export type CustomerOpenInvoice = {
   parcelaDe: number | null;
 };
 
+/**
+ * Uma pessoa do cliente na fonte, com o papel dela (`tipo`: dono, financeiro,
+ * operacional, gerente, outro). Só o que o CRM usa: e-mail fica de fora.
+ */
+export type CustomerContact = {
+  id: number;
+  nome: string | null;
+  tipo: string | null;
+  cargo: string | null;
+  whatsapp: string | null;
+  telefone: string | null;
+};
+
 export type CustomerContext = {
   /** O id estável do cliente NA FONTE (o que amarra as bases). Sempre presente. */
   externalId: string;
@@ -49,6 +62,8 @@ export type CustomerContext = {
   telefoneSecundario: string | null;
   contratos: CustomerContract[];
   titulosEmAberto: CustomerOpenInvoice[];
+  /** As pessoas do cliente na fonte (o papel de cada uma é o "selo" da pessoa). */
+  contatos: CustomerContact[];
 };
 
 /**

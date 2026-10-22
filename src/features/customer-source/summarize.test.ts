@@ -16,6 +16,7 @@ const base: CustomerContext = {
   telefoneSecundario: null,
   contratos: [],
   titulosEmAberto: [],
+  contatos: [],
 };
 
 const invoice = (over: Partial<CustomerContext["titulosEmAberto"][number]>): CustomerContext["titulosEmAberto"][number] => ({

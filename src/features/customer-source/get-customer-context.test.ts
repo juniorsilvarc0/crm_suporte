@@ -66,6 +66,17 @@ const OK_BODY = {
       },
     ],
   },
+  contatos: [
+    {
+      id: 7,
+      nome: "Ana Dona",
+      cargo: "Sócia",
+      email: "ana@empresa.com",
+      telefone: null,
+      tipo: "dono",
+      whatsapp: "5586999784625",
+    },
+  ],
 };
 
 const envValues = (values: Record<string, string | null>) =>
@@ -138,6 +149,10 @@ describe("getCustomerContext", () => {
             parcelaN: 4,
             parcelaDe: 7,
           },
+        ],
+        // O e-mail da pessoa fica de fora: o CRM não usa.
+        contatos: [
+          { id: 7, nome: "Ana Dona", tipo: "dono", cargo: "Sócia", whatsapp: "5586999784625", telefone: null },
         ],
       },
     });
