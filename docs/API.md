@@ -50,6 +50,7 @@ O formato é `recurso:acao`. `recurso:*` no token cobre todas as ações do recu
 | `contacts:write` | achar ou criar contato (`POST /contacts`) e editar (`PATCH /contacts/{id}`) |
 | `customers:read` | ler empresas e o contrato atual |
 | `customers:write` | existe no catálogo; nenhuma rota da v1 o exige hoje |
+| `financial:read` | a situação financeira do cliente na TCBX (`GET /contacts/{id}/financial`): títulos vencidos e a vencer, com valor |
 | `catalog:read` | filas, categorias, status, políticas de SLA e equipe |
 | `tickets:read` | ler tickets e a timeline do ticket (trilha e anexos) |
 | `tickets:write` | abrir, alterar, mudar status, atribuir e escolher o ticket em foco da conversa |
@@ -62,7 +63,9 @@ O formato é `recurso:acao`. `recurso:*` no token cobre todas as ações do recu
 | `messages:send` | enviar texto ao cliente pelo WhatsApp |
 | `notices:claim` | reservado para a Fase 6; nenhuma rota o exige hoje |
 
-**Preset "IA de triagem".** Na criação do token, é a opção de acesso "IA de triagem"; na edição, o botão "Aplicar IA de triagem". O preset grava o tipo `ai`, o limite de 300 por minuto e estes escopos: `context:read`, `contacts:read`, `contacts:write`, `customers:read`, `catalog:read`, `tickets:read`, `tickets:write`, `comments:write`, `attachments:write`, `conversations:read`, `messages:send` e `conversations:handoff`.
+**Preset "IA de triagem".** Na criação do token, é a opção de acesso "IA de triagem"; na edição, o botão "Aplicar IA de triagem". O preset grava o tipo `ai`, o limite de 300 por minuto e estes escopos: `context:read`, `contacts:read`, `contacts:write`, `customers:read`, `catalog:read`, `tickets:read`, `tickets:write`, `comments:write`, `attachments:write`, `conversations:read`, `messages:send`, `conversations:handoff` e `financial:read`.
+
+`financial:read` entrou no preset em 2026-10-22: a IA dá um aviso breve ao cliente em atraso antes de seguir com o suporte. Token criado antes disso não o tem; na edição, "Aplicar IA de triagem" o acrescenta.
 
 Ficam fora do preset, de propósito:
 
@@ -242,6 +245,7 @@ Todos os caminhos começam com `/api/v1`. `{ref}` de ticket é o id (UUID) ou o 
 | POST | `/contacts` | `contacts:write` | acha a pessoa pelo telefone ou a cria (201 criado, 200 já existia) |
 | GET | `/contacts/{id}` | `contacts:read` | um contato, arquivado inclusive |
 | PATCH | `/contacts/{id}` | `contacts:write` | altera nome, e-mail, observações e empresa; o telefone é imutável |
+| GET | `/contacts/{id}/financial` | `financial:read` | o cliente do contato na TCBX, ao vivo: documento, nomes, selos da empresa e da pessoa, títulos vencidos e a vencer |
 | GET | `/customers` | `customers:read` | empresas, com cursor; filtros `q` e `cnpj` |
 | GET | `/customers/{id}` | `customers:read` | uma empresa, arquivada inclusive |
 | GET | `/customers/{id}/contract` | `customers:read` | o contrato atual, sem valor nem dia de vencimento; `data: null` se nunca teve |
@@ -272,6 +276,7 @@ Pontos que costumam surpreender:
 - **`PUT /conversations/{id}/active-ticket`** e o handoff devolvem o resultado da operação, e não a conversa. Para lê-la, `GET /conversations/{id}`.
 - **`POST /tickets/{ref}/transitions`** fora da matriz: `409 invalid_transition`, com `allowed` e `current`. Cancelar exige `reason`. A matriz é fixa; `GET /ticket-statuses` a mostra.
 - **Avisos ao cliente (`/notices/{step}/claim` e `/finalize`):** o claim responde `200` também quando recusa (`claimed: false`, com `reason`: `already_sent` ou `in_progress`). Ele não aceita `Idempotency-Key` de propósito: repetir a resposta daria `claimed: true` a duas entregas do mesmo evento. Se a resposta do claim se perder, a lease (2 min por padrão) segura o passo, e depois ele volta a ser reivindicável: o aviso atrasa, mas não duplica. No finalize, `409 notice_claim_lost` quer dizer que outra reivindicação assumiu o passo (a sua lease venceu): não reenvie. O passo a passo está em [`GUIA-AGENTE-IA.md`](GUIA-AGENTE-IA.md), seção 2.9.
+- **`GET /contacts/{id}/financial`** consulta a TCBX na hora; o CRM não guarda título. Acha o cliente pelo CNPJ da empresa do contato e, sem empresa, pelo telefone. Sem cadastro: `200` com `found: false` e `not_found_reason` (`not_found`, ou `ambiguous` quando o telefone está em mais de um cadastro). Integração desligada: `503 source_not_configured`; TCBX fora: `503 unavailable`. Vencido é o título com vencimento **antes** de hoje, no fuso do Brasil: no dia do vencimento ainda está a vencer. `amount` soma principal, multa e juros. Não há boleto, linha digitável nem PIX: a TCBX não os expõe hoje.
 - **Mensagens e timeline não trazem mídia por URL.** A mensagem traz só `media_mime_type`. O anexo do ticket sai por `GET /tickets/{ref}/attachments/{attachment_id}`.
 - **`POST /tickets/{ref}/attachments`:** no `Content-Disposition` da parte, `name="file"` e `filename="..."` vão entre aspas, sem `filename*`. É o padrão do curl, do `requests` do Python e do n8n. O `HttpClient` do .NET, no padrão, manda sem aspas e com `filename*`, e recebe `400 invalid_multipart`: monte o cabeçalho da parte à mão.
 
@@ -445,6 +450,7 @@ O que a rota faz com cada evento:
 |---|---|
 | Porta única da v1 (token, escopo, limites, corpo, idempotência, log) | `src/lib/api/v1/with-api.ts` |
 | Catálogo de escopos e preset da IA | `src/lib/api/v1/scopes.ts` |
+| Situação financeira do cliente (selos, vencidos × a vencer) | `src/lib/api/v1/financial.ts`, `src/features/customer-source/financial.ts` |
 | Envelope de erro | `src/lib/api/v1/errors.ts`, `src/lib/api/v1/responses.ts` |
 | Idempotência | `src/lib/api/v1/idempotency.ts` |
 | Cursor e parâmetros de lista | `src/lib/api/v1/cursor.ts` |

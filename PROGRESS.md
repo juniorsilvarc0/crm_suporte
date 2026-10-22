@@ -27,6 +27,33 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-22] Cliente em atraso: alerta no chat e situação financeira para a IA (API v1)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** quem atende vê na hora que o cliente está em atraso, e a IA de triagem avisa o cliente antes de seguir com o suporte. Pedido do dono em 2026-10-22.
+**Arquivos alterados:** `src/features/customer-source/financial.ts` (novo) + teste, `src/features/customer-source/types.ts` e `get-customer-context.ts` (os `contatos` da TCBX, sem e-mail) + testes, `src/lib/api/v1/financial.ts` (novo), `src/app/api/v1/contacts/[id]/financial/route.ts` (novo) + `src/app/api/v1/financial.test.ts`, `src/lib/api/v1/scopes.ts` (`financial:read`, também no preset da IA) + teste, `src/features/settings/lib/api-scope-labels.ts`, `src/lib/api/v1/openapi.ts`, `src/features/chat/components/overdue-banner.tsx` (novo) + teste, `chat-view.tsx` + teste, `contact-info-sheet.tsx` + teste; docs: `docs/API.md`, `docs/GUIA-AGENTE-IA.md`, `UI.md`, este PROGRESS.
+**O que foi feito:**
+- **`GET /api/v1/contacts/{id}/financial`** (escopo novo `financial:read`): o cliente do contato na TCBX, ao vivo. Traz documento, nome fantasia, razão social, o selo da empresa (a mesma precedência da tela, #53), o selo da pessoa (`contact_role`, o `tipo` do contato na TCBX cujo WhatsApp ou telefone é o deste número) e os títulos separados em vencidos e a vencer, com total.
+  - Acha o cliente pelo CNPJ da empresa e, sem empresa, pelo telefone, como o painel do chat.
+  - Integração desligada: `503 source_not_configured`. TCBX fora: `503 unavailable`.
+- **Alerta no chat** (UI.md §5.7.21): faixa âmbar abaixo do cabeçalho com quantos títulos vencidos, o total e desde quando. "Ver detalhes" abre o painel do contato.
+- **Painel do contato:** nova linha "Vencidos". O "Próx. vencimento" passou a ser o próximo **a vencer**; antes, para o cliente em atraso, mostrava uma data passada.
+- **Uma leitura da TCBX por conversa aberta:** o `ChatView` consulta e passa ao painel (o molde dos tickets), que não consulta de novo.
+**Decisões tomadas (revisar):**
+- **Vencido é o vencimento ANTES de hoje** (fuso do app). No dia do vencimento ninguém está em atraso.
+- **Escopo próprio, e não `customers:read`:** o resto da v1 não mostra valor nenhum (`/customers/{id}/contract` sai "sem valor nem dia de vencimento"). Quem lê o financeiro precisa de um escopo que diga isso.
+- **O preset da IA ganhou `financial:read`:** quem pediu foi o dono, para a IA avisar o atraso. Token já criado não ganha sozinho: na edição, "Aplicar IA de triagem", ou marcar o escopo.
+- **"Selo da pessoa" = o `tipo` do contato na TCBX** (dono, financeiro, operacional, gerente, outro). É o único dado de papel que a fonte tem. Leitura minha do pedido; confirmar com o dono.
+- **Sem boleto:** a TCBX não expõe link, linha digitável nem PIX (`numero_documento` vem nulo). A resposta não inventa campo; o agente encaminha a 2ª via ao financeiro.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos antigos de `verify-webhook.test.ts`) · test ✓ (298 arquivos, 5028 testes) · build ✓.
+**Pendências / próximos passos:**
+- Produção só com o "pode subir" do dono. Não tem migration.
+- No token do agente em produção: acrescentar `financial:read` (Integrações › API do CRM › editar).
+- Boleto: pedir à TCBX um campo com link, linha digitável ou PIX do título. Com ele, a rota passa a entregá-lo.
+**Armadilhas descobertas:**
+- **`formatMoney` arredonda para reais inteiros** (R$ 402). O alerta e o painel usam ele, para bater com a linha "Em aberto". O valor exato está na API (`amount`).
+- **Teste do `ChatView` que espia o `fetch`** (o do "Assumir") quebra com qualquer hook novo que busque na montagem: o `mockResolvedValue` devolve o MESMO `Response`, e a 1ª leitura consome o corpo. Simule o hook (`useCustomerContext` já está simulado no teste).
+
 ## [2026-10-21] A IA de triagem entende áudio: transcrição pela API v1
 
 **Agente/Modelo:** Claude Opus 5.5.
