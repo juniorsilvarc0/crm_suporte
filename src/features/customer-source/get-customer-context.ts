@@ -54,6 +54,15 @@ const invoiceSchema = z.object({
   parcela_de: number,
 });
 
+const personSchema = z.object({
+  id: z.number(),
+  nome: text,
+  tipo: text,
+  cargo: text,
+  whatsapp: text,
+  telefone: text,
+});
+
 // O formato cru da TCBX. Campo extra é ignorado (zod descarta o desconhecido);
 // campo com o tipo errado derruba o parse, e a leitura vira `unavailable`.
 const responseSchema = z.object({
@@ -71,6 +80,7 @@ const responseSchema = z.object({
     telefone_secundario: text,
   }),
   contratos: z.array(contractSchema).nullish(),
+  contatos: z.array(personSchema).nullish(),
   financeiro: z.object({ titulos_em_aberto: z.array(invoiceSchema).nullish() }).nullish(),
 });
 
@@ -117,6 +127,14 @@ function toContext(raw: RawResponse): CustomerContext {
       situacao: invoice.situacao ?? null,
       parcelaN: invoice.parcela_n ?? null,
       parcelaDe: invoice.parcela_de ?? null,
+    })),
+    contatos: (raw.contatos ?? []).map((person) => ({
+      id: person.id,
+      nome: person.nome ?? null,
+      tipo: person.tipo ?? null,
+      cargo: person.cargo ?? null,
+      whatsapp: person.whatsapp ?? null,
+      telefone: person.telefone ?? null,
     })),
   };
 }
