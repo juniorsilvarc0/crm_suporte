@@ -27,6 +27,12 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-28] Deploy: empresa e selos da TCBX no cabeçalho da conversa no ar (#86)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "mergeado"):** `deploy/publicar.sh` a partir de `origin/main` @ `e0c84b8f1194`, terminado às 13:59 UTC. Sem migration (livro-razão segue em 27). Rodízio limpo (web2 às 13:58, web às 13:59); `verificar` ✓ (anon 0/0, baseline 41 tabelas/90 funções, sem porta pública); worker reiniciado nas duas réplicas; `/login` 200, `/app` 307, `/api/v1/health` 200 e `/api/chat/conversations/{id}/contact` 401 sem sessão; logs das réplicas sem erro. O WhatsApp seguiu recebendo durante o deploy (35.270 → 35.289 mensagens, a última às 13:58 UTC, com a web2 já trocada). Rollback do app: `prd-rollback` = `bfedfaa069bb` (#85).
+**Armadilhas descobertas:** o CI do PR #86 falhou só no job `banco`, por limite de download do Docker Hub (`toomanyrequests: Data limit exceeded` ao baixar as imagens), não por código; o `qualidade` passou, e o CI da main no merge passou nos dois jobs. Antes de tratar falha do `banco` como regressão, ler o log do passo "Baixar imagens".
+
 ## [2026-10-28] Empresa e selos da TCBX no cabeçalho da conversa
 
 **Agente/Modelo:** Claude Opus 5.5.
