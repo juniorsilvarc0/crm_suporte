@@ -11,9 +11,11 @@ import { getIntegrationLogs } from "@/features/integrations/queries/get-integrat
 import { ApiTokensManager } from "@/features/settings/components/api-tokens-manager";
 import { AutomationSettings } from "@/features/settings/components/automation-settings";
 import { BotSignatureSettings } from "@/features/settings/components/bot-signature-settings";
+import { HandoffAlertSettings } from "@/features/settings/components/handoff-alert-settings";
 import { EnvironmentVariablesManager } from "@/features/settings/components/environment-variables-manager";
 import { RelaySigningSettings } from "@/features/settings/components/relay-signing-settings";
 import { getBotSignatureConfig } from "@/features/settings/lib/get-bot-signature";
+import { getHandoffAlertConfig } from "@/features/settings/lib/get-handoff-alert";
 import { getRelayConfig } from "@/features/settings/lib/get-relay-url";
 import { getApiTokens } from "@/features/settings/queries/get-api-tokens";
 import {
@@ -54,6 +56,7 @@ export default async function ConexaoPage({
     relayConfig,
     relaySigning,
     botSignature,
+    handoffAlert,
     environmentVariables,
     transcriptionModel,
     webhookSubscriptions,
@@ -63,6 +66,7 @@ export default async function ConexaoPage({
     getRelayConfig(),
     getRelaySigning(),
     getBotSignatureConfig(),
+    getHandoffAlertConfig(),
     getEnvironmentVariables(),
     getTranscriptionModelConfig(),
     // null = a leitura falhou: a aba diz isso, em vez de "nenhum destino".
@@ -109,6 +113,17 @@ export default async function ConexaoPage({
                   </p>
                   <div className="mt-3">
                     <BotSignatureSettings config={botSignature} />
+                  </div>
+                </div>
+
+                <div className="border-t border-border/70 pt-5">
+                  <h3 className="text-sm font-medium">Aviso de handoff à equipe</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Quando a IA passa um cliente para a equipe, o CRM avisa pelo WhatsApp: quem é, o
+                    chamado, o motivo e o link.
+                  </p>
+                  <div className="mt-3">
+                    <HandoffAlertSettings config={handoffAlert} />
                   </div>
                 </div>
               </section>
