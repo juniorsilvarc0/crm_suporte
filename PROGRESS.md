@@ -27,6 +27,11 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-28] Deploy: selo do contrato no cabeçalho da conversa no ar (#88)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**O que foi feito (produção, autorizado por "pr 88 mergeada"):** `deploy/publicar.sh` a partir de `origin/main` @ `8910ead0dcba`, depois do CI da main verde, terminado às 15:15 UTC. Sem migration (livro-razão segue em 27). Rodízio limpo (web2 às 15:14, web às 15:15); `verificar` ✓ (anon 0/0, baseline 41 tabelas/90 funções, sem porta pública); worker reiniciado nas duas réplicas; `/login` 200, `/app` 307, `/api/v1/health` 200 e `/api/chat/conversations/{id}/contact` 401 sem sessão; logs das réplicas sem erro. O WhatsApp seguiu recebendo durante o deploy (35.682 → 35.692 mensagens, a última às 15:15 UTC). Rollback do app: `prd-rollback` = `e0c84b8f1194` (#86).
+
 ## [2026-10-28] Selo do contrato no cabeçalho da conversa
 
 **Agente/Modelo:** Claude Opus 5.5.
