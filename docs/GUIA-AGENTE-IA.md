@@ -274,6 +274,7 @@ curl -sS -X POST "$BASE/api/v1/conversations/<conversation_id>/handoff" \
 - A conversa passa de `bot` para `human`. Se estava arquivada, volta para a caixa de entrada.
 - A resposta é `{ "conversation_id", "status": "human", "changed", "ticket_id", "note_id" }`, e não a conversa.
 - A volta para `bot` é só pela tela.
+- Quando a conversa muda de dono (`changed: true`), o CRM avisa a equipe pelo WhatsApp, no telefone e/ou no grupo configurados em Integrações › Agente de IA: o contato, o protocolo e o `reason`, o `summary` (até 500 caracteres) e o link. Escreva os dois pensando em quem vai ler no celular. Repetir o handoff (`changed: false`) não manda outro aviso.
 
 **Despeça-se do cliente antes do handoff.** Depois dele a conversa é `human`, e todo envio da IA responde `409 conversation_not_owned_by_ai`. A ordem certa é: enviar a mensagem de despedida ("vou transferir você para um analista"), conferir o `201`, e só então chamar o handoff.
 
