@@ -2,9 +2,12 @@ import Link from "next/link";
 import { Building2Icon, UserIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ContractStatusBadge } from "@/features/contracts/components/contract-status-badge";
+import { isActiveContract } from "@/features/customer-source/active-contract";
 import { contactRole } from "@/features/customer-source/financial";
 import { companySeals, contactRoleLabel, type CompanySealTone } from "@/features/customer-source/seals";
 import type { CustomerContextResult } from "@/features/customer-source/types";
+import { ExternalContractBadge } from "@/features/customers/components/external-contract-badge";
 import { customerDisplayName } from "@/features/customers/lib/customer-display";
 import type { CustomerSummary } from "@/features/customers/types";
 import { normalizeCnpj } from "@/lib/formatters/cnpj";
@@ -21,15 +24,16 @@ const TONE_CLASS: Record<CompanySealTone, string> = {
 };
 
 /**
- * A empresa do contato no cabeçalho da conversa, com os selos da TCBX: o da
- * empresa (o nível do sistema contratado: Ouro, Diamante…) e o da pessoa (o
- * papel dela no cliente: Dono, Financeiro…). Sem empresa ligada, nada.
+ * A empresa do contato no cabeçalho da conversa, com os selos: o do contrato
+ * (o mesmo do painel e da ficha), o nível na TCBX (Ouro, Diamante…, quando o
+ * sistema contratado traz) e o papel da pessoa no cliente (Dono, Financeiro…).
+ * Sem empresa ligada, nada.
  *
- * O nome vem do NOSSO cadastro e aparece mesmo com a TCBX fora; os selos, só
- * quando a TCBX confirmou ESTA empresa (UI §1: a tela não inventa). O nome é
- * link para a ficha da empresa — destino diferente do da foto/nome do contato,
- * que abrem o painel. A partir de `xl`: no celular e na coluna estreita, nada
- * novo no cabeçalho (a empresa segue no painel do contato).
+ * O nome e o contrato interno vêm do NOSSO cadastro e aparecem mesmo com a TCBX
+ * fora; os selos da TCBX, só quando ela confirmou ESTA empresa (UI §1: a tela
+ * não inventa). O nome é link para a ficha da empresa — destino diferente do da
+ * foto/nome do contato, que abrem o painel. A partir de `xl`: no celular e na
+ * coluna estreita, nada novo no cabeçalho (a empresa segue no painel do contato).
  */
 export function ConversationCompany({
   customer,
@@ -54,6 +58,14 @@ export function ConversationCompany({
       : null;
   const seals = confirmed ? companySeals(confirmed) : [];
   const role = confirmed ? contactRole(confirmed, phone) : null;
+  // O selo do contrato, com a precedência do painel e da ficha (#53): o contrato
+  // interno; sem ele, o contrato ativo na TCBX. Sem nenhum dos dois, nada — o
+  // "Sem contrato" do painel não vem para o cabeçalho.
+  const contractSeal = customer.contract_status ? (
+    <ContractStatusBadge status={customer.contract_status} />
+  ) : confirmed?.contratos.some(isActiveContract) ? (
+    <ExternalContractBadge />
+  ) : null;
 
   return (
     // `shrink-3`: com a coluna apertada, a empresa cede antes do nome do contato.
@@ -71,8 +83,9 @@ export function ConversationCompany({
         >
           {name}
         </Link>
-        {seals.length > 0 || role || customer.archived_at ? (
-          <span className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden">
+        {contractSeal || seals.length > 0 || role || customer.archived_at ? (
+          <span data-company-seals className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden">
+            {contractSeal}
             {seals.map((seal) => (
               <Badge key={seal.label} className={cn("border-transparent", TONE_CLASS[seal.tone])} title={seal.systems.join(" · ")}>
                 <span className="sr-only">Selo da empresa: </span>

@@ -436,7 +436,7 @@ describe("ChatView · empresa no cabeçalho", () => {
     expect(received.sheet?.contactInfo).toBe(contactInfo);
   });
 
-  it("com empresa ligada, o cabeçalho mostra o nome (link para a ficha) e o selo da TCBX", () => {
+  it("com empresa ligada, o cabeçalho mostra o nome (link para a ficha), o selo do contrato e o nível da TCBX", () => {
     stubContactInfo(COMPANY);
     stubCustomerContext({
       state: "ok",
@@ -476,6 +476,7 @@ describe("ChatView · empresa no cabeçalho", () => {
       "href",
       `/app/clientes/${COMPANY.id}`
     );
+    expect(screen.getByText("Contrato ativo (TCBX)")).toBeInTheDocument();
     expect(screen.getByText(/Selo da empresa:/).parentElement).toHaveTextContent("Selo da empresa: Ouro");
   });
 

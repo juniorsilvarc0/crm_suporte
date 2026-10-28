@@ -103,13 +103,13 @@ describe("ConversationCompany", () => {
     );
 
     expect(screen.getByRole("link", { name: "Abrir empresa Empresa Exemplo" })).toBeInTheDocument();
-    expect(screen.queryByText(/Selo da empresa|Papel na empresa/)).toBeNull();
+    expect(screen.queryByText(/Selo da empresa|Papel na empresa|Contrato ativo/)).toBeNull();
   });
 
   it("empresa sem CNPJ: sem selo (a TCBX foi consultada pelo telefone, não por ela)", () => {
     render(<ConversationCompany customer={{ ...CUSTOMER, cnpj: null }} context={ok()} phone={PHONE} />);
 
-    expect(screen.queryByText(/Selo da empresa|Papel na empresa/)).toBeNull();
+    expect(screen.queryByText(/Selo da empresa|Papel na empresa|Contrato ativo/)).toBeNull();
   });
 
   it("número que não está entre os contatos da TCBX: só os selos da empresa", () => {
@@ -127,7 +127,46 @@ describe("ConversationCompany", () => {
     render(<ConversationCompany customer={CUSTOMER} context={context} phone={PHONE} />);
 
     expect(screen.getByRole("link", { name: "Abrir empresa Empresa Exemplo" })).toBeInTheDocument();
-    expect(screen.queryByText(/Selo da empresa|Papel na empresa/)).toBeNull();
+    expect(screen.queryByText(/Selo da empresa|Papel na empresa|Contrato ativo|Sem contrato/)).toBeNull();
+  });
+
+  it("selo do contrato: com contrato ativo na TCBX, 'Contrato ativo (TCBX)' (o mesmo do painel), antes dos outros", () => {
+    render(<ConversationCompany customer={CUSTOMER} context={ok()} phone={PHONE} />);
+
+    const contract = screen.getByText("Contrato ativo (TCBX)");
+    expect(document.querySelector("[data-company-seals]")?.firstElementChild).toContainElement(contract);
+  });
+
+  it("selo do contrato: o contrato interno tem precedência sobre o da TCBX", () => {
+    render(<ConversationCompany customer={{ ...CUSTOMER, contract_status: "suspenso" }} context={ok()} phone={PHONE} />);
+
+    expect(screen.getByText("Contrato suspenso")).toBeInTheDocument();
+    expect(screen.queryByText("Contrato ativo (TCBX)")).toBeNull();
+  });
+
+  it("selo do contrato: o interno aparece mesmo com a TCBX fora", () => {
+    render(
+      <ConversationCompany customer={{ ...CUSTOMER, contract_status: "ativo" }} context={{ state: "unavailable" }} phone={PHONE} />
+    );
+
+    expect(screen.getByText("Contrato ativo")).toBeInTheDocument();
+  });
+
+  it("sem contrato (nem interno nem vigente na TCBX): nenhum selo de contrato — o 'Sem contrato' do painel não vem", () => {
+    const encerrado = contract(9, [{ id: 9, nome: "Sistema A (Ouro)" }]);
+    render(
+      <ConversationCompany
+        customer={CUSTOMER}
+        context={ok({ contratos: [{ ...encerrado, statusVigencia: "encerrado" }] })}
+        phone={PHONE}
+      />
+    );
+
+    expect(screen.queryByText(/Contrato ativo|Sem contrato/)).toBeNull();
+    // Contrato que não está vigente também não qualifica o nível.
+    expect(screen.queryByText(/Selo da empresa/)).toBeNull();
+    // O papel da pessoa segue: ela continua sendo da empresa na TCBX.
+    expect(screen.getByText(/Papel na empresa:/).parentElement).toHaveTextContent("Papel na empresa: Dono");
   });
 
   it("empresa arquivada aparece como tal", () => {
