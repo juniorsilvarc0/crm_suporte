@@ -27,6 +27,29 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-28] Selo do contrato no cabeçalho da conversa
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** o cabeçalho da conversa mostra o selo de contrato que o CRM já tem para a empresa (o mesmo do painel e da ficha), e nada quando ela não tem contrato. Pedido do dono em 2026-10-28, depois de ver no ar (#86) uma empresa só com o papel da pessoa, sem selo nenhum.
+**Arquivos alterados:** `src/features/chat/components/conversation-company.tsx` (+ teste), `chat-view.test.tsx`; docs: `UI.md` §5.7.22, este PROGRESS.
+**O que foi feito:**
+- **Diagnóstico, só leitura em produção:**
+  - a empresa do caso tem um único contrato vigente, com um sistema sem nível no nome. Não havia bug: a API da TCBX não traz nível nenhum para ela, nem em outro campo (conferido caminho a caminho na resposta);
+  - das 170 empresas com conversa nas últimas 2 semanas, só 28 têm nível na TCBX;
+  - o "selo de contrato" que o CRM mostra hoje é o da situação do contrato. Não há contrato interno nem plano em produção (0 e 0), então ele vem da TCBX: 239 das 241 empresas aparecem como "Contrato ativo (TCBX)".
+- **Selo no cabeçalho:** `ConversationCompany` mostra, antes do nível e do papel, o selo do contrato com a precedência da ficha (#53). Primeiro o contrato interno (`ContractStatusBadge`); sem ele, "Contrato ativo (TCBX)" (`ExternalContractBadge`) quando a TCBX confirma contrato vigente desta empresa (mesmo CNPJ). Sem nenhum dos dois, nada.
+
+**Decisões tomadas:**
+- **Reuso dos componentes do painel e da ficha**, para o selo ser idêntico nos três lugares.
+- **Lado da TCBX com a guarda de CNPJ** já usada no nível e no papel. O contrato interno não depende da TCBX e aparece mesmo com ela fora.
+- **Nível (Ouro, Diamante) e papel mantidos.**
+- **Gancho `data-company-seals`** na fileira de selos, para o teste não depender de classe do Tailwind.
+
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos de `verify-webhook.test.ts` já existiam) · test ✓ (300 arquivos, 5.065 testes) · build ✓.
+**Pendências / próximos passos:**
+- A mesma precedência (interno → TCBX → "Sem contrato") está repetida no painel, na ficha, na lista de empresas e agora no cabeçalho (este sem o "Sem contrato"). Se mudar de novo, vale extrair um componente único.
+- O nível das empresas sem nível segue dependendo da TCBX.
+
 ## [2026-10-28] Deploy: empresa e selos da TCBX no cabeçalho da conversa no ar (#86)
 
 **Agente/Modelo:** Claude Opus 5.5.
