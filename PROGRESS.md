@@ -27,6 +27,57 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-28] Empresa e selos da TCBX no cabeçalho da conversa
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** com o contato ligado a uma empresa, o cabeçalho da conversa mostra o nome dela e os selos da TCBX: o da empresa (o nível do sistema contratado: Ouro, Diamante…) e o da pessoa (o papel dela no cliente: Dono, Financeiro…). Pedido do dono em 2026-10-28.
+**Arquivos alterados:**
+- `src/features/customer-source/types.ts` e `get-customer-context.ts` (+ teste): `contratos[].sistemas` da TCBX;
+- `src/features/customer-source/seals.ts` (novo) + teste;
+- `src/features/chat/components/conversation-company.tsx` (novo) + teste;
+- `chat-header.tsx` (+ teste): espaço `company` depois da identidade;
+- `chat-view.tsx` (+ teste): lê o cadastro do contato e o passa ao cabeçalho e ao painel;
+- `contact-info-sheet.tsx` (+ teste): recebe `contactInfo`; ligar e desligar empresa relê a TCBX;
+- `src/features/chat/hooks/use-contact-info.ts` (+ teste): `null` não busca; leitura guardada com a conversa;
+- fixtures com `sistemas: []`: `src/app/api/v1/financial.test.ts`, `active-contract.test.ts`, `summarize.test.ts`, `external-contracts.test.ts`;
+- docs: `UI.md` (§5.7.12 e §5.7.22 nova), este PROGRESS.
+
+**O que foi feito:**
+- **Investigação, só leitura (2026-10-28):** a API da TCBX não tem campo de selo.
+  - O selo da empresa vem no **nome do sistema contratado** (`contratos[].sistemas[].nome`), quase sempre como sufixo entre parênteses: "(Ouro)" em 28 empresas, "(Diamante)" em 8, "(MEI)" em 2. Às vezes vem no meio do nome ("… Diamante [Gestão]").
+  - O selo da pessoa é `contatos[].tipo`: dono, financeiro, operacional, gerente ou outro. No máximo um dono por empresa.
+- **`companySeals`:**
+  - lê só contratos vigentes;
+  - reconhece nível conhecido como palavra inteira em qualquer ponto do nome ("Ouroboros" não é Ouro);
+  - mostra outro rótulo entre parênteses no fim como veio;
+  - gera um selo por rótulo, do mais alto para o mais baixo.
+- **`contactRoleLabel`:** traduz o papel para a tela.
+- **`ConversationCompany`:** fica no cabeçalho a partir de `xl` (UI §5.7.22). O nome é link para a ficha. Os selos levam prefixo `sr-only`.
+- **`useContactInfo`:** saiu do painel e subiu para o `ChatView`; o painel recebe o mesmo estado. Ligar uma empresa no painel aparece no cabeçalho na hora, e ligar ou desligar relê a TCBX, que é consultada pelo CNPJ da empresa ligada.
+
+**Decisões tomadas:**
+- **Selo só da empresa confirmada.** Selo e papel aparecem só quando o `documento` da resposta da TCBX bate com o CNPJ da empresa ligada (`normalizeCnpj`). Sem isso, logo depois de "Trocar empresa" o cabeçalho mostraria o selo da anterior até a TCBX responder (até 12 s). Empresa sem CNPJ é consultada pelo telefone e pode cair em outro cliente; por isso fica sem selo.
+- **`sistemas` com `.catch(null)` no zod.** Campo só de exibição não pode derrubar o contexto inteiro: situação financeira, alerta de atraso e API v1 dependem dele.
+- **`companySeals` aceita contrato sem `sistemas` (`?? []`).** Na troca rolante, a réplica ainda antiga responde sem o campo para o navegador que já baixou o código novo.
+- **Só a partir de `xl`, e o bloco cede espaço antes do nome do contato** (`shrink-3`, conferido no CSS do build). No celular, nada novo no cabeçalho.
+- **`sistemas` não sai na API v1.** O mapeador da v1 monta a resposta campo a campo, e o contrato dela não muda.
+- **Uma requisição a mais por conversa aberta** (`GET /api/chat/conversations/[id]/contact`), a mesma que o painel já fazia ao abrir.
+
+**Verificação:**
+- `typecheck` ✓.
+- `lint` ✓: 0 erros. Os 9 avisos são de `src/lib/security/verify-webhook.test.ts` e já existiam na main.
+- `test` ✓: 300 arquivos, 5.061 testes.
+- `build` ✓.
+- As skills `bug-hunter` e `verification-before-completion` não estão instaladas nesta máquina. Fiz a revisão manual do diff, que achou e corrigiu os 3 problemas das armadilhas abaixo, e testei os guardas por mutação: sem eles, os testes novos falham.
+
+**Pendências / próximos passos:**
+- Pedir à TCBX um campo próprio de selo. Hoje ele é lido do nome do sistema: renomear o sistema muda ou apaga o selo.
+
+**Armadilhas descobertas:**
+- ⚠️ **O `ChatView` não remonta ao trocar de conversa** (não tem `key` no `chat-shell`). Hook com estado local que passa a viver nele precisa guardar a leitura com a conversa e derivar "carregando" quando ela muda, como o `useExternalContext`. Senão, mostra o dado da conversa anterior sob o nome da nova. O espelho de uma ação (ex.: ligar empresa) também precisa conferir em que conversa a ação começou.
+- **`useExternalContext.retry()` mantém o resultado antigo enquanto relê.** Quem mostra o resultado depois de mudar o alvo da consulta (ex.: trocar a empresa) precisa conferir de quem ele é.
+- **Schema zod estrito em campo novo da TCBX derruba o contexto inteiro** (`unavailable`). Campo só de exibição vai com `.catch(...)`.
+
 ## [2026-10-22] Deploy: alerta de cliente em atraso e situação financeira para a IA no ar (#85)
 
 **Agente/Modelo:** Claude Opus 5.5.
