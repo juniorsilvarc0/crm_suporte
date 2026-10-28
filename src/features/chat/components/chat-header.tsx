@@ -29,6 +29,8 @@ type ChatHeaderProps = {
   focusTicketSummary?: string | null;
   /** O chip do ticket em foco. Só aparece a partir de `lg`: no celular a coluna de ações não cresce. */
   ticketChip?: React.ReactNode;
+  /** A empresa do contato e os selos (`ConversationCompany`), logo depois da identidade. */
+  company?: React.ReactNode;
 };
 
 const PRESENCE: Record<ChatConversation["status"], string> = {
@@ -55,6 +57,7 @@ export function ChatHeader({
   onOpenContact,
   focusTicketSummary = null,
   ticketChip,
+  company,
 }: ChatHeaderProps) {
   const displayName = contactDisplayName(conversation);
   const isHuman = conversation.status === "human";
@@ -113,6 +116,9 @@ export function ChatHeader({
             </span>
           </span>
         </IdentityWrapper>
+        {/* Fora do botão de identidade: o nome da empresa é link para a ficha
+            (outro destino), e controle dentro de botão é HTML inválido. */}
+        {company}
       </div>
 
       {/* A partir de `lg`, com o chip de foco, a coluna encolhe junto com o

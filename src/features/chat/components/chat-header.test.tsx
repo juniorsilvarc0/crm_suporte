@@ -52,6 +52,24 @@ describe("ChatHeader · linha de apoio", () => {
   });
 });
 
+describe("ChatHeader · empresa do contato", () => {
+  it("o bloco da empresa vem logo depois da identidade, fora do botão (o nome dela leva a outro destino)", () => {
+    render(
+      <ChatHeader
+        conversation={CONVERSATION}
+        onTakeover={vi.fn()}
+        onOpenContact={vi.fn()}
+        company={<span>Empresa Exemplo</span>}
+      />
+    );
+
+    const identity = screen.getByRole("button", { name: "Dados de Maria Souza" });
+    const company = screen.getByText("Empresa Exemplo");
+    expect(identity).not.toContainElement(company);
+    expect(identity.nextElementSibling).toBe(company);
+  });
+});
+
 describe("ChatHeader · coluna de ações a partir de lg", () => {
   it("o Assumir não encolhe, e a coluna só encolhe com o chip de foco", () => {
     render(

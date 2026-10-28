@@ -13,9 +13,11 @@ import {
   ContactInfoSheet,
   type ContactInfoInitialView,
 } from "@/features/chat/components/contact-info-sheet";
+import type { UseContactInfo } from "@/features/chat/hooks/use-contact-info";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
 import type { UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import type { ChatConversation } from "@/features/chat/types";
+import type { CustomerSummary } from "@/features/customers/types";
 import type { ConversationTicketsState } from "@/features/tickets/hooks/use-conversation-tickets";
 import type { TicketListItem } from "@/features/tickets/types";
 
@@ -132,6 +134,7 @@ function routeFetch({
   createTicket,
   customer = null,
   external,
+  customers = [],
 }: {
   tickets: Array<() => Response>;
   createTicket?: () => Response;
@@ -139,6 +142,8 @@ function routeFetch({
   customer?: unknown;
   /** Corpo da rota /external-context (default: integração desligada). */
   external?: unknown;
+  /** O que a busca do "Trocar empresa" acha (default: nada). */
+  customers?: CustomerSummary[];
 }) {
   let ticketReads = 0;
   const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
@@ -168,6 +173,7 @@ function routeFetch({
       return respond();
     }
     if (url === "/api/tickets" && init?.method === "POST" && createTicket) return createTicket();
+    if (url.startsWith("/api/customers?")) return jsonResponse({ ok: true, items: customers });
     // Contexto externo (TCBX): o painel consulta por contato. Aqui a integração
     // está desligada, então o grupo "Cliente (TCBX)" nem aparece.
     if (url.includes("/external-context")) {
@@ -191,12 +197,14 @@ function Harness({
   initialView,
   tickets,
   customerContext,
+  contactInfo,
   onClose,
 }: {
   conversation: ChatConversation;
   initialView?: ContactInfoInitialView;
   tickets?: ConversationTicketsState;
   customerContext?: UseCustomerContext;
+  contactInfo?: UseContactInfo;
   onClose: () => void;
 }) {
   const conversationRef = useRef<HTMLDivElement>(null);
@@ -210,6 +218,7 @@ function Harness({
         initialView={initialView}
         tickets={tickets}
         customerContext={customerContext}
+        contactInfo={contactInfo}
       />
     </div>
   );
@@ -342,6 +351,106 @@ describe("ContactInfoSheet · cliente em atraso", () => {
     // O vencido não passa por "próximo": o próximo é o que ainda vai vencer.
     expect(screen.getByText("05/01/2099")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/external-context"))).toBe(false);
+  });
+});
+
+describe("ContactInfoSheet · cadastro de quem monta", () => {
+  const CURRENT: CustomerSummary = {
+    id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    legal_name: "EMPRESA ATUAL LTDA",
+    trade_name: null,
+    cnpj: null,
+    contract_status: null,
+    archived_at: null,
+  };
+  const OTHER: CustomerSummary = { ...CURRENT, id: "9b2f6c1e-2d4a-4b8e-8f3a-1c5d7e9f0a2b", legal_name: "EMPRESA NOVA LTDA" };
+
+  function sharedContactInfo(customer: CustomerSummary | null): UseContactInfo {
+    return {
+      info: {
+        contact: { id: "contact-1", email: null, notes: null, created_at: "2026-09-01T12:00:00+00:00" },
+        customer,
+      },
+      loading: false,
+      failed: false,
+      savingNotes: false,
+      saveNotes: vi.fn(),
+      linking: false,
+      linkCustomer: vi.fn().mockResolvedValue({ ok: true }),
+      retry: vi.fn(),
+    };
+  }
+
+  function sharedCustomerContext(): UseCustomerContext {
+    return { loading: false, result: { state: "not_configured" }, retry: vi.fn() };
+  }
+
+  const readsContact = (fetchMock: ReturnType<typeof routeFetch>) =>
+    fetchMock.mock.calls.some(([url]) => String(url).endsWith("/contact"));
+
+  it("com o cadastro do ChatView, não lê o seu: mostra a empresa que recebeu", async () => {
+    const fetchMock = routeFetch({ tickets: [ticketsOk] });
+    render(
+      <Harness
+        conversation={CONVERSATION}
+        contactInfo={sharedContactInfo(CURRENT)}
+        customerContext={sharedCustomerContext()}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText("EMPRESA ATUAL LTDA")).toBeInTheDocument();
+    expect(readsContact(fetchMock)).toBe(false);
+  });
+
+  it("ligar outra empresa relê a TCBX: ela é consultada pelo CNPJ da empresa ligada", async () => {
+    const user = userEvent.setup();
+    const fetchMock = routeFetch({ tickets: [ticketsOk], customers: [OTHER] });
+    const contactInfo = sharedContactInfo(CURRENT);
+    const customerContext = sharedCustomerContext();
+    render(
+      <Harness conversation={CONVERSATION} contactInfo={contactInfo} customerContext={customerContext} onClose={vi.fn()} />
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Trocar empresa" }));
+    await user.click(await screen.findByRole("button", { name: /EMPRESA NOVA LTDA/ }));
+
+    await waitFor(() => expect(customerContext.retry).toHaveBeenCalledTimes(1));
+    expect(contactInfo.linkCustomer).toHaveBeenCalledWith(OTHER);
+    expect(readsContact(fetchMock)).toBe(false);
+  });
+
+  it("desligar a empresa também relê a TCBX (volta a ser pelo telefone)", async () => {
+    const user = userEvent.setup();
+    routeFetch({ tickets: [ticketsOk] });
+    const contactInfo = sharedContactInfo(CURRENT);
+    const customerContext = sharedCustomerContext();
+    render(
+      <Harness conversation={CONVERSATION} contactInfo={contactInfo} customerContext={customerContext} onClose={vi.fn()} />
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Trocar empresa" }));
+    await user.click(await screen.findByRole("button", { name: "Desligar de EMPRESA ATUAL LTDA" }));
+
+    await waitFor(() => expect(customerContext.retry).toHaveBeenCalledTimes(1));
+    expect(contactInfo.linkCustomer).toHaveBeenCalledWith(null);
+  });
+
+  it("falha ao ligar: a TCBX não é relida", async () => {
+    const user = userEvent.setup();
+    routeFetch({ tickets: [ticketsOk], customers: [OTHER] });
+    const contactInfo = sharedContactInfo(CURRENT);
+    vi.mocked(contactInfo.linkCustomer).mockResolvedValue({ ok: false, message: "Não foi possível ligar." });
+    const customerContext = sharedCustomerContext();
+    render(
+      <Harness conversation={CONVERSATION} contactInfo={contactInfo} customerContext={customerContext} onClose={vi.fn()} />
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Trocar empresa" }));
+    await user.click(await screen.findByRole("button", { name: /EMPRESA NOVA LTDA/ }));
+
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Não foi possível ligar."));
+    expect(customerContext.retry).not.toHaveBeenCalled();
   });
 });
 

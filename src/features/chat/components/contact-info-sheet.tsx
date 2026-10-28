@@ -21,7 +21,7 @@ import { ConversationTagChips } from "@/features/chat/components/conversation-ta
 import { ConversationTagsPicker } from "@/features/chat/components/conversation-tags-picker";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
 import { NO_TAGS } from "@/features/chat/lib/conversation-tags";
-import { useContactInfo } from "@/features/chat/hooks/use-contact-info";
+import { useContactInfo, type UseContactInfo } from "@/features/chat/hooks/use-contact-info";
 import { useCustomerContext, type UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import { isActiveContract } from "@/features/customer-source/active-contract";
 import { financialSituation } from "@/features/customer-source/financial";
@@ -111,6 +111,7 @@ export function ContactInfoSheet({
   initialView = "info",
   tickets: sharedTickets,
   customerContext: sharedCustomerContext,
+  contactInfo: sharedContactInfo,
 }: {
   conversation: ChatConversation;
   portalContainer: RefObject<HTMLDivElement | null>;
@@ -135,6 +136,12 @@ export function ContactInfoSheet({
    * atraso): uma consulta só por conversa. Sem ele, o painel consulta a sua.
    */
   customerContext?: UseCustomerContext;
+  /**
+   * O cadastro do contato (com a empresa), quando quem monta já o lê (o
+   * `ChatView`, para o cabeçalho): vincular a empresa aqui chega ao cabeçalho na
+   * hora. Sem ele, o painel lê o seu.
+   */
+  contactInfo?: UseContactInfo;
 }) {
   const [open, setOpen] = useState(true);
   const [pending, setPending] = useState<PendingAction>(null);
@@ -157,6 +164,8 @@ export function ContactInfoSheet({
     if (!ok) toast.error("Não foi possível atualizar a etiqueta.");
   };
 
+  // Com o cadastro de quem monta, a leitura própria nem sai (`null`).
+  const ownContactInfo = useContactInfo(sharedContactInfo ? null : conversation.id);
   const {
     info,
     loading,
@@ -166,7 +175,7 @@ export function ContactInfoSheet({
     linking,
     linkCustomer,
     retry,
-  } = useContactInfo(conversation.id);
+  } = sharedContactInfo ?? ownContactInfo;
 
   const displayName = contactDisplayName(conversation);
   const telHref = contactTelHref(conversation.contact_phone);
@@ -221,6 +230,9 @@ export function ContactInfoSheet({
       return;
     }
     toast.success(`Contato ligado a ${customerDisplayName(next)}.`);
+    // A TCBX é consultada pelo CNPJ da empresa ligada: com a empresa nova, o
+    // grupo da TCBX, o alerta de atraso e os selos do cabeçalho mudam.
+    externalContext.retry();
     setView("info");
   };
 
@@ -233,6 +245,8 @@ export function ContactInfoSheet({
       return;
     }
     toast.success(`Contato desligado de ${customerDisplayName(customer)}.`);
+    // Sem empresa, a TCBX volta a ser consultada pelo telefone.
+    externalContext.retry();
     setView("info");
   };
 
