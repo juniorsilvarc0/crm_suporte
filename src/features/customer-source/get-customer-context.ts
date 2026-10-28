@@ -36,6 +36,10 @@ const contractSchema = z.object({
   status: text,
   status_vigencia: text,
   data_ativacao: text,
+  // Os sistemas do contrato: é no nome deles que vem o selo do cliente ("Sistema X (Ouro)").
+  // Só de exibição: formato inesperado vira lista vazia (`catch`), sem derrubar o
+  // contexto inteiro — a situação financeira e o alerta de atraso dependem dele.
+  sistemas: z.array(z.object({ id: z.number(), nome: text })).nullish().catch(null),
 });
 
 const invoiceSchema = z.object({
@@ -112,6 +116,7 @@ function toContext(raw: RawResponse): CustomerContext {
       status: contract.status ?? null,
       statusVigencia: contract.status_vigencia ?? null,
       dataAtivacao: contract.data_ativacao ?? null,
+      sistemas: (contract.sistemas ?? []).map((system) => ({ id: system.id, nome: system.nome ?? null })),
     })),
     titulosEmAberto: (raw.financeiro?.titulos_em_aberto ?? []).map((invoice) => ({
       id: invoice.id,

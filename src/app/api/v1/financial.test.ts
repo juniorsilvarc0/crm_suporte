@@ -64,6 +64,7 @@ const context = (over: Partial<CustomerContext> = {}): CustomerContext => ({
       status: "assinado",
       statusVigencia: "ativo",
       dataAtivacao: null,
+      sistemas: [],
     },
   ],
   titulosEmAberto: [invoice(2, "2026-10-05", 199, 3.98), invoice(3, "2026-11-05"), invoice(1, "2026-09-05")],

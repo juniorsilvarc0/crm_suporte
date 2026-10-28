@@ -80,6 +80,7 @@ const contract = (overrides: Partial<CustomerContract>): CustomerContract => ({
   status: "assinado",
   statusVigencia: "ativo",
   dataAtivacao: "2026-01-15",
+  sistemas: [],
   ...overrides,
 });
 

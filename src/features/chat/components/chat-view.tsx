@@ -36,8 +36,10 @@ import {
   type AnchorRect,
 } from "@/features/chat/components/message-context-menu";
 import { MessageSelectionBar } from "@/features/chat/components/message-selection-bar";
+import { ConversationCompany } from "@/features/chat/components/conversation-company";
 import { OverdueBanner } from "@/features/chat/components/overdue-banner";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
+import { useContactInfo } from "@/features/chat/hooks/use-contact-info";
 import { useCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import {
   MAX_ATTACHMENT_BATCH,
@@ -240,6 +242,10 @@ export function ChatView({
   // O cliente na TCBX: UMA leitura por conversa aberta, para o alerta de atraso
   // e para o painel do contato, que a recebe pronta (como os tickets).
   const customerContext = useCustomerContext(conversation.contact_id, true);
+  // O cadastro do contato (com a empresa): UMA leitura por conversa aberta, para
+  // a empresa no cabeçalho e para o painel, que a recebe pronta — vincular a
+  // empresa no painel chega ao cabeçalho na hora.
+  const contactInfo = useContactInfo(conversation.id);
   // "Assumir": com ticket em foco, o take-over do ticket; sem, o PATCH de hoje.
   const ticketTakeOver = useConversationTakeOver({
     status: conversation.status,
@@ -262,9 +268,9 @@ export function ChatView({
   const dragDepth = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const chatRootRef = useRef<HTMLDivElement | null>(null);
-  // A tela de dados do contato só monta quando abre: ela busca o contato e a
-  // empresa, e manter isso vivo em toda conversa seria rede à toa. O valor é a
-  // vista em que ela abre (o chip do ticket abre direto nos tickets).
+  // A tela de dados do contato só monta quando abre (o cadastro, os tickets e a
+  // TCBX ela recebe daqui, já lidos). O valor é a vista em que ela abre (o chip
+  // do ticket abre direto nos tickets).
   const [contactView, setContactView] = useState<ContactInfoInitialView | null>(null);
   const contactOpen = contactView !== null;
   const [showJump, setShowJump] = useState(false);
@@ -839,6 +845,13 @@ export function ChatView({
             onChangeFocus={() => setContactView("tickets")}
           />
         }
+        company={
+          <ConversationCompany
+            customer={contactInfo.info?.customer ?? null}
+            context={customerContext.result}
+            phone={conversation.contact_phone}
+          />
+        }
       />
 
       <OverdueBanner state={customerContext} onOpenDetails={() => setContactView("info")} />
@@ -1147,6 +1160,7 @@ export function ChatView({
           initialView={contactView}
           tickets={tickets}
           customerContext={customerContext}
+          contactInfo={contactInfo}
           onClose={() => setContactView(null)}
           onSearch={onLoadAround ? () => onSearchOpenChange(true) : undefined}
         />

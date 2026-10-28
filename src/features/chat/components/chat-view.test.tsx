@@ -5,9 +5,10 @@ import userEvent from "@testing-library/user-event";
 // Em teste: o colar global e a fiação dos tickets. O que busca na rede ou
 // desenha por conta própria (rodapé, bolhas, painel do contato, tela de envio,
 // chip) vira marcador; o chip e o painel guardam as props que receberam.
-const { useConversationTicketsMock, useCustomerContextMock, received } = vi.hoisted(() => ({
+const { useConversationTicketsMock, useCustomerContextMock, useContactInfoMock, received } = vi.hoisted(() => ({
   useConversationTicketsMock: vi.fn(),
   useCustomerContextMock: vi.fn(),
+  useContactInfoMock: vi.fn(),
   received: {
     chip: null as Record<string, unknown> | null,
     sheet: null as Record<string, unknown> | null,
@@ -25,6 +26,9 @@ vi.mock("@/features/tickets/hooks/use-conversation-tickets", () => ({
 }));
 vi.mock("@/features/chat/hooks/use-customer-context", () => ({
   useCustomerContext: (...args: unknown[]) => useCustomerContextMock(...args),
+}));
+vi.mock("@/features/chat/hooks/use-contact-info", () => ({
+  useContactInfo: (...args: unknown[]) => useContactInfoMock(...args),
 }));
 vi.mock("@/features/tickets/hooks/use-ticket-catalog", () => ({
   useTicketCatalog: () => ({ catalog: null, failed: false, retry: vi.fn() }),
@@ -54,9 +58,11 @@ vi.mock("@/features/chat/components/file-preview-dialog", () => ({
 }));
 
 import { ChatView } from "@/features/chat/components/chat-view";
+import type { UseContactInfo } from "@/features/chat/hooks/use-contact-info";
 import type { ConversationTagsController } from "@/features/chat/hooks/use-conversation-tags";
 import type { UseCustomerContext } from "@/features/chat/hooks/use-customer-context";
 import type { CustomerContextResult } from "@/features/customer-source/types";
+import type { CustomerSummary } from "@/features/customers/types";
 import type { ChatConversation, ChatMessage } from "@/features/chat/types";
 import type { ConversationTicketsState } from "@/features/tickets/hooks/use-conversation-tickets";
 
@@ -129,6 +135,25 @@ function stubCustomerContext(result: CustomerContextResult | null = null): UseCu
   return state;
 }
 
+/** O cadastro do contato do hook falso: o MESMO objeto a cada render. */
+function stubContactInfo(customer: CustomerSummary | null = null): UseContactInfo {
+  const state: UseContactInfo = {
+    info: {
+      contact: { id: "contact-1", email: null, notes: null, created_at: "2026-09-20T12:00:00+00:00" },
+      customer,
+    },
+    loading: false,
+    failed: false,
+    savingNotes: false,
+    saveNotes: vi.fn(),
+    linking: false,
+    linkCustomer: vi.fn(),
+    retry: vi.fn(),
+  };
+  useContactInfoMock.mockReturnValue(state);
+  return state;
+}
+
 // O jsdom não rola: o "ir para o fim" da montagem chama `scrollTo` no contêiner.
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
 
@@ -144,6 +169,7 @@ afterAll(() => {
 beforeEach(() => {
   stubTickets();
   stubCustomerContext();
+  stubContactInfo();
 });
 
 afterEach(() => {
@@ -386,5 +412,76 @@ describe("ChatView · cliente em atraso", () => {
     renderChatView();
 
     expect(screen.queryByText(/Cliente em atraso/)).toBeNull();
+  });
+});
+
+describe("ChatView · empresa no cabeçalho", () => {
+  const COMPANY: CustomerSummary = {
+    id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    legal_name: "EMPRESA EXEMPLO LTDA",
+    trade_name: "Empresa Exemplo",
+    cnpj: "11222333000181",
+    contract_status: null,
+    archived_at: null,
+  };
+
+  it("lê o cadastro do contato uma vez; o painel recebe a MESMA leitura", async () => {
+    const user = userEvent.setup();
+    const contactInfo = stubContactInfo(COMPANY);
+    renderChatView();
+
+    await user.click(screen.getByRole("button", { name: "Dados de Maria Souza" }));
+
+    expect(useContactInfoMock).toHaveBeenLastCalledWith(CONVERSATION.id);
+    expect(received.sheet?.contactInfo).toBe(contactInfo);
+  });
+
+  it("com empresa ligada, o cabeçalho mostra o nome (link para a ficha) e o selo da TCBX", () => {
+    stubContactInfo(COMPANY);
+    stubCustomerContext({
+      state: "ok",
+      context: {
+        externalId: "1",
+        tipoPessoa: "PJ",
+        documento: "11222333000181",
+        razaoSocial: "EMPRESA EXEMPLO LTDA",
+        nomeFantasia: null,
+        status: "ativo",
+        emailPrincipal: null,
+        emailFinanceiro: null,
+        telefonePrincipal: null,
+        telefoneSecundario: null,
+        contratos: [
+          {
+            id: 1,
+            numero: "CT-1",
+            modalidade: null,
+            vigencia: null,
+            dataInicio: null,
+            dataFim: null,
+            vencimentoDia: null,
+            status: "assinado",
+            statusVigencia: "ativo",
+            dataAtivacao: null,
+            sistemas: [{ id: 1, nome: "Sistema A (Ouro)" }],
+          },
+        ],
+        titulosEmAberto: [],
+        contatos: [],
+      },
+    });
+    renderChatView();
+
+    expect(screen.getByRole("link", { name: "Abrir empresa Empresa Exemplo" })).toHaveAttribute(
+      "href",
+      `/app/clientes/${COMPANY.id}`
+    );
+    expect(screen.getByText(/Selo da empresa:/).parentElement).toHaveTextContent("Selo da empresa: Ouro");
+  });
+
+  it("sem empresa ligada, nada novo no cabeçalho", () => {
+    renderChatView();
+
+    expect(document.querySelector("[data-conversation-company]")).toBeNull();
   });
 });

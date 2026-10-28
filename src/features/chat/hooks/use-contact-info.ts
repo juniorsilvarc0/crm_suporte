@@ -10,21 +10,31 @@ import type { CustomerSummary } from "@/features/customers/types";
 export type LinkCustomerOutcome = { ok: boolean; message?: string };
 
 type State = {
+  /** De que conversa é esta leitura (ver `shown`). */
+  conversationId: string | null;
   info: ContactInfo | null;
   loading: boolean;
   failed: boolean;
 };
 
-const INITIAL: State = { info: null, loading: true, failed: false };
+const INITIAL: State = { conversationId: null, info: null, loading: true, failed: false };
 
 /**
- * Cadastro do contato da conversa aberta, para a tela de informações do contato.
+ * Cadastro do contato da conversa aberta (o contato e a empresa dele).
  *
- * O dono da busca é este hook, e ele só existe enquanto a tela está montada —
- * quem chama monta o sheet condicionalmente. Isso evita segurar dado de CRM na
- * memória das 424 conversas para uma tela que quase nunca abre.
+ * Quem lê é o `ChatView`, uma vez por conversa ABERTA: o cabeçalho mostra a
+ * empresa e o painel do contato recebe o mesmo estado, então vincular uma
+ * empresa no painel chega ao cabeçalho na hora. Só a conversa aberta tem a
+ * leitura — nada fica na memória das outras.
+ *
+ * O `ChatView` NÃO remonta ao trocar de conversa: a leitura é guardada com a
+ * conversa a que pertence, e a de outra conversa vira "carregando" (como o
+ * `useExternalContext`). Sem isso, o cabeçalho mostraria a empresa do contato
+ * anterior sob o nome do novo até a resposta chegar.
+ *
+ * `null` = não busca (o painel montado com o estado de quem o abriu).
  */
-export function useContactInfo(conversationId: string) {
+export function useContactInfo(conversationId: string | null) {
   const [state, setState] = useState<State>(INITIAL);
   const [savingNotes, setSavingNotes] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -34,6 +44,7 @@ export function useContactInfo(conversationId: string) {
   const alive = useRef(true);
 
   useEffect(() => {
+    if (!conversationId) return;
     alive.current = true;
     const controller = new AbortController();
 
@@ -46,13 +57,13 @@ export function useContactInfo(conversationId: string) {
         if (!response.ok) throw new Error(String(response.status));
         const info = (await response.json()) as ContactInfo;
         if (!alive.current) return;
-        setState({ info, loading: false, failed: false });
+        setState({ conversationId, info, loading: false, failed: false });
       } catch (err) {
         // `abort` é desmonte esperado, não falha: mostrar erro aqui piscaria a
         // mensagem enquanto a tela já está saindo.
         if (controller.signal.aborted || !alive.current) return;
         console.error("[useContactInfo]", err);
-        setState({ info: null, loading: false, failed: true });
+        setState({ conversationId, info: null, loading: false, failed: true });
       }
     }
 
@@ -73,6 +84,9 @@ export function useContactInfo(conversationId: string) {
     setAttempt((current) => current + 1);
   }, []);
 
+  // O que a tela vê: a leitura DESTA conversa; a de outra é "carregando".
+  const shown = state.conversationId === conversationId ? state : INITIAL;
+
   /**
    * Grava as notas pela rota do contato (`PATCH /api/contacts/[id]`). Rota de
    * escrita nova aqui seria um segundo caminho para o mesmo campo — e duas
@@ -80,8 +94,9 @@ export function useContactInfo(conversationId: string) {
    */
   const saveNotes = useCallback(
     async (draft: string): Promise<boolean> => {
-      const contactId = state.info?.contact?.id;
+      const contactId = shown.info?.contact?.id;
       if (!contactId || savingNotes) return false;
+      const owner = shown.conversationId;
 
       setSavingNotes(true);
       try {
@@ -102,8 +117,9 @@ export function useContactInfo(conversationId: string) {
         if (alive.current) {
           // Espelha localmente em vez de rebuscar: a rota devolve só `{ ok }`, e
           // uma segunda ida ao servidor faria a nota piscar entre os dois valores.
+          // Só na conversa em que a nota foi escrita (pode ter trocado no meio).
           setState((current) =>
-            current.info?.contact
+            current.conversationId === owner && current.info?.contact
               ? {
                   ...current,
                   info: {
@@ -122,7 +138,7 @@ export function useContactInfo(conversationId: string) {
         if (alive.current) setSavingNotes(false);
       }
     },
-    [state.info, savingNotes]
+    [shown.info, shown.conversationId, savingNotes]
   );
 
   /**
@@ -131,8 +147,9 @@ export function useContactInfo(conversationId: string) {
    */
   const linkCustomer = useCallback(
     async (customer: CustomerSummary | null): Promise<LinkCustomerOutcome> => {
-      const contactId = state.info?.contact?.id;
+      const contactId = shown.info?.contact?.id;
       if (!contactId || linking) return { ok: false };
+      const owner = shown.conversationId;
 
       setLinking(true);
       try {
@@ -143,7 +160,9 @@ export function useContactInfo(conversationId: string) {
           // Espelha a empresa escolhida, que já traz o selo do contrato. Buscar
           // de novo voltaria o painel ao esqueleto e as notas piscariam.
           setState((current) =>
-            current.info ? { ...current, info: { ...current.info, customer } } : current
+            current.conversationId === owner && current.info
+              ? { ...current, info: { ...current.info, customer } }
+              : current
           );
         }
         return { ok: true };
@@ -151,13 +170,13 @@ export function useContactInfo(conversationId: string) {
         if (alive.current) setLinking(false);
       }
     },
-    [state.info, linking]
+    [shown.info, shown.conversationId, linking]
   );
 
   return {
-    info: state.info,
-    loading: state.loading,
-    failed: state.failed,
+    info: shown.info,
+    loading: shown.loading,
+    failed: shown.failed,
     savingNotes,
     saveNotes,
     linking,
@@ -165,3 +184,5 @@ export function useContactInfo(conversationId: string) {
     retry,
   };
 }
+
+export type UseContactInfo = ReturnType<typeof useContactInfo>;

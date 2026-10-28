@@ -79,6 +79,84 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("useContactInfo — leitura", () => {
+  it("lê o cadastro da conversa", async () => {
+    const calls = stubFetch(infoWith(PADARIA), () => jsonResponse({ ok: true }));
+    const { result } = await renderLoaded();
+
+    expect(result.current.info?.customer).toEqual(PADARIA);
+    expect(calls.map((call) => call.url)).toEqual([`/api/chat/conversations/${CONVERSATION_ID}/contact`]);
+  });
+
+  it("`null` não busca: o painel montado com o cadastro de quem o abriu", () => {
+    const calls = stubFetch(infoWith(PADARIA), () => jsonResponse({ ok: true }));
+    renderHook(() => useContactInfo(null));
+
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("useContactInfo — troca de conversa (o ChatView não remonta)", () => {
+  const OTHER_ID = "conv-2";
+
+  /** A 1ª conversa responde na hora; a 2ª e o PATCH esperam o teste soltar. */
+  function stubTwoConversations() {
+    let releaseOther: () => void = () => undefined;
+    let releasePatch: () => void = () => undefined;
+    const otherInfo: ContactInfo = { contact: { ...infoWith(null).contact!, id: "contact-2" }, customer: MERCADO };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === `/api/chat/conversations/${CONVERSATION_ID}/contact`) return jsonResponse(infoWith(null));
+        if (url === `/api/chat/conversations/${OTHER_ID}/contact`) {
+          await new Promise<void>((resolve) => (releaseOther = resolve));
+          return jsonResponse(otherInfo);
+        }
+        if (url === `/api/contacts/${CONTACT_ID}` && init?.method === "PATCH") {
+          await new Promise<void>((resolve) => (releasePatch = resolve));
+          return jsonResponse({ ok: true });
+        }
+        throw new Error(`fetch inesperado: ${url}`);
+      })
+    );
+    return { releaseOther: () => releaseOther(), releasePatch: () => releasePatch() };
+  }
+
+  it("a leitura da conversa anterior não aparece na nova: vira carregando até a resposta", async () => {
+    const control = stubTwoConversations();
+    const hook = renderHook(({ id }) => useContactInfo(id), { initialProps: { id: CONVERSATION_ID } });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+
+    hook.rerender({ id: OTHER_ID });
+
+    expect(hook.result.current.loading).toBe(true);
+    expect(hook.result.current.info).toBeNull();
+    await act(async () => control.releaseOther());
+    await waitFor(() => expect(hook.result.current.info?.customer).toEqual(MERCADO));
+  });
+
+  it("empresa ligada numa conversa não vaza para a outra se a troca acontece no meio", async () => {
+    const control = stubTwoConversations();
+    const hook = renderHook(({ id }) => useContactInfo(id), { initialProps: { id: CONVERSATION_ID } });
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+
+    let linked: Promise<unknown> = Promise.resolve();
+    act(() => {
+      linked = hook.result.current.linkCustomer(PADARIA);
+    });
+    hook.rerender({ id: OTHER_ID });
+    await act(async () => control.releaseOther());
+    await waitFor(() => expect(hook.result.current.info?.customer).toEqual(MERCADO));
+
+    await act(async () => {
+      control.releasePatch();
+      await linked;
+    });
+
+    expect(hook.result.current.info?.customer).toEqual(MERCADO);
+  });
+});
+
 describe("useContactInfo — linkCustomer", () => {
   it("manda só o customer_id no PATCH do contato", async () => {
     const calls = stubFetch(infoWith(null), () =>
