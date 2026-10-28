@@ -127,7 +127,7 @@ describe("sendHandoffAlert", () => {
   it("falha certa repete uma vez, com o mesmo trackId; a de um canal não impede o outro", async () => {
     silence();
     sendNoticeMock.mockImplementation(async (_u: string, _t: string, to: string) => {
-      if (to === GROUP) throw new UazapiHttpError("uazapi /send/text 400: x", 400);
+      if (to === GROUP) throw new UazapiHttpError("uazapi /send/text 400: x", 400, null);
       return { id: null, messageid: "wa-1" };
     });
 
@@ -141,7 +141,7 @@ describe("sendHandoffAlert", () => {
 
   it("desfecho desconhecido (5xx) não repete: poderia duplicar o aviso; o log não leva o destino", async () => {
     const consoleError = silence();
-    sendNoticeMock.mockRejectedValue(new UazapiHttpError("uazapi /send/text 502: 5586999990000", 502));
+    sendNoticeMock.mockRejectedValue(new UazapiHttpError("uazapi /send/text 502: 5586999990000", 502, null));
 
     const result = await sendHandoffAlert(INTEGRATION, { number: "5586999990000", groupJid: null }, "oi");
 
