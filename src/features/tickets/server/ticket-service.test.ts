@@ -1,10 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-const { pushTakeoverMock } = vi.hoisted(() => ({ pushTakeoverMock: vi.fn() }));
+const { pushTakeoverMock, notifyTeamMock } = vi.hoisted(() => ({
+  pushTakeoverMock: vi.fn(),
+  notifyTeamMock: vi.fn(),
+}));
 
 vi.mock("@/features/chat/lib/push-takeover", () => ({
   pushTakeoverToAgent: pushTakeoverMock,
+}));
+vi.mock("@/features/chat/lib/handoff-alert", () => ({
+  notifyTeamOfHandoff: notifyTeamMock,
 }));
 
 import {
@@ -102,6 +108,7 @@ let consoleError: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   pushTakeoverMock.mockReset();
+  notifyTeamMock.mockReset();
   consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -593,6 +600,15 @@ describe("handoffConversation", () => {
     });
     expect(pushTakeoverMock).toHaveBeenCalledTimes(1);
     expect(pushTakeoverMock).toHaveBeenCalledWith(EXTERNAL_ID, true);
+    // A equipe é avisada pelo WhatsApp, com o ticket do handoff.
+    expect(notifyTeamMock).toHaveBeenCalledTimes(1);
+    expect(notifyTeamMock).toHaveBeenCalledWith({
+      conversationId: CONVERSATION_ID,
+      phone: EXTERNAL_ID,
+      ticketId: TICKET_ID,
+      reason: "Cliente pediu um atendente",
+      summary: "Recebeu dois boletos no mês.",
+    });
     expect(JSON.stringify(result)).not.toContain(EXTERNAL_ID);
   });
 
@@ -629,6 +645,7 @@ describe("handoffConversation", () => {
       data: { conversation: { id: CONVERSATION_ID, status: "human" }, changed: false, ticket_id: null, note_id: null },
     });
     expect(pushTakeoverMock).not.toHaveBeenCalled();
+    expect(notifyTeamMock).not.toHaveBeenCalled();
   });
 
   it("traduz CONVERSATION_NOT_OWNED_BY_AI em 409 com o dono atual, sem avisar o agente nem logar", async () => {
@@ -668,6 +685,8 @@ describe("handoffConversation", () => {
     if (result.ok) return;
     expect(result.error.status).toBe(500);
     expect(pushTakeoverMock).toHaveBeenCalledWith(EXTERNAL_ID, true);
+    // Ticket fora do formato: o aviso sai mesmo assim, sem o protocolo.
+    expect(notifyTeamMock).toHaveBeenCalledWith(expect.objectContaining({ ticketId: null }));
     expect(consoleError).toHaveBeenCalled();
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain(EXTERNAL_ID);
   });
