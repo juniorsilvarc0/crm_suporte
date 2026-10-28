@@ -47,6 +47,7 @@ const contract = (over: Partial<CustomerContext["contratos"][number]>): Customer
   status: null,
   statusVigencia: null,
   dataAtivacao: null,
+  sistemas: [],
   ...over,
 });
 

@@ -44,6 +44,7 @@ const OK_BODY = {
       status: "assinado",
       status_vigencia: "ativo",
       data_ativacao: "2026-06-26 16:43:15",
+      sistemas: [{ id: 7, nome: "Sistema de Teste (Ouro)" }],
     },
   ],
   financeiro: {
@@ -131,6 +132,7 @@ describe("getCustomerContext", () => {
             status: "assinado",
             statusVigencia: "ativo",
             dataAtivacao: "2026-06-26 16:43:15",
+            sistemas: [{ id: 7, nome: "Sistema de Teste (Ouro)" }],
           },
         ],
         titulosEmAberto: [
@@ -185,6 +187,17 @@ describe("getCustomerContext", () => {
 
     expect(result.state === "ok" && result.context.contratos).toEqual([]);
     expect(result.state === "ok" && result.context.titulosEmAberto).toEqual([]);
+  });
+
+  it("sistemas do contrato em formato inesperado viram lista vazia, sem derrubar o contexto", async () => {
+    const contrato = { ...OK_BODY.contratos[0], sistemas: [{ id: "7", nome: 42 }] };
+    fetchMock.mockResolvedValue(jsonResponse({ ...OK_BODY, contratos: [contrato] }));
+
+    const result = await getCustomerContext({ clienteId: 33 });
+
+    expect(result.state).toBe("ok");
+    expect(result.state === "ok" && result.context.contratos[0]?.sistemas).toEqual([]);
+    expect(result.state === "ok" && result.context.titulosEmAberto).toHaveLength(1);
   });
 
   it("id numérico ou string vira sempre texto no externalId", async () => {

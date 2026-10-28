@@ -15,6 +15,7 @@ function contract(overrides: Partial<CustomerContract>): CustomerContract {
     status: null,
     statusVigencia: null,
     dataAtivacao: null,
+    sistemas: [],
     ...overrides,
   };
 }

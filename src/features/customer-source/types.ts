@@ -6,6 +6,12 @@
 
 export type CustomerPersonType = "PF" | "PJ";
 
+/** Um sistema vinculado ao contrato na fonte. O selo do cliente vem no nome (ver seals.ts). */
+export type CustomerContractSystem = {
+  id: number;
+  nome: string | null;
+};
+
 export type CustomerContract = {
   id: number;
   numero: string | null;
@@ -17,6 +23,8 @@ export type CustomerContract = {
   status: string | null;
   statusVigencia: string | null;
   dataAtivacao: string | null;
+  /** Os sistemas do contrato ("Sistema X (Ouro)"). Ausente na fonte = lista vazia. */
+  sistemas: CustomerContractSystem[];
 };
 
 export type CustomerOpenInvoice = {
