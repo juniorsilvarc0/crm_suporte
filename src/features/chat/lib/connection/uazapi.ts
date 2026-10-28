@@ -10,6 +10,7 @@
 // então a leitura é DEFENSIVA (tenta vários caminhos) — confirmar contra a
 // instância real logando o payload cru quando necessário.
 
+import { isGroupJid } from "@/features/chat/lib/whatsapp-group";
 import { assertSafeUrl, safeBaseUrl } from "@/lib/security/ssrf-guard";
 
 export type ConnectionState = "open" | "connecting" | "close" | "unknown";
@@ -253,6 +254,41 @@ export async function getUazapiStatus(
     owner: ownerToPhone(owner),
     reason: normalizeDisconnectReason(reason),
   };
+}
+
+export type UazapiGroup = { jid: string; name: string };
+
+/**
+ * Os grupos em que a instância está (`GET /group/list`, validado contra a
+ * instância real: `{ groups: [{ JID, Name }] }`). Sem `force` a uazapi responde
+ * do cache dela; com `force` relê do WhatsApp, mais lento. Só funciona com a
+ * instância conectada. Grupo sem nome vira o JID; repetido sai uma vez.
+ */
+export async function listUazapiGroups(
+  apiUrl: string,
+  token: string,
+  force = false
+): Promise<UazapiGroup[]> {
+  const base = safeBaseUrl(apiUrl);
+  const res = await fetch(`${base}/group/list${force ? "?force=true" : ""}`, {
+    method: "GET",
+    headers: { token },
+    cache: "no-store",
+    signal: AbortSignal.timeout(force ? 30000 : TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`uazapi group/list ${res.status}`);
+  }
+  const json: unknown = await res.json().catch(() => null);
+  const raw = Array.isArray(json) ? json : pickPath(json, "groups");
+  const groups = new Map<string, UazapiGroup>();
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const jid = firstString(item, ["JID", "jid", "id"]);
+    if (!isGroupJid(jid) || groups.has(jid)) continue;
+    const name = firstString(item, ["Name", "name", "subject", "Subject"]);
+    groups.set(jid, { jid, name: name?.trim() || jid });
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 /**

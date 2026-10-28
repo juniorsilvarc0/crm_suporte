@@ -21,6 +21,7 @@ import {
   buildMessageLinkPreview,
   type MessageLinkPreview,
 } from "@/features/chat/lib/message-content";
+import { isGroupJid } from "@/features/chat/lib/whatsapp-group";
 
 const TRACK_SOURCE = siteConfig.slug;
 
@@ -224,6 +225,24 @@ export async function sendUazapiText(
     20000,
     text
   );
+}
+
+/**
+ * Aviso interno para um telefone OU um grupo (JID `...@g.us`), sem prévia de
+ * link. `toUazapiNumber` deixa só dígitos e apagaria o `@g.us`, mandando o
+ * aviso para um número que não existe: o JID de grupo vai intacto no `number`,
+ * como a uazapi aceita. Passe um `trackId`: o eco volta ao webhook e, sem ele,
+ * o aviso a um telefone abriria uma conversa no chat (ver o passo 3 da rota).
+ */
+export async function sendUazapiNotice(
+  apiUrl: string,
+  token: string,
+  to: string,
+  text: string,
+  opts?: SendOptions
+): Promise<UazapiSendResult> {
+  const number = isGroupJid(to) ? to : toUazapiNumber(to);
+  return postUazapi(apiUrl, token, "/send/text", { number, text, ...sendFields(opts) });
 }
 
 function numberCheckCandidates(value: string): string[] {

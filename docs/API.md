@@ -339,6 +339,9 @@ Estas rotas existem para o app. Não são contrato de integração: o formato mu
 | POST, DELETE | `/api/connection/agent/signing-secret` | gera (mostra uma vez) ou remove a chave de assinatura do repasse |
 | GET, PATCH | `/api/settings/automation` | endereço do agente (repasse); vazio desliga |
 | GET, PATCH | `/api/settings/bot-signature` | configuração da assinatura das mensagens da IA |
+| PATCH | `/api/settings/handoff-alert` | telefone e/ou grupo do WhatsApp que recebem o aviso de handoff da IA; os dois vazios desligam |
+| POST | `/api/settings/handoff-alert/test` | manda um texto de teste à configuração salva; diz o desfecho de cada canal |
+| GET | `/api/connection/groups` | os grupos do WhatsApp do CRM (`?force=1` relê do WhatsApp); desconectado = lista vazia com o motivo |
 | POST, DELETE | `/api/settings/environment-variables` | variáveis do cofre (aba Variáveis) |
 | GET, POST | `/api/webhooks` | destinos de webhook; cadastrar gera o segredo e o mostra uma vez |
 | PATCH, DELETE | `/api/webhooks/[id]` | altera (nome, URL, eventos, pausa) ou exclui o destino |

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { notifyTeamOfHandoff } from "@/features/chat/lib/handoff-alert";
 import { pushTakeoverToAgent } from "@/features/chat/lib/push-takeover";
 import { mapTicketError } from "@/features/tickets/lib/map-ticket-error";
 import { TICKET_STATUS_KEYS } from "@/features/tickets/lib/ticket-status";
@@ -131,6 +132,8 @@ const takeoverSignalSchema = z.object({
 const handoffSignalSchema = z.object({
   changed: z.literal(true),
   conversation_external_id: externalIdSchema,
+  // Só para o aviso à equipe: fora do formato, o aviso sai sem o protocolo.
+  ticket_id: uuidSchema.nullable().catch(null),
 });
 
 function actorArgs(actor: TicketActor) {
@@ -365,7 +368,8 @@ export async function takeOverTicket(
  * motivo e o resumo, e registra o pedido na trilha do ticket informado ou do
  * que está em foco. Conversa já humana é no-op (`changed: false`); resolvida é
  * `conversation_not_owned_by_ai`. Só token: o analista assume pela tela. Se a
- * conversa passou a `human` agora, avisa o agente, como no "Assumir".
+ * conversa passou a `human` agora, avisa o agente, como no "Assumir", e a
+ * equipe pelo WhatsApp (número e/ou grupo de Integrações › Agente de IA).
  */
 export async function handoffConversation(
   db: TicketDb,
@@ -387,6 +391,13 @@ export async function handoffConversation(
   const signal = handoffSignalSchema.safeParse(data);
   if (signal.success) {
     void pushTakeoverToAgent(signal.data.conversation_external_id, true);
+    void notifyTeamOfHandoff({
+      conversationId,
+      phone: signal.data.conversation_external_id,
+      ticketId: signal.data.ticket_id,
+      reason: input.reason,
+      summary: input.summary || null,
+    });
   }
 
   const parsed = handoffResultSchema.safeParse(data);

@@ -15,12 +15,14 @@ const m = vi.hoisted(() => ({
   relayConfig: vi.fn(),
   relaySigning: vi.fn(),
   botSignature: vi.fn(),
+  handoffAlert: vi.fn(),
   variables: vi.fn(),
   model: vi.fn(),
   AutomationSettings: vi.fn<(props: { config: RelayConfig }) => ReactNode>(() => <div data-testid="webhook" />),
   RelaySigningSettings: vi.fn<(props: { signing: RelaySigning }) => ReactNode>(() => <div data-testid="chave" />),
   signingMounts: vi.fn(),
   BotSignatureSettings: vi.fn<(props: { config: unknown }) => ReactNode>(() => <div data-testid="assinatura-bot" />),
+  HandoffAlertSettings: vi.fn<(props: { config: unknown }) => ReactNode>(() => <div data-testid="aviso-handoff" />),
   ApiTokensManager: vi.fn<(props: { tokens: unknown }) => ReactNode>(() => <div data-testid="tokens" />),
   EnvironmentVariablesManager: vi.fn<(props: { variables: unknown; transcriptionModel: unknown }) => ReactNode>(
     () => <div data-testid="cofre" />
@@ -42,6 +44,7 @@ vi.mock("@/features/settings/queries/get-api-tokens", () => ({ getApiTokens: m.a
 vi.mock("@/features/settings/lib/get-relay-url", () => ({ getRelayConfig: m.relayConfig }));
 vi.mock("@/features/settings/queries/get-relay-signing", () => ({ getRelaySigning: m.relaySigning }));
 vi.mock("@/features/settings/lib/get-bot-signature", () => ({ getBotSignatureConfig: m.botSignature }));
+vi.mock("@/features/settings/lib/get-handoff-alert", () => ({ getHandoffAlertConfig: m.handoffAlert }));
 vi.mock("@/features/settings/queries/get-environment-variables", () => ({
   getEnvironmentVariables: m.variables,
   getTranscriptionModelConfig: m.model,
@@ -58,6 +61,7 @@ vi.mock("@/features/settings/components/relay-signing-settings", () => ({
   },
 }));
 vi.mock("@/features/settings/components/bot-signature-settings", () => ({ BotSignatureSettings: m.BotSignatureSettings }));
+vi.mock("@/features/settings/components/handoff-alert-settings", () => ({ HandoffAlertSettings: m.HandoffAlertSettings }));
 vi.mock("@/features/settings/components/api-tokens-manager", () => ({ ApiTokensManager: m.ApiTokensManager }));
 vi.mock("@/features/settings/components/environment-variables-manager", () => ({
   EnvironmentVariablesManager: m.EnvironmentVariablesManager,
@@ -114,6 +118,7 @@ const SUBSCRIPTIONS = [{ id: "sub-1", name: "ERP" }];
 const open = (query: Record<string, string | string[]> = {}) => ConexaoPage({ searchParams: Promise.resolve(query) });
 const VARIABLES = [{ name: "OPENAI_API_KEY" }];
 const MODEL = { value: "whisper-1", source: "default" };
+const HANDOFF_ALERT = { number: "5586999990000", groupJid: null, groupName: null };
 
 beforeEach(() => {
   m.admin.mockResolvedValue({ id: "admin-1", role: "admin" });
@@ -121,6 +126,7 @@ beforeEach(() => {
   m.relayConfig.mockResolvedValue(RELAY_CONFIG);
   m.relaySigning.mockResolvedValue(SIGNING);
   m.botSignature.mockResolvedValue(BOT_SIGNATURE);
+  m.handoffAlert.mockResolvedValue(HANDOFF_ALERT);
   m.variables.mockResolvedValue(VARIABLES);
   m.model.mockResolvedValue(MODEL);
   m.logs.mockResolvedValue(LOGS_PAGE);
@@ -132,7 +138,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const reads = [m.apiTokens, m.relayConfig, m.relaySigning, m.botSignature, m.variables, m.model, m.webhooks];
+const reads = [
+  m.apiTokens,
+  m.relayConfig,
+  m.relaySigning,
+  m.botSignature,
+  m.handoffAlert,
+  m.variables,
+  m.model,
+  m.webhooks,
+];
 
 describe("Integrações (/app/conexao)", () => {
   it("sem admin confirmado no banco, o redirect do guard interrompe antes de qualquer leitura", async () => {
@@ -151,6 +166,7 @@ describe("Integrações (/app/conexao)", () => {
     expect(m.AutomationSettings.mock.calls[0]![0]).toEqual({ config: RELAY_CONFIG });
     expect(m.RelaySigningSettings.mock.calls[0]![0]).toEqual({ signing: SIGNING });
     expect(m.BotSignatureSettings.mock.calls[0]![0]).toEqual({ config: BOT_SIGNATURE });
+    expect(m.HandoffAlertSettings.mock.calls[0]![0]).toEqual({ config: HANDOFF_ALERT });
     expect(m.ApiTokensManager.mock.calls[0]![0]).toEqual({ tokens: TOKENS });
     expect(m.webhooks).toHaveBeenCalledWith(m.adminClient);
     expect(m.WebhooksManager.mock.calls[0]![0]).toEqual({ subscriptions: SUBSCRIPTIONS });
@@ -216,20 +232,25 @@ describe("Integrações (/app/conexao)", () => {
     }
   });
 
-  it("a aba Agente de IA traz o webhook, a chave de assinatura e a assinatura das mensagens, nessa ordem", async () => {
+  it("a aba Agente de IA traz o webhook, a chave de assinatura, a assinatura das mensagens e o aviso de handoff, nessa ordem", async () => {
     render(await open());
 
     const agent = screen.getByTestId("aba-agente");
     const blocks = within(agent)
-      .getAllByTestId(/^(webhook|chave|assinatura-bot)$/)
+      .getAllByTestId(/^(webhook|chave|assinatura-bot|aviso-handoff)$/)
       .map((block) => block.getAttribute("data-testid"));
-    expect(blocks).toEqual(["webhook", "chave", "assinatura-bot"]);
+    expect(blocks).toEqual(["webhook", "chave", "assinatura-bot", "aviso-handoff"]);
     // Dois "assinatura" na mesma aba: os títulos dizem qual é qual.
     expect(
       within(agent)
         .getAllByRole("heading")
         .map((heading) => heading.textContent)
-    ).toEqual(["Integração do agente", "Chave de assinatura do webhook", "Assinatura das mensagens da IA"]);
+    ).toEqual([
+      "Integração do agente",
+      "Chave de assinatura do webhook",
+      "Assinatura das mensagens da IA",
+      "Aviso de handoff à equipe",
+    ]);
     // A chave fica no bloco dela: o título vem logo antes, no mesmo contêiner.
     const keyBlock = within(agent).getByTestId("chave").closest("div.border-t");
     expect(keyBlock).not.toBeNull();

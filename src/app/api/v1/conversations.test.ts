@@ -10,6 +10,8 @@ const { adminClientMock, pushTakeoverMock, sendTextMock, credentialsMock } = vi.
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: adminClientMock, hasSupabaseAdminEnv: () => true }));
 vi.mock("@/features/chat/lib/push-takeover", () => ({ pushTakeoverToAgent: pushTakeoverMock }));
+// O aviso à equipe tem testes próprios (handoff-alert); aqui ele não sai.
+vi.mock("@/features/chat/lib/handoff-alert", () => ({ notifyTeamOfHandoff: vi.fn() }));
 // O provedor e a credencial são SEMPRE de mentira: nenhum teste fala com o WhatsApp.
 vi.mock("@/features/chat/lib/senders/uazapi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/chat/lib/senders/uazapi")>()),

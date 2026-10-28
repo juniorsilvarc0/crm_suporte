@@ -1385,6 +1385,12 @@ A barra inferior tinha **4 abas + "Mais"**, e as 4 saíam de um `slice(0, 4)` da
     - erro em que o servidor diz que nada foi gravado (`applied: false`): o mesmo;
     - desfecho desconhecido (erro do servidor sem essa marca, resposta que não é do app, pedido que não voltou): o toast diz que não deu para confirmar, e o bloco passa ao estado "não confirmada". Ele **não relê sozinho**: com a rede fora do ar o refresh recarregaria a página e levaria o aviso junto.
   - **A aba Agente de IA fica montada ao trocar de aba** (`keepMounted`): o teste de conexão em curso e a URL digitada não se perdem.
+- **Aviso de handoff à equipe (2026-10-28):** último bloco da aba Agente de IA. Quando a IA passa um cliente para a equipe (handoff da API v1, só quando a conversa muda de dono), o CRM avisa pelo próprio WhatsApp: quem é, o protocolo do chamado com o motivo, o resumo e o link do chamado (ou da conversa).
+  - **Telefone da equipe** e **Grupo do WhatsApp**, independentes: o que estiver preenchido recebe; os dois vazios desligam o aviso. O telefone aceita máscara e é gravado só em dígitos, com o 55.
+  - O grupo é um `FormSelect` com os grupos em que o WhatsApp do CRM está (`GET /api/connection/groups`), que chegam sozinhos ao abrir a aba (cache da uazapi). **Atualizar** relê do WhatsApp. O grupo salvo continua no select mesmo antes de a lista chegar. Desconectado ou sem WhatsApp, a linha de baixo diz por quê, com a lista vazia.
+  - A linha do telefone avisa: se alguém responder ao aviso no telefone, a resposta vira uma conversa no chat (grupo fica fora do chat). Para a equipe, prefira o grupo.
+  - **Enviar teste** manda um texto de teste à configuração **salva**: com o formulário alterado, fica desabilitado. O toast diz para onde saiu e onde falhou.
+  - O aviso sai com um `track_id` próprio: o eco que a uazapi devolve ao webhook é descartado no passo 3 e não abre conversa com o telefone da equipe.
 - **Cofre restrito ao catálogo (Fase 5, PR 12a):** o servidor só grava os nomes que o app lê, e a chave de assinatura não aparece na lista nem se grava ou apaga por ali.
   - Os textos da aba dizem o que vale desde a Fase 2: o CRM lê estas chaves só do cofre, **sem reserva no ambiente do servidor**. Remover uma chave para o que depende dela.
   - **Catálogo na tela (PR 13d):**

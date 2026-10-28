@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { UnsafeUrlError } from "@/lib/security/ssrf-guard";
 import {
   checkUazapiNumber,
+  sendUazapiNotice,
   sendUazapiText,
   UazapiHttpError,
   uazapiSendDefinitelyFailed,
@@ -254,5 +255,39 @@ describe("checkUazapiNumber", () => {
     await expect(
       checkUazapiNumber("https://inst.uazapi.com", "token", "123")
     ).rejects.toThrow("Telefone inválido");
+  });
+});
+
+describe("sendUazapiNotice (aviso à equipe)", () => {
+  function sentBody(fetchMock: ReturnType<typeof vi.fn>) {
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    return { url, body: JSON.parse(String(init.body)) as Record<string, unknown> };
+  }
+
+  it("grupo: o JID vai intacto (só dígitos mandaria para um número que não existe)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ messageid: "wa-1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendUazapiNotice("https://inst.uazapi.com", "tok", "120363000000000001@g.us", "Aviso https://x.com", {
+      trackId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    const { url, body } = sentBody(fetchMock);
+    expect(url).toBe("https://inst.uazapi.com/send/text");
+    expect(body).toStrictEqual({
+      number: "120363000000000001@g.us",
+      text: "Aviso https://x.com",
+      track_id: "11111111-1111-4111-8111-111111111111",
+      track_source: "crm-suporte",
+    });
+  });
+
+  it("telefone: só dígitos, e sem prévia de link", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendUazapiNotice("https://inst.uazapi.com", "tok", "+55 (86) 99999-0000", "Abrir: https://x.com");
+
+    expect(sentBody(fetchMock).body).toStrictEqual({ number: "5586999990000", text: "Abrir: https://x.com" });
   });
 });

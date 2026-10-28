@@ -4,6 +4,7 @@ import {
   connectionStateFromStatus,
   downloadUazapiMedia,
   getUazapiStatus,
+  listUazapiGroups,
   normalizeDisconnectReason,
   registerUazapiWebhook,
   UAZAPI_WEBHOOK_EVENTS,
@@ -116,5 +117,44 @@ describe("registerUazapiWebhook", () => {
       events: ["messages", "messages_update", "connection"],
     });
     expect(UAZAPI_WEBHOOK_EVENTS).toEqual(["messages", "messages_update", "connection"]);
+  });
+});
+
+describe("listUazapiGroups", () => {
+  it("GET /group/list com o token: JID e nome, por nome, sem repetir e sem o que não é grupo", async () => {
+    const spy = mockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            groups: [
+              { JID: "120363000000000002@g.us", Name: "Suporte N2" },
+              { JID: "120363000000000001@g.us", Name: "Equipe de suporte" },
+              { JID: "120363000000000001@g.us", Name: "Repetido" },
+              { JID: "5586999990000@s.whatsapp.net", Name: "Não é grupo" },
+              { JID: "120363000000000003@g.us" },
+            ],
+          }),
+          { status: 200 }
+        )
+    );
+
+    const groups = await listUazapiGroups(API, TOKEN);
+
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${API}/group/list`);
+    expect(init.headers).toStrictEqual({ token: TOKEN });
+    expect(groups).toStrictEqual([
+      { jid: "120363000000000003@g.us", name: "120363000000000003@g.us" },
+      { jid: "120363000000000001@g.us", name: "Equipe de suporte" },
+      { jid: "120363000000000002@g.us", name: "Suporte N2" },
+    ]);
+  });
+
+  it("force relê do WhatsApp; resposta de erro lança sem o corpo", async () => {
+    const spy = mockFetch(() => new Response("token=tok-123 inválido", { status: 401 }));
+
+    await expect(listUazapiGroups(API, TOKEN, true)).rejects.toThrow("uazapi group/list 401");
+    expect(spy.mock.calls[0]?.[0]).toBe(`${API}/group/list?force=true`);
+    await expect(listUazapiGroups(API, TOKEN)).rejects.not.toThrow(/tok-123/);
   });
 });

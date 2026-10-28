@@ -27,6 +27,26 @@ Regras: data em `AAAA-MM-DD` (absoluta, nunca "ontem"). Investigação sem códi
 
 > **Origem deste repositório.** Nasceu em 2026-09-25 **sem histórico git**, por decisão do dono (o repo é público). O código veio de um CRM de clínica feito sobre o mesmo template. O histórico e o PROGRESS antigos ficam no repositório privado de origem; as armadilhas técnicas que continuam valendo estão resumidas na entrada "Plano de implantação e repositório novo sem histórico".
 
+## [2026-10-28] Aviso de handoff à equipe pelo WhatsApp (telefone e/ou grupo)
+
+**Agente/Modelo:** Claude Opus 5.5.
+**Objetivo:** quando a IA passa um cliente para a equipe, alguém fica sabendo na hora. Pedido do dono em 2026-10-28. A equipe da Ticbox atende por outra plataforma e não acompanha a tela do CRM: hoje o handoff só deixa a nota interna e o ticket.
+**Arquivos alterados:** `src/features/chat/lib/handoff-alert.ts` (novo) + teste, `src/features/chat/lib/whatsapp-group.ts` (novo), `src/features/chat/lib/senders/uazapi.ts` (`sendUazapiNotice`) + teste, `src/features/chat/lib/connection/uazapi.ts` (`listUazapiGroups`) + teste, `src/features/tickets/server/ticket-service.ts` + teste, `src/app/api/v1/conversations.test.ts`; config: `src/features/settings/schemas/handoff-alert.ts`, `src/features/settings/lib/get-handoff-alert.ts`, `src/app/api/settings/handoff-alert/route.ts` e `test/route.ts` (novos) + teste, `src/app/api/connection/groups/route.ts` (novo) + teste; tela: `src/features/settings/components/handoff-alert-settings.tsx` (novo) + teste, `src/app/(dashboard)/app/conexao/page.tsx` + teste; docs: `UI.md`, `docs/API.md`, `docs/GUIA-AGENTE-IA.md`, este PROGRESS.
+**O que foi feito:**
+- **Configuração** em `app_settings.handoff_alert` (`{ number, group_jid, group_name }`), sem migration. Telefone e grupo são independentes: o que estiver preenchido recebe; os dois vazios desligam.
+- **Tela:** bloco "Aviso de handoff à equipe" na aba Agente de IA, com telefone, grupo (select com os grupos do WhatsApp do CRM, `GET /group/list` da uazapi, e "Atualizar") e "Enviar teste".
+- **Envio:** no `handoffConversation`, só com `changed: true`, ao lado do aviso ao agente. Texto: contato e telefone, protocolo e motivo, resumo (até 500) e o link do ticket (ou da conversa, sem ticket), com `APP_PUBLIC_URL`.
+**Decisões tomadas (revisar):**
+- **O aviso sai do CRM, e não do agente:** o CRM é dono da instância e do token; o agente de suporte não tem WhatsApp próprio (envia pela API v1). Vale para qualquer IA que use o handoff.
+- **Melhor esforço, sem fila durável:** um tipo novo no outbox exigiria migration. A falha nunca desfaz nem atrasa o handoff; repete uma vez só quando é certo que a mensagem não saiu (com desfecho desconhecido, repetir poderia duplicar).
+- **`track_id` próprio em todo aviso:** o eco que a uazapi devolve ao webhook cai no passo 3 (eco conciliado) e é descartado. Sem ele, o aviso a um telefone abriria uma conversa no chat com o número da equipe.
+**Verificação:** typecheck ✓ · lint ✓ (0 erros; os 9 avisos antigos de `verify-webhook.test.ts`) · test ✓ (304 arquivos, 5100 testes; `ticket-categories-manager.test.tsx` falhou uma vez por tempo com a máquina carregada e passa sozinho, 29/29) · build ✓.
+**Pendências / próximos passos:** produção só com o "pode subir" do dono (sem migration). Depois: configurar telefone e/ou grupo na aba Agente de IA, "Enviar teste", e um handoff pelo número de teste do agente de suporte.
+**Armadilhas descobertas:**
+- **`toUazapiNumber` deixa só dígitos:** um JID de grupo perdia o `@g.us` e ia para um número que não existe. `sendUazapiNotice` manda o JID intacto.
+- **Resposta da equipe no telefone vira conversa no chat:** o aviso não abre conversa (o `track_id`), mas uma resposta ao aviso entra como mensagem de um contato novo. Grupo fica fora do chat (o normalizer ignora `@g.us`); por isso a tela recomenda o grupo.
+- **A página de Integrações tem teste que simula cada leitura e cada bloco** (`conexao/page.test.tsx`): leitura nova sem mock lá derruba 14 testes de uma vez.
+
 ## [2026-10-28] Deploy: selo do contrato no cabeçalho da conversa no ar (#88)
 
 **Agente/Modelo:** Claude Opus 5.5.
